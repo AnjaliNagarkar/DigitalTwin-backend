@@ -31,6 +31,7 @@ func main() {
 	houseHandler := &handlers.HouseHandler{DB: conn, CC: cc}
 	insightHandler := &handlers.InsightHandler{DB: conn, CC: cc}
 	locationHandler := &handlers.LocationHandler{DB: conn}
+	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -47,7 +48,8 @@ func main() {
 	// ── CORS ─────────────────────────────────────────────────────────────────
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		// POST is allowed for PDF generation; all other mutations remain blocked.
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -57,13 +59,18 @@ func main() {
 	})
 
 	// ── Read-only enforcement ─────────────────────────────────────────────────
-	// Block any non-GET/OPTIONS request with a 405. This is a hard safeguard
-	// in addition to having only SELECT queries in all handlers.
+	// Block any non-GET/OPTIONS request with a 405, EXCEPT POST /pdf/* which
+	// only reads from the DB and streams a generated PDF (no writes at all).
 	r.Use(func(c *gin.Context) {
 		method := strings.ToUpper(c.Request.Method)
+		path := c.Request.URL.Path // reliable in middleware (set by Vite proxy rewrite)
+		isPDFPost := method == http.MethodPost && strings.HasPrefix(path, "/pdf/")
+		if isPDFPost {
+			c.Next()
+			return
+		}
 		if method != http.MethodGet && method != http.MethodOptions {
-			log.Printf("[BLOCKED] Write attempt: %s %s — rejected (read-only mode)",
-				c.Request.Method, c.Request.URL.Path)
+			log.Printf("[BLOCKED] %s %s — rejected (read-only mode)", c.Request.Method, path)
 			c.AbortWithStatusJSON(http.StatusMethodNotAllowed, gin.H{
 				"error": "this server is read-only — only GET requests are permitted",
 			})
@@ -81,6 +88,9 @@ func main() {
 	r.GET("/houses", houseHandler.GetHouses)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
+
+	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
+	r.POST("/pdf/report", pdfHandler.GeneratePDF)
 
 	// ── Insights Engine (new) ─────────────────────────────────────────────────
 	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
@@ -110,6 +120,7 @@ func main() {
 	log.Println("  GET /irrigation       — water source records")
 	log.Println("  GET /farmers          — farmer registry")
 	log.Println("  GET /soil /schemes /market  — static reference data")
+	log.Println("  POST /pdf/report            — generate PDF report (DB read-only)")
 
 	if err := r.Run(serverAddr); err != nil {
 		log.Fatalf("[FATAL] Server failed to start on %s: %v", serverAddr, err)
