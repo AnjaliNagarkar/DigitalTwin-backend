@@ -8,6 +8,7 @@ import (
 
 	"DT-backend/db"
 	"DT-backend/handlers"
+	"DT-backend/routes"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,6 +33,7 @@ func main() {
 	insightHandler := &handlers.InsightHandler{DB: conn, CC: cc}
 	locationHandler := &handlers.LocationHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
+	populationHandler := &handlers.PopulationHandler{DB: conn}
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -96,6 +98,7 @@ func main() {
 	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
 	r.GET("/insights/agriculture", insightHandler.GetAgricultureInsights)
 	r.GET("/insights/welfare", insightHandler.GetWelfareInsights)
+	routes.RegisterPopulationRoutes(r, populationHandler)
 
 	// ── Existing agri data endpoints ──────────────────────────────────────────
 	r.GET("/crops", cropHandler.GetCrops)
@@ -115,6 +118,7 @@ func main() {
 	log.Println("  GET /insights/governance  — sanitation, lighting, geo coverage")
 	log.Println("  GET /insights/agriculture — land distribution, irrigation, crops")
 	log.Println("  GET /insights/welfare     — BPL households, ration card data")
+	log.Println("  GET /population/dashboard — population top-card metrics")
 	log.Println("  GET /crops            — kharif/rabi cultivation data")
 	log.Println("  GET /land             — land area records")
 	log.Println("  GET /irrigation       — water source records")

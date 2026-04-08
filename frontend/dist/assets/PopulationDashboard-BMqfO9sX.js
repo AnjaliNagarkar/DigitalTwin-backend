@@ -1,1 +1,0 @@
-import{_ as a,c as s,a as e,o as t}from"./index-DLjSYB8M.js";const n={},r={class:"page"};function c(l,o){return t(),s("section",r,[...o[0]||(o[0]=[e("h1",null,"Population Dashboard",-1),e("p",null,"This dashboard is the entry screen for the Population module.",-1)])])}const _=a(n,[["render",c],["__scopeId","data-v-0585f425"]]);export{_ as default};

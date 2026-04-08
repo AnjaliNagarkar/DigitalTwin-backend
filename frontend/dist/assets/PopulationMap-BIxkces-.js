@@ -1,1 +1,0 @@
-import{_ as a,c as t,a as o,o as s}from"./index-DLjSYB8M.js";const n={},l={class:"page"};function c(i,e){return s(),t("section",l,[...e[0]||(e[0]=[o("h1",null,"Population 2D Map",-1),o("p",null,"Population geospatial visualization will be shown here.",-1)])])}const r=a(n,[["render",c],["__scopeId","data-v-b2d0765e"]]);export{r as default};
