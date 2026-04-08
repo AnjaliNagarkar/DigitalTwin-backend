@@ -148,7 +148,7 @@
 
 <script setup>
 import { ref, computed, onMounted, h } from 'vue'
-import { getGovernanceInsights, getAgricultureInsights, getWelfareInsights } from '../api/index.js'
+import { getGovernanceInsights, getAgricultureInsights, getWelfareInsights } from '../../api/index.js'
 
 const loading = ref(true)
 const governance = ref({})

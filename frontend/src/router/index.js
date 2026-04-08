@@ -8,12 +8,12 @@ const routes = [
       {
         path: '',
         name: 'MainDashboard',
-        component: () => import('../views/Dashboard.vue'),
+        component: () => import('../views/agriculture/Dashboard.vue'),
       },
       {
         path: 'infrastructure/dashboard',
         name: 'InfrastructureDashboard',
-        component: () => import('../views/Dashboard.vue'),
+        component: () => import('../views/agriculture/Dashboard.vue'),
       },
     ],
   },
@@ -28,22 +28,22 @@ const routes = [
       {
         path: 'dashboard',
         name: 'AgricultureDashboard',
-        component: () => import('../views/Dashboard.vue'),
+        component: () => import('../views/agriculture/Dashboard.vue'),
       },
       {
         path: 'farmers',
         name: 'AgricultureFarmers',
-        component: () => import('../views/Farmers.vue'),
+        component: () => import('../views/agriculture/Farmers.vue'),
       },
       {
         path: 'map',
         name: 'AgricultureMap',
-        component: () => import('../views/MapView.vue'),
+        component: () => import('../views/agriculture/MapView.vue'),
       },
       {
         path: 'twin',
         name: 'AgricultureTwin',
-        component: () => import('../views/DigitalTwin.vue'),
+        component: () => import('../views/agriculture/DigitalTwin.vue'),
       },
     ],
   },

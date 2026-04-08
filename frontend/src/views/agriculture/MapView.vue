@@ -172,7 +172,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getHouses, getLocationOptions } from '../api/index.js'
+import { getHouses, getLocationOptions } from '../../api/index.js'
 import L from 'leaflet'
 
 const loading       = ref(true)

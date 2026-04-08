@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,6 +35,37 @@ type PopulationEmploymentResponse struct {
 	DailyWageWorkers       int            `json:"daily_wage_workers"`
 	SkilledWorkers         int            `json:"skilled_workers"`
 	OccupationDistribution map[string]int `json:"occupation_distribution"`
+}
+
+type PopulationMapMarker struct {
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+	HeadName     string  `json:"head_name"`
+	HouseNo      string  `json:"house_no"`
+	TotalMembers int     `json:"total_members"`
+}
+
+type PopulationMapInsightsResponse struct {
+	BPLDistribution struct {
+		BPL             int `json:"bpl"`
+		NonBPL          int `json:"non_bpl"`
+		TotalHouseholds int `json:"total_households"`
+	} `json:"bpl_distribution"`
+	EducationStatus struct {
+		Literate   int `json:"literate"`
+		Illiterate int `json:"illiterate"`
+		Students   int `json:"students"`
+		Dropouts   int `json:"dropouts"`
+	} `json:"education_status"`
+	WorkingVsDependent struct {
+		Working         int `json:"working"`
+		Dependent       int `json:"dependent"`
+		TotalPopulation int `json:"total_population"`
+	} `json:"working_vs_dependent"`
+}
+
+type PopulationMapSummaryResponse struct {
+	TotalHouseholds int `json:"total_households"`
 }
 
 // GetPopulationDashboard handles GET /population/dashboard.
@@ -321,6 +354,256 @@ func (h *PopulationHandler) GetPopulationEmployment(c *gin.Context) {
 			"other":        other,
 		},
 	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *PopulationHandler) familyColumnExists(column string) bool {
+	var count int
+	if err := h.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'FAMILY'
+		  AND COLUMN_NAME = ?
+	`, column).Scan(&count); err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func (h *PopulationHandler) buildPopulationFamilyFilters(alias string, c *gin.Context) (string, []interface{}) {
+	clauses := []string{"1=1"}
+	args := []interface{}{}
+
+	stateID := strings.TrimSpace(c.Query("state_id"))
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+
+	if stateID != "" && h.familyColumnExists("STATE_ID") {
+		clauses = append(clauses, fmt.Sprintf("CAST(%s.STATE_ID AS CHAR) = ?", alias))
+		args = append(args, stateID)
+	}
+	if districtID != "" {
+		clauses = append(clauses, fmt.Sprintf("CAST(%s.DISTRICT_ID AS CHAR) = ?", alias))
+		args = append(args, districtID)
+	}
+	if talukaID != "" {
+		clauses = append(clauses, fmt.Sprintf("CAST(%s.TALUKA_ID AS CHAR) = ?", alias))
+		args = append(args, talukaID)
+	}
+	if villageID != "" {
+		clauses = append(clauses, fmt.Sprintf("CAST(%s.VILLAGE_ID AS CHAR) = ?", alias))
+		args = append(args, villageID)
+	}
+
+	return strings.Join(clauses, " AND "), args
+}
+
+// GetPopulationMapData handles GET /population/map-data.
+// It returns household markers and total member counts for the population map.
+func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
+	log.Println("[SELECT] GET /population/map-data")
+
+	where, args := h.buildPopulationFamilyFilters("f", c)
+	where = fmt.Sprintf("WHERE f.LATITUDE IS NOT NULL AND f.LONGITUDE IS NOT NULL AND f.LATITUDE != 0 AND f.LONGITUDE != 0 AND %s", where)
+
+	query := fmt.Sprintf(`
+		SELECT
+			f.LATITUDE AS lat,
+			f.LONGITUDE AS lng,
+			COALESCE(TRIM(CONCAT(
+				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
+			)), '') AS head_name,
+			COALESCE(CAST(f.HOUSE_NO AS CHAR), '') AS house_no,
+			COUNT(fm.FAMILY_MEMBER_ID) AS total_members
+		FROM FAMILY f
+		LEFT JOIN FAMILY_MEMBER fm ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		%s
+		GROUP BY f.EXTERNAL_FAMILY_ID, f.LATITUDE, f.LONGITUDE, f.HOUSE_NO, f.FIRST_NAME_HOUSEHOLD_HEAD, f.MIDDLE_NAME_HOUSEHOLD_HEAD, f.LAST_NAME_HOUSEHOLD_HEAD
+		ORDER BY f.EXTERNAL_FAMILY_ID
+	`, where)
+
+	rows, err := h.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch population map data", "detail": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	markers := []PopulationMapMarker{}
+	for rows.Next() {
+		var marker PopulationMapMarker
+		if err := rows.Scan(&marker.Lat, &marker.Lng, &marker.HeadName, &marker.HouseNo, &marker.TotalMembers); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan population map marker", "detail": err.Error()})
+			return
+		}
+		markers = append(markers, marker)
+	}
+
+	if markers == nil {
+		markers = []PopulationMapMarker{}
+	}
+
+	c.JSON(http.StatusOK, markers)
+}
+
+// GetPopulationMapSummary handles GET /population/map-summary.
+// It returns the filtered household count with valid map coordinates.
+func (h *PopulationHandler) GetPopulationMapSummary(c *gin.Context) {
+	log.Println("[SELECT] GET /population/map-summary")
+
+	where, args := h.buildPopulationFamilyFilters("f", c)
+
+	var totalHouseholds int
+	err := h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(DISTINCT f.EXTERNAL_FAMILY_ID)
+		FROM FAMILY f
+		WHERE f.LATITUDE IS NOT NULL
+		  AND f.LONGITUDE IS NOT NULL
+		  AND f.LATITUDE != 0
+		  AND f.LONGITUDE != 0
+		  AND %s
+	`, where), args...).Scan(&totalHouseholds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch population map summary", "detail": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, PopulationMapSummaryResponse{TotalHouseholds: totalHouseholds})
+}
+
+// GetPopulationMapInsights handles GET /population/map-insights.
+// It returns BPL, education, and working/dependent summaries for the population map.
+func (h *PopulationHandler) GetPopulationMapInsights(c *gin.Context) {
+	log.Println("[SELECT] GET /population/map-insights")
+
+	where, args := h.buildPopulationFamilyFilters("f", c)
+
+	var totalHouseholds int
+	var bplHouseholds int
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY f
+		WHERE %s
+	`, where), args...).Scan(&totalHouseholds)
+
+	bplConditions := []string{}
+	if h.familyColumnExists("FAMILY_BELONG_BPL_CATEGORY") {
+		bplConditions = append(bplConditions, "UPPER(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, ''))) = 'YES'")
+	}
+	if h.familyColumnExists("RATION_CARD_TYPE") {
+		bplConditions = append(bplConditions, "UPPER(TRIM(COALESCE(f.RATION_CARD_TYPE, ''))) IN ('BPL', 'AAY')")
+	}
+	if len(bplConditions) > 0 {
+		bplQuery := fmt.Sprintf(`
+			SELECT COUNT(*)
+			FROM FAMILY f
+			WHERE %s
+			  AND (%s)
+		`, where, strings.Join(bplConditions, " OR "))
+		h.DB.QueryRow(bplQuery, args...).Scan(&bplHouseholds)
+	}
+
+	var literate int
+	var illiterate int
+	var students int
+	var dropouts int
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
+	`, where), args...).Scan(&literate)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND (UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO' OR fm.EVER_ATTENDED_SCHOOL IS NULL)
+	`, where), args...).Scan(&illiterate)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
+	`, where), args...).Scan(&students)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND (
+			UPPER(TRIM(COALESCE(fm.DROP_OUT, ''))) = 'YES'
+			OR TRIM(COALESCE(fm.DROP_OUT, '')) IN ('1','2','3','4','5','6','7','8','9','10')
+		  )
+	`, where), args...).Scan(&dropouts)
+
+	var working int
+	var dependent int
+	var totalPopulation int
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&totalPopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN (
+			'SELF EMPLOYED - FARM BASED',
+			'SELF EMPLOYED- NON-FARM BASED',
+			'SELF EMPLOYED-AGRI ALLIED',
+			'WAGE WORK',
+			'SALARIED JOB'
+		  )
+	`, where), args...).Scan(&working)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+		  AND (
+			(
+				STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL
+				AND (
+					TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) < 18
+					OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60
+				)
+			)
+			OR (
+				STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL
+				AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 18 AND 60
+				AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN (
+					'STUDENT',
+					'STUDYING',
+					'HOUSEWIFE',
+					'UNEMPLOYED',
+					'NOT APPLICABLE'
+				)
+			)
+		  )
+	`, where), args...).Scan(&dependent)
+
+	response := PopulationMapInsightsResponse{}
+	response.BPLDistribution.BPL = bplHouseholds
+	response.BPLDistribution.NonBPL = totalHouseholds - bplHouseholds
+	response.BPLDistribution.TotalHouseholds = totalHouseholds
+	response.EducationStatus.Literate = literate
+	response.EducationStatus.Illiterate = illiterate
+	response.EducationStatus.Students = students
+	response.EducationStatus.Dropouts = dropouts
+	response.WorkingVsDependent.Working = working
+	response.WorkingVsDependent.Dependent = dependent
+	response.WorkingVsDependent.TotalPopulation = totalPopulation
 
 	c.JSON(http.StatusOK, response)
 }

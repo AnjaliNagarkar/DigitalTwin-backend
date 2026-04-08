@@ -11,4 +11,7 @@ func RegisterPopulationRoutes(r *gin.Engine, populationHandler *handlers.Populat
 	r.GET("/population/demographics", populationHandler.GetPopulationDemographics)
 	r.GET("/population/education", populationHandler.GetPopulationEducation)
 	r.GET("/population/employment", populationHandler.GetPopulationEmployment)
+	r.GET("/population/map-summary", populationHandler.GetPopulationMapSummary)
+	r.GET("/population/map-data", populationHandler.GetPopulationMapData)
+	r.GET("/population/map-insights", populationHandler.GetPopulationMapInsights)
 }

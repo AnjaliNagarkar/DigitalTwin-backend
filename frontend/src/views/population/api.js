@@ -28,3 +28,18 @@ export function getPopulationEducation() {
 export function getPopulationEmployment() {
   return fetchJSON('/population/employment')
 }
+
+export function getPopulationMapData(params = {}) {
+  const query = new URLSearchParams(params).toString()
+  return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`)
+}
+
+export function getPopulationMapSummary(params = {}) {
+  const query = new URLSearchParams(params).toString()
+  return fetchJSON(`/population/map-summary${query ? `?${query}` : ''}`)
+}
+
+export function getPopulationMapInsights(params = {}) {
+  const query = new URLSearchParams(params).toString()
+  return fetchJSON(`/population/map-insights${query ? `?${query}` : ''}`)
+}

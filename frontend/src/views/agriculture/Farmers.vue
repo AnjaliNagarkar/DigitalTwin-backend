@@ -76,7 +76,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getFarmers } from '../api/index.js'
+import { getFarmers } from '../../api/index.js'
 
 const loading = ref(true)
 const farmers = ref([])

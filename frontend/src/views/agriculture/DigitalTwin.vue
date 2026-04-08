@@ -290,7 +290,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getAgricultureInsights } from '../api/index.js'
+import { getHouses, getAgricultureInsights } from '../../api/index.js'
 import * as Cesium from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 
