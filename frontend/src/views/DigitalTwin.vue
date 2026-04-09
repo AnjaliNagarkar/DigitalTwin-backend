@@ -105,10 +105,6 @@
         <button class="ctrl-btn" :class="{ active: tileStyle === 'satellite' }" @click="toggleTile">
           {{ tileStyle === 'satellite' ? '🛰 Satellite' : '🗺 Street' }}
         </button>
-        <button class="ctrl-btn" :class="{ active: showCropLabels }" @click="showCropLabels = !showCropLabels"
-                title="Toggle crop & season emoji labels on each house">
-          🌾 Crops
-        </button>
 
         <!-- DOWNLOAD PDF -->
         <div class="dl-wrap" v-if="!loadingLiveData && filteredHouses.length">
@@ -153,11 +149,15 @@
 
       <div class="sidebar-body" v-if="!sidebarCollapsed && !loadingLiveData">
 
-        <!-- LEGEND -->
+        <!-- LEGEND — mini 3D house icons match the map buildings -->
         <div class="panel-card">
           <div class="card-title">{{ legendTitle }}</div>
           <div class="legend-item" v-for="leg in currentLegend" :key="leg.label">
-            <span class="legend-swatch" :style="{ background: leg.color }"></span>
+            <!-- Mini house: roof triangle (condition color) + wall block (sandstone) -->
+            <span class="mini-house" :style="{ '--mh-roof': leg.color }">
+              <span class="mh-roof"></span>
+              <span class="mh-wall"></span>
+            </span>
             <span class="legend-text">{{ leg.label }}</span>
           </div>
           <div class="legend-note">Roof color = {{ legendTitle.toLowerCase() }} status</div>
@@ -172,7 +172,11 @@
           <div v-for="issue in issueList" :key="issue.label">
             <div class="issue-row" :class="{ active: colorMode === issue.mode }"
                  @click="colorMode = issue.mode; activeIssue = activeIssue === issue.mode ? null : issue.mode">
-              <span class="issue-pip" :style="{ background: issue.color }"></span>
+              <!-- Mini house pip — roof = issue color, activates when row selected -->
+              <span class="mini-house mini-house-sm" :style="{ '--mh-roof': issue.color }">
+                <span class="mh-roof"></span>
+                <span class="mh-wall"></span>
+              </span>
               <div class="issue-body">
                 <div class="issue-top">
                   <span class="issue-name">{{ issue.label }}</span>
@@ -202,7 +206,10 @@
           </div>
           <label class="pf-item" v-for="pf in PROBLEM_FILTER_META" :key="pf.key">
             <input class="pf-check" type="checkbox" :value="pf.key" v-model="activeProblemFilters" />
-            <span class="pf-pip" :style="{ background: pf.color }"></span>
+            <span class="mini-house mini-house-sm" :style="{ '--mh-roof': pf.color }">
+              <span class="mh-roof"></span>
+              <span class="mh-wall"></span>
+            </span>
             <span class="pf-label">{{ pf.label }}</span>
             <span class="pf-count">{{ problemFilterStats[pf.key] }}</span>
           </label>
@@ -215,37 +222,6 @@
           </div>
         </div>
 
-        <!-- CROP / SEASON EMOJI LEGEND -->
-        <div class="panel-card crop-legend-card" v-if="showCropLabels">
-          <div class="card-title">🌾 Crop & Season Guide
-            <span class="card-title-sub">zoom in to see labels</span>
-          </div>
-          <div class="cl-section">
-            <div class="cl-section-title">🌧️ Kharif Season (Monsoon)</div>
-            <div class="cl-row"><span class="cl-emoji">🌾</span><span class="cl-text">Rice / Wheat / Jowar / Bajra</span></div>
-            <div class="cl-row"><span class="cl-emoji">🌽</span><span class="cl-text">Maize / Corn</span></div>
-            <div class="cl-row"><span class="cl-emoji">🎋</span><span class="cl-text">Sugarcane</span></div>
-            <div class="cl-row"><span class="cl-emoji">🌿</span><span class="cl-text">Cotton</span></div>
-            <div class="cl-row"><span class="cl-emoji">🫘</span><span class="cl-text">Soybean / Tur / Mung / Urad</span></div>
-            <div class="cl-row"><span class="cl-emoji">🥜</span><span class="cl-text">Groundnut / Peanut</span></div>
-            <div class="cl-row"><span class="cl-emoji">🥬</span><span class="cl-text">Vegetables</span></div>
-            <div class="cl-row"><span class="cl-emoji">🌱</span><span class="cl-text">Other crops</span></div>
-          </div>
-          <div class="cl-section">
-            <div class="cl-section-title">❄️ Rabi Season (Winter)</div>
-            <div class="cl-row"><span class="cl-emoji">🌾</span><span class="cl-text">Wheat / Jowar</span></div>
-            <div class="cl-row"><span class="cl-emoji">🫘</span><span class="cl-text">Gram / Chickpea</span></div>
-            <div class="cl-row"><span class="cl-emoji">🌿</span><span class="cl-text">Mustard</span></div>
-            <div class="cl-row"><span class="cl-emoji">🌻</span><span class="cl-text">Sunflower</span></div>
-            <div class="cl-row"><span class="cl-emoji">🥬</span><span class="cl-text">Vegetables</span></div>
-          </div>
-          <div class="cl-example">
-            <div class="cl-section-title">📖 Label Format</div>
-            <div class="cl-example-box">🏠 🌾 🌧️ ❄️ 🫘</div>
-            <div class="cl-example-text">House → Kharif crop → Kharif season → Rabi season → Rabi crop</div>
-          </div>
-          <div class="cl-tip">Labels appear only when zoomed in below 3,500m altitude</div>
-        </div>
 
         <!-- AGRICULTURE DONUT CHARTS -->
         <div class="panel-card" v-if="pieCharts.length">
@@ -268,14 +244,59 @@
       </div>
     </div>
 
-    <!-- HOVER CARD -->
+    <!-- HOVER TOOLTIP -->
     <div v-if="hoveredHouse" class="hover-card"
-         :style="{ left: mouseX + 'px', top: mouseY + 'px' }">
-      <div class="hover-name">{{ hoveredHouse.headName || 'Household #' + hoveredHouse.familyId }}</div>
-      <div class="hover-row"><span class="hr-key">Village</span><span class="hr-val">{{ hoveredHouse.villageName || '—' }}</span></div>
-      <div class="hover-row"><span class="hr-key">Land</span><span class="hr-val">{{ hoveredHouse.totalLand || '—' }} ac</span></div>
-      <div class="hover-row"><span class="hr-key">Irrigation</span><span class="hr-val">{{ hoveredHouse.waterSource || '—' }}</span></div>
-      <div class="hover-hint">Click for details · Double-click to zoom</div>
+         :style="{ left: mouseX + 16 + 'px', top: mouseY - 8 + 'px' }">
+      <!-- Header: name + condition badge -->
+      <div class="hc-head">
+        <div class="hc-name">{{ hoveredHouse.headName || 'Household #' + hoveredHouse.familyId }}</div>
+        <span class="hc-badge" :style="{
+          background: getConditionColor(hoveredHouse) + '22',
+          color: getConditionColor(hoveredHouse),
+          borderColor: getConditionColor(hoveredHouse) + '55'
+        }">{{ getConditionLabel(hoveredHouse) }}</span>
+      </div>
+      <div class="hc-loc">{{ hoveredHouse.villageName || '—' }}{{ hoveredHouse.talukaName ? ' · ' + hoveredHouse.talukaName : '' }}</div>
+
+      <!-- Status grid: 4 key indicators with color-coded dot -->
+      <div class="hc-grid">
+        <div class="hc-cell">
+          <span class="hc-dot" :style="{ background: isRainFed(hoveredHouse) ? '#ef4444' : '#16a34a' }"></span>
+          <span class="hc-ck">Irrigation</span>
+          <span class="hc-cv">{{ isRainFed(hoveredHouse) ? 'Rain-fed' : 'Irrigated' }}</span>
+        </div>
+        <div class="hc-cell">
+          <span class="hc-dot" :style="{
+            background: (() => { const r=(hoveredHouse.rationCard||'').toLowerCase(); return r.includes('bpl')||r.includes('antyodaya') ? '#ef4444' : r.includes('apl') ? '#16a34a' : '#94a3b8' })()
+          }"></span>
+          <span class="hc-ck">Ration</span>
+          <span class="hc-cv">{{ hoveredHouse.rationCard || '—' }}</span>
+        </div>
+        <div class="hc-cell">
+          <span class="hc-dot" :style="{
+            background: parseFloat(hoveredHouse.totalLand) > 0 ? '#16a34a' : '#ef4444'
+          }"></span>
+          <span class="hc-ck">Land</span>
+          <span class="hc-cv">{{ parseFloat(hoveredHouse.totalLand) > 0 ? (hoveredHouse.totalLand + ' ac') : 'None' }}</span>
+        </div>
+        <div class="hc-cell">
+          <span class="hc-dot" :style="{
+            background: (hoveredHouse.lighting||'').toLowerCase() === 'electricity' ? '#16a34a' : '#f59e0b'
+          }"></span>
+          <span class="hc-ck">Power</span>
+          <span class="hc-cv">{{ hoveredHouse.lighting || '—' }}</span>
+        </div>
+      </div>
+
+      <!-- Crops row -->
+      <div class="hc-crops" v-if="hoveredHouse.kharif || hoveredHouse.rabi">
+        <span class="hc-ck">Crops</span>
+        <span class="hc-cv">
+          {{ [hoveredHouse.kharif, hoveredHouse.rabi].filter(Boolean).join(' · ') || '—' }}
+        </span>
+      </div>
+
+      <div class="hc-hint">Click for full details</div>
     </div>
 
     <!-- DETAIL PANEL -->
@@ -423,7 +444,6 @@ const buildingIds = new Set()  // 3D box entity IDs
 const pointIds    = new Set()  // point beacon entity IDs
 const clusterIds   = new Set()  // High-Need cluster entity IDs
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
-const cropLabelIds = new Set()  // Crop/season emoji label entity IDs
 let retryTimer    = null
 let twinLoadSeq   = 0
 
@@ -617,64 +637,6 @@ const problemMatchCount = computed(() => {
 // ── Cluster solution panel state ──────────────────────────────────────────────
 const selectedCluster = ref(null)  // { count, lat, lng, problems[] }
 
-// ── Crop / Season emoji visualization ─────────────────────────────────────────
-const showCropLabels = ref(false)
-
-// Map kharif/rabi crop names → emoji
-const KHARIF_EMOJI = {
-  rice: '🌾', paddy: '🌾', wheat: '🌾',
-  maize: '🌽', corn: '🌽',
-  sugarcane: '🎋', sugar: '🎋',
-  cotton: '🌿',
-  soybean: '🫘', soya: '🫘',
-  groundnut: '🥜', peanut: '🥜',
-  vegetables: '🥬', vegetable: '🥬',
-  onion: '🧅', tomato: '🍅', chilly: '🌶️', chilli: '🌶️',
-  jowar: '🌾', bajra: '🌾', tur: '🫘', mung: '🫘', urad: '🫘',
-}
-const RABI_EMOJI = {
-  wheat: '🌾', rice: '🌾',
-  gram: '🫘', chickpea: '🫘',
-  mustard: '🌿', sunflower: '🌻',
-  vegetables: '🥬', vegetable: '🥬',
-  onion: '🧅', tomato: '🍅',
-  jowar: '🌾', bajra: '🌾',
-  maize: '🌽', corn: '🌽',
-}
-
-function getCropEmoji(cropName, map) {
-  if (!cropName) return null
-  const key = cropName.toLowerCase().trim()
-  if (map[key]) return map[key]
-  // partial match
-  for (const [k, v] of Object.entries(map)) {
-    if (key.includes(k) || k.includes(key)) return v
-  }
-  return '🌱'  // generic fallback
-}
-
-function getCropSeasonEmojis(house) {
-  const parts = []
-  // Kharif crops 🌧️
-  if (house.kharif && house.kharif !== 'none' && house.kharif !== '-') {
-    const crops = house.kharif.split(/[,/&]+/).map(s => s.trim()).filter(Boolean)
-    const emojis = [...new Set(crops.map(c => getCropEmoji(c, KHARIF_EMOJI)))]
-    if (emojis.length) parts.push(...emojis, '🌧️')
-  }
-  // Rabi crops ❄️
-  if (house.rabi && house.rabi !== 'none' && house.rabi !== '-') {
-    const crops = house.rabi.split(/[,/&]+/).map(s => s.trim()).filter(Boolean)
-    const emojis = [...new Set(crops.map(c => getCropEmoji(c, RABI_EMOJI)))]
-    if (emojis.length) parts.push(...emojis, '❄️')
-  }
-  return parts
-}
-
-function buildHouseLabelText(house) {
-  const cropEmojis = getCropSeasonEmojis(house)
-  if (!cropEmojis.length) return null
-  return '🏠 ' + cropEmojis.join(' ')
-}
 
 // Problem metadata used for cluster analysis (emoji + plain-language text)
 const CLUSTER_PROBLEM_META = [
@@ -1098,10 +1060,9 @@ function updateZoomVisibility() {
       entity.show = showBuildings
     } else if (pointIds.has(entity.id)) {
       entity.show = !showBuildings   // points always on when buildings are off
-    } else if (cropLabelIds.has(entity.id)) {
-      entity.show = showBuildings    // crop labels only visible when zoomed in
     }
   })
+
 }
 
 function setupZoomListener() {
@@ -1249,7 +1210,6 @@ function buildEntities() {
   pointIds.clear()
   clusterIds.clear()
   clusterMap.clear()
-  cropLabelIds.clear()
   selectedCluster.value = null
 
   const selectedId       = selectedHouse.value?.familyId
@@ -1268,32 +1228,42 @@ function buildEntities() {
 
     const isSelected    = house.familyId === selectedId
     const isProblem     = hasProblemFilter && matchesAllProblems(house)
-
-    // When a problem filter is active, skip houses that don't match
-    // (keeps entity count low; selected house always shown)
-    if (hasProblemFilter && !isProblem && !isSelected) return
+    // Non-flagged houses are still rendered when a problem filter is active so
+    // the colorMode theme stays readable as context.  They are visually dimmed
+    // (lower alpha on wall) and de-emphasized in outline weight.
+    const isBackground  = hasProblemFilter && !isProblem && !isSelected
 
     if (isProblem) problemHouses.push(house)
 
     // ── Colour logic ──────────────────────────────────────────────────────────
-    // Selected → gold; problem match → forced red; normal → condition colour
+    // DESIGN RULE: colorMode ALWAYS controls roof color — it is never overridden.
+    // Problem filter adds a VISUAL OVERLAY (bright outlines + alert ring) on top
+    // so both signals are simultaneously readable:
+    //   Green roof  = good irrigation  |  red outline = also has no ration card
+    //   Orange roof = kharif-only crop |  red outline = flagged by problem filter
+    const conditionColor = cesiumColor(house)   // 80% of getConditionColor hex
+
+    // Roof: ALWAYS the colorMode condition color (selected = gold override only).
+    // Background (non-flagged) houses are dimmed to 40% alpha so flagged ones pop.
+    const roofAlpha = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
     const roofColor = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
-      : isProblem
-        ? Cesium.Color.fromCssColorString('#ef4444').withAlpha(1.0)
-        : cesiumColor(house).withAlpha(1.0)
+      : conditionColor.withAlpha(roofAlpha)   // problem filter does NOT change hue
 
+    // Wall: sandstone base; flagged houses get a vivid pale-red wall tint.
+    // Background houses are also dimmed to keep flagged ones dominant.
     const wallColor = isSelected
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#fca5a5').withAlpha(1.0)   // light red wall
-        : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(1.0)   // sandstone
+        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)  // pale red — flagged
+        : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
+    // Outline: flagged → vivid red; background → nearly invisible; normal → mortar
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-        : Cesium.Color.fromCssColorString('#7a6040').withAlpha(1.0)
+        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)   // vivid red ring
+        : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
 
     const footprint = 10
     const baseH     = 7
@@ -1319,10 +1289,13 @@ function buildEntities() {
         dimensions:   new Cesium.Cartesian3(footprint * 0.88, footprint * 0.88, roofH),
         material:     roofColor,
         outline:      true,
+        // Flagged roof gets a bright white edge so it stands out from background
         outlineColor: isSelected
           ? Cesium.Color.WHITE
-          : roofColor.darken(0.25, new Cesium.Color()),
-        outlineWidth: isSelected ? 2 : (isProblem ? 2 : 1.5),
+          : isProblem
+            ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
+            : roofColor.darken(0.25, new Cesium.Color()),
+        outlineWidth: isSelected ? 2.5 : (isProblem ? 2.5 : (isBackground ? 0.5 : 1.5)),
       },
     })
 
@@ -1331,10 +1304,14 @@ function buildEntities() {
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
       show: !showBuildings,
       point: {
-        pixelSize:       isSelected ? 13 : (isProblem ? 10 : 8),
-        color:           roofColor,
-        outlineColor:    isSelected ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(0.7),
-        outlineWidth:    isSelected ? 2 : (isProblem ? 2 : 1.5),
+        pixelSize:    isSelected ? 13 : isProblem ? 11 : isBackground ? 5 : 8,
+        color:        roofColor,
+        outlineColor: isSelected
+          ? Cesium.Color.WHITE
+          : isProblem
+            ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(0.9)
+            : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(isBackground ? 0.25 : 0.7),
+        outlineWidth:    isSelected ? 2 : (isProblem ? 2.5 : 1.5),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
     })
@@ -1353,35 +1330,8 @@ function buildEntities() {
     addClusterEntities(problemHouses)
   }
 
-  // ── Crop / Season emoji labels ───────────────────────────────────────────────
-  if (showCropLabels.value) {
-    houseList.forEach((house, idx) => {
-      const { lat, lng } = jittered[idx]
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-      const labelText = buildHouseLabelText(house)
-      if (!labelText) return
-
-      const labelEnt = viewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(lng, lat, 18),
-        label: {
-          text: labelText,
-          font: '13px sans-serif',
-          style: Cesium.LabelStyle.FILL,
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-          pixelOffset: new Cesium.Cartesian2(0, -4),
-          scaleByDistance: new Cesium.NearFarScalar(200, 1.2, 2000, 0.5),
-          translucencyByDistance: new Cesium.NearFarScalar(500, 1.0, 3000, 0.0),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          show: showBuildings,
-        },
-      })
-      cropLabelIds.add(labelEnt.id)
-    })
-  }
+  // Map stays clean by default — no permanent icons above houses.
+  // Data is surfaced through building color (colorMode) and click/hover tooltips.
 }
 
 // ── PDF download ──────────────────────────────────────────────────────────────
@@ -1499,7 +1449,6 @@ async function downloadPDF() {
 watch(colorMode,            () => { if (viewer) buildEntities() })
 watch(selectedHouse,        () => { if (viewer) buildEntities() })
 watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
-watch(showCropLabels,       () => { if (viewer) buildEntities() })
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 function clearRetryTimer() {
@@ -2046,10 +1995,47 @@ onUnmounted(() => {
 .empty-note { font-size: 0.73rem; color: #6b7280; line-height: 1.5; padding: 0.2rem 0; }
 
 /* ── Legend ── */
-.legend-item   { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.32rem; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
-.legend-text   { font-size: 0.7rem; color: #111827; font-weight: 500; }   /* dark, readable */
+.legend-item   { display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.38rem; }
+.legend-text   { font-size: 0.7rem; color: #111827; font-weight: 500; }
 .legend-note   { font-size: 0.62rem; color: #9ca3af; margin-top: 0.45rem; font-style: italic; }
+
+/* ── Mini 3D House Icon ─────────────────────────────────────────────────────
+   Mirrors the map's 3D block aesthetic: triangle roof (condition color) +
+   rectangular wall block (sandstone).  --mh-roof CSS variable drives color.
+   Two sizes: default (legend) and .mini-house-sm (issue pips, filter labels).
+────────────────────────────────────────────────────────────────────────── */
+.mini-house {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.28));
+}
+.mh-roof {
+  width: 0;
+  height: 0;
+  border-left:  8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 6px solid var(--mh-roof, #94a3b8);
+  transition: border-bottom-color 0.2s;
+}
+.mh-wall {
+  width: 12px;
+  height: 8px;
+  background: #c8a97e;   /* sandstone — matches map wall color */
+  border: 1px solid rgba(0,0,0,0.18);
+  box-shadow: inset 1px 0 0 rgba(255,255,255,0.18), 1px 1px 0 rgba(0,0,0,0.12);
+}
+/* Smaller variant for issue rows and problem filter labels */
+.mini-house-sm .mh-roof {
+  border-left-width:   6px;
+  border-right-width:  6px;
+  border-bottom-width: 5px;
+}
+.mini-house-sm .mh-wall {
+  width: 9px;
+  height: 6px;
+}
 
 /* ── Field Issues ── */
 .issue-row {
@@ -2060,7 +2046,7 @@ onUnmounted(() => {
 }
 .issue-row:hover  { background: #f9fafb; border-color: #e5e7eb; }
 .issue-row.active { background: #f0fdf4; border-color: #bbf7d0; }
-.issue-pip   { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+/* .issue-pip replaced by .mini-house-sm — see mini-house CSS block above */
 .issue-body  { flex: 1; min-width: 0; }
 .issue-top   { display: flex; align-items: baseline; gap: 0.3rem; margin-bottom: 0.2rem; }
 .issue-name  { font-size: 0.7rem; color: #111827; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2126,23 +2112,43 @@ onUnmounted(() => {
 .pie-pct  { font-size: 0.65rem; color: #111827; font-variant-numeric: tabular-nums; font-weight: 700; flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════
-   HOVER CARD
+   HOVER TOOLTIP (rich data popup)
 ═══════════════════════════════════════════════ */
 .hover-card {
   position: fixed; z-index: 300;
   background: #ffffff;
-  border: 1.5px solid #d1d5db;
-  border-radius: var(--radius);
-  padding: 0.6rem 0.85rem;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08);
+  border: 1.5px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem 0.5rem;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
   pointer-events: none;
-  min-width: 170px;
+  min-width: 210px;
+  max-width: 260px;
 }
-.hover-name { font-size: 0.82rem; font-weight: 700; color: #111827; margin-bottom: 0.35rem; }
-.hover-row  { display: flex; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.12rem; }
-.hr-key     { font-size: 0.66rem; color: #6b7280; }
-.hr-val     { font-size: 0.66rem; color: #111827; font-weight: 600; }
-.hover-hint { font-size: 0.61rem; color: #9ca3af; margin-top: 0.38rem; font-style: italic; border-top: 1px solid #e5e7eb; padding-top: 0.32rem; }
+/* Header */
+.hc-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.16rem; }
+.hc-name  { font-size: 0.82rem; font-weight: 700; color: #111827; line-height: 1.25; flex: 1; }
+.hc-badge {
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.03em;
+  padding: 2px 6px; border-radius: 999px; border: 1px solid; white-space: nowrap;
+  flex-shrink: 0;
+}
+.hc-loc { font-size: 0.63rem; color: #6b7280; margin-bottom: 0.42rem; }
+/* 2×2 status grid */
+.hc-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0.28rem 0.5rem; margin-bottom: 0.35rem;
+}
+.hc-cell { display: flex; align-items: center; gap: 0.28rem; min-width: 0; }
+.hc-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.22); }
+.hc-ck   { font-size: 0.59rem; color: #9ca3af; white-space: nowrap; }
+.hc-cv   { font-size: 0.65rem; font-weight: 600; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Crops row */
+.hc-crops { display: flex; align-items: baseline; gap: 0.3rem; font-size: 0.65rem; margin-bottom: 0.32rem; }
+.hc-crops .hc-ck { color: #9ca3af; }
+.hc-crops .hc-cv { color: #1f2937; font-weight: 600; }
+/* Footer hint */
+.hc-hint { font-size: 0.59rem; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 0.28rem; font-style: italic; }
 
 /* ═══════════════════════════════════════════════
    DETAIL PANEL (right slide-in)
@@ -2463,66 +2469,6 @@ onUnmounted(() => {
   font-style: italic;
 }
 
-/* ── Crop / Season Emoji Legend ──────────────────── */
-.crop-legend-card { border-top: 2px solid #a3e635; }
-
-.cl-section {
-  margin-bottom: 0.65rem;
-}
-.cl-section-title {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #4b5563;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.3rem;
-  padding-bottom: 0.2rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-.cl-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.18rem 0;
-  font-size: 0.69rem;
-}
-.cl-emoji {
-  font-size: 1rem;
-  line-height: 1;
-  flex-shrink: 0;
-  width: 1.4rem;
-  text-align: center;
-}
-.cl-text {
-  color: #374151;
-  line-height: 1.3;
-}
-.cl-example {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 0.45rem 0.55rem;
-  margin-bottom: 0.4rem;
-}
-.cl-example-box {
-  font-size: 1.2rem;
-  letter-spacing: 0.1em;
-  text-align: center;
-  margin: 0.25rem 0;
-}
-.cl-example-text {
-  font-size: 0.62rem;
-  color: #6b7280;
-  text-align: center;
-  line-height: 1.4;
-}
-.cl-tip {
-  font-size: 0.62rem;
-  color: #9ca3af;
-  font-style: italic;
-  line-height: 1.4;
-  margin-top: 0.2rem;
-}
 
 /* ═══════════════════════════════════════════════
    RESPONSIVE
