@@ -38,11 +38,14 @@ type PopulationEmploymentResponse struct {
 }
 
 type PopulationMapMarker struct {
-	Lat          float64 `json:"lat"`
-	Lng          float64 `json:"lng"`
-	HeadName     string  `json:"head_name"`
-	HouseNo      string  `json:"house_no"`
-	TotalMembers int     `json:"total_members"`
+	ExternalFamilyID string  `json:"external_family_id"`
+	HouseNo          string  `json:"house_no"`
+	HeadName         string  `json:"head_name"`
+	Lat              float64 `json:"lat"`
+	Lng              float64 `json:"lng"`
+	TotalMembers     int     `json:"total_members"`
+	MaleMembers      int     `json:"male_members"`
+	FemaleMembers    int     `json:"female_members"`
 }
 
 type PopulationMapInsightsResponse struct {
@@ -411,20 +414,30 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 
 	query := fmt.Sprintf(`
 		SELECT
-			f.LATITUDE AS lat,
-			f.LONGITUDE AS lng,
+			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), '') AS external_family_id,
+			COALESCE(CAST(f.HOUSE_NO AS CHAR), '') AS house_no,
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), '') AS head_name,
-			COALESCE(CAST(f.HOUSE_NO AS CHAR), '') AS house_no,
-			COUNT(fm.FAMILY_MEMBER_ID) AS total_members
+			f.LATITUDE AS lat,
+			f.LONGITUDE AS lng,
+			COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members
 		FROM FAMILY f
-		LEFT JOIN FAMILY_MEMBER fm ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		LEFT JOIN FAMILY_MEMBER fm ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		%s
-		GROUP BY f.EXTERNAL_FAMILY_ID, f.LATITUDE, f.LONGITUDE, f.HOUSE_NO, f.FIRST_NAME_HOUSEHOLD_HEAD, f.MIDDLE_NAME_HOUSEHOLD_HEAD, f.LAST_NAME_HOUSEHOLD_HEAD
-		ORDER BY f.EXTERNAL_FAMILY_ID
+		GROUP BY
+			f.EXTERNAL_FAMILY_ID,
+			f.HOUSE_NO,
+			f.FIRST_NAME_HOUSEHOLD_HEAD,
+			f.MIDDLE_NAME_HOUSEHOLD_HEAD,
+			f.LAST_NAME_HOUSEHOLD_HEAD,
+			f.LATITUDE,
+			f.LONGITUDE
+		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
 	`, where)
 
 	rows, err := h.DB.Query(query, args...)
@@ -437,7 +450,16 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 	markers := []PopulationMapMarker{}
 	for rows.Next() {
 		var marker PopulationMapMarker
-		if err := rows.Scan(&marker.Lat, &marker.Lng, &marker.HeadName, &marker.HouseNo, &marker.TotalMembers); err != nil {
+		if err := rows.Scan(
+			&marker.ExternalFamilyID,
+			&marker.HouseNo,
+			&marker.HeadName,
+			&marker.Lat,
+			&marker.Lng,
+			&marker.TotalMembers,
+			&marker.MaleMembers,
+			&marker.FemaleMembers,
+		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan population map marker", "detail": err.Error()})
 			return
 		}

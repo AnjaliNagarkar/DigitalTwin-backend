@@ -1,0 +1,1 @@
+import{_ as s,c as t,a as o,o as n}from"./index-pzpMI-ZT.js";const a={},r={class:"page"};function c(l,e){return n(),t("section",r,[...e[0]||(e[0]=[o("h1",null,"Population Registry",-1),o("p",null,"Population household registry will be shown here.",-1)])])}const _=s(a,[["render",c],["__scopeId","data-v-6f97dc30"]]);export{_ as default};

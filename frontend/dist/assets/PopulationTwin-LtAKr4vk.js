@@ -1,0 +1,1 @@
+import{_ as n,c as t,a as o,o as s}from"./index-pzpMI-ZT.js";const a={},c={class:"page"};function l(r,e){return s(),t("section",c,[...e[0]||(e[0]=[o("h1",null,"Population 3D Twin",-1),o("p",null,"Population 3D twin scene will be shown here.",-1)])])}const _=n(a,[["render",l],["__scopeId","data-v-fc70f275"]]);export{_ as default};

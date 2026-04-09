@@ -116,16 +116,16 @@
         <transition name="slide">
           <aside v-if="selectedMarker && viewMode === 'points'" class="detail-panel">
             <button class="panel-close" @click="selectedMarker = null">×</button>
-            <h3 class="panel-title">{{ selectedMarker.head_name || 'Household' }}</h3>
-            <div class="panel-id">House No: {{ selectedMarker.house_no || 'N/A' }}</div>
+            <h3 class="panel-title">Head: {{ selectedMarker.head_name || 'N/A' }}</h3>
+            <div class="panel-subtitle">House No: {{ selectedMarker.house_no || 'N/A' }}</div>
+            <div class="panel-id">
+              Members: {{ Number(selectedMarker.total_members || 0).toLocaleString() }}
+            </div>
             <div class="panel-grid">
               <div class="panel-stat" v-for="item in detailStats" :key="item.label">
                 <div class="panel-stat-label">{{ item.label }}</div>
                 <div class="panel-stat-value" :style="item.style || {}">{{ item.value }}</div>
               </div>
-            </div>
-            <div class="panel-coords">
-              {{ selectedMarker.lat.toFixed(6) }}, {{ selectedMarker.lng.toFixed(6) }}
             </div>
           </aside>
         </transition>
@@ -223,14 +223,20 @@ function pieStyle(segments) {
   return { background: `conic-gradient(${stops.join(', ')})` }
 }
 
-function markerRadius(totalMembers) {
-  return Math.max(5, Math.min(12, 4 + totalMembers * 0.35))
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
-function householdColor(totalMembers) {
-  if (totalMembers >= 8) return '#ef4444'
-  if (totalMembers >= 4) return '#f59e0b'
-  return '#0f766e'
+function buildTooltipContent(house) {
+  const houseNo = escapeHtml(house.house_no || 'N/A')
+  const headName = escapeHtml(house.head_name || '')
+  const members = Number(house.total_members || 0)
+  return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}`
 }
 
 function buildQueryParams() {
@@ -336,19 +342,25 @@ function renderMarkers() {
   selectedMarker.value = null
 
   markers.value.forEach((marker) => {
+    const markerStyle = {
+      radius: 6,
+      color: '#fff',
+      weight: 1.5,
+      opacity: 1,
+      fillColor: '#2c7a7b',
+      fillOpacity: 0.88,
+    }
+
     const circle = L.circleMarker([marker.lat, marker.lng], {
-      radius: markerRadius(marker.total_members),
-      color: '#0f172a',
-      weight: 1,
-      fillColor: householdColor(marker.total_members),
-      fillOpacity: 0.82,
+      ...markerStyle,
     })
 
-    circle.bindTooltip([
-      `<strong>${marker.head_name || 'Household'}</strong>`,
-      `House No: ${marker.house_no || 'N/A'}`,
-      `Family Members: ${marker.total_members.toLocaleString()}`,
-    ].join('<br/>'), { sticky: true, direction: 'top', opacity: 0.96 })
+    circle.bindTooltip(buildTooltipContent(marker), {
+      sticky: true,
+      direction: 'top',
+      opacity: 0.96,
+      className: 'map-tooltip',
+    })
 
     circle.on('click', () => {
       selectedMarker.value = marker
@@ -534,9 +546,9 @@ const detailStats = computed(() => {
   const marker = selectedMarker.value
   if (!marker) return []
   return [
-    { label: 'Members', value: marker.total_members.toLocaleString() },
-    { label: 'Latitude', value: marker.lat.toFixed(5) },
-    { label: 'Longitude', value: marker.lng.toFixed(5) },
+    { label: 'Members', value: Number(marker.total_members || 0).toLocaleString() },
+    { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
+    { label: 'Female', value: Number(marker.female_members || 0).toLocaleString() },
   ]
 })
 
@@ -879,6 +891,44 @@ onUnmounted(() => {
 .legend-name { color: var(--text-muted); }
 .legend-value { color: var(--text-body); font-variant-numeric: tabular-nums; }
 
+.family-list-wrap {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.family-list-title {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.35rem;
+}
+
+.family-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.family-list li {
+  font-size: 0.78rem;
+  color: var(--text-body);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.family-head {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.family-members {
+  color: var(--text-muted);
+}
+
 .map-shell {
   padding: 0 2rem 1.5rem;
   flex: 1;
@@ -943,6 +993,13 @@ onUnmounted(() => {
   padding-right: 2rem;
   color: #153023;
   font-size: 1.1rem;
+}
+
+.panel-subtitle {
+  margin-top: 0.2rem;
+  color: #637567;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .panel-id {
@@ -1134,5 +1191,29 @@ onUnmounted(() => {
   .detail-panel {
     width: calc(100% - 2rem);
   }
+}
+</style>
+
+<style>
+.map-tooltip {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--text-body) !important;
+  font-family: var(--font-body) !important;
+  font-size: 0.75rem !important;
+  padding: 0.5rem 0.75rem !important;
+  box-shadow: 0 4px 16px var(--shadow) !important;
+}
+
+.leaflet-popup-content-wrapper.map-tooltip,
+.leaflet-popup-tip.map-tooltip {
+  background: var(--bg-card) !important;
+  color: var(--text-body) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.leaflet-popup-content-wrapper.map-tooltip {
+  border-radius: 8px !important;
 }
 </style>
