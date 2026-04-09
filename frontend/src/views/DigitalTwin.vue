@@ -105,6 +105,10 @@
         <button class="ctrl-btn" :class="{ active: tileStyle === 'satellite' }" @click="toggleTile">
           {{ tileStyle === 'satellite' ? '🛰 Satellite' : '🗺 Street' }}
         </button>
+        <button class="ctrl-btn" :class="{ active: showCropLabels }" @click="showCropLabels = !showCropLabels"
+                title="Toggle crop & season emoji labels on each house">
+          🌾 Crops
+        </button>
 
         <!-- DOWNLOAD PDF -->
         <div class="dl-wrap" v-if="!loadingLiveData && filteredHouses.length">
@@ -189,6 +193,58 @@
               </div>
             </transition>
           </div>
+        </div>
+
+        <!-- PROBLEM FILTER -->
+        <div class="panel-card">
+          <div class="card-title">Problem Filter
+            <span class="card-title-sub">highlight on map</span>
+          </div>
+          <label class="pf-item" v-for="pf in PROBLEM_FILTER_META" :key="pf.key">
+            <input class="pf-check" type="checkbox" :value="pf.key" v-model="activeProblemFilters" />
+            <span class="pf-pip" :style="{ background: pf.color }"></span>
+            <span class="pf-label">{{ pf.label }}</span>
+            <span class="pf-count">{{ problemFilterStats[pf.key] }}</span>
+          </label>
+          <div class="pf-summary" v-if="activeProblemFilters.length">
+            <span><strong>{{ problemMatchCount }}</strong> flagged</span>
+            <button class="pf-clear-btn" @click="activeProblemFilters = []">✕ Clear</button>
+          </div>
+          <div class="pf-hint" v-else>
+            Select filters to highlight at-risk households and find high-need clusters on map
+          </div>
+        </div>
+
+        <!-- CROP / SEASON EMOJI LEGEND -->
+        <div class="panel-card crop-legend-card" v-if="showCropLabels">
+          <div class="card-title">🌾 Crop & Season Guide
+            <span class="card-title-sub">zoom in to see labels</span>
+          </div>
+          <div class="cl-section">
+            <div class="cl-section-title">🌧️ Kharif Season (Monsoon)</div>
+            <div class="cl-row"><span class="cl-emoji">🌾</span><span class="cl-text">Rice / Wheat / Jowar / Bajra</span></div>
+            <div class="cl-row"><span class="cl-emoji">🌽</span><span class="cl-text">Maize / Corn</span></div>
+            <div class="cl-row"><span class="cl-emoji">🎋</span><span class="cl-text">Sugarcane</span></div>
+            <div class="cl-row"><span class="cl-emoji">🌿</span><span class="cl-text">Cotton</span></div>
+            <div class="cl-row"><span class="cl-emoji">🫘</span><span class="cl-text">Soybean / Tur / Mung / Urad</span></div>
+            <div class="cl-row"><span class="cl-emoji">🥜</span><span class="cl-text">Groundnut / Peanut</span></div>
+            <div class="cl-row"><span class="cl-emoji">🥬</span><span class="cl-text">Vegetables</span></div>
+            <div class="cl-row"><span class="cl-emoji">🌱</span><span class="cl-text">Other crops</span></div>
+          </div>
+          <div class="cl-section">
+            <div class="cl-section-title">❄️ Rabi Season (Winter)</div>
+            <div class="cl-row"><span class="cl-emoji">🌾</span><span class="cl-text">Wheat / Jowar</span></div>
+            <div class="cl-row"><span class="cl-emoji">🫘</span><span class="cl-text">Gram / Chickpea</span></div>
+            <div class="cl-row"><span class="cl-emoji">🌿</span><span class="cl-text">Mustard</span></div>
+            <div class="cl-row"><span class="cl-emoji">🌻</span><span class="cl-text">Sunflower</span></div>
+            <div class="cl-row"><span class="cl-emoji">🥬</span><span class="cl-text">Vegetables</span></div>
+          </div>
+          <div class="cl-example">
+            <div class="cl-section-title">📖 Label Format</div>
+            <div class="cl-example-box">🏠 🌾 🌧️ ❄️ 🫘</div>
+            <div class="cl-example-text">House → Kharif crop → Kharif season → Rabi season → Rabi crop</div>
+          </div>
+          <div class="cl-tip">Labels appear only when zoomed in below 3,500m altitude</div>
         </div>
 
         <!-- AGRICULTURE DONUT CHARTS -->
@@ -285,6 +341,46 @@
         </div>
       </div>
     </transition>
+
+    <!-- CLUSTER SOLUTION PANEL -->
+    <transition name="slide">
+      <div v-if="selectedCluster" class="cluster-panel">
+        <button class="detail-close cluster-close" @click="selectedCluster = null">×</button>
+
+        <!-- Header -->
+        <div class="cluster-header">
+          <div class="cluster-badge">⚠ High Need Area</div>
+          <div class="cluster-count">
+            <strong>{{ selectedCluster.count }}</strong> households in this zone
+          </div>
+        </div>
+
+        <!-- Problems -->
+        <div class="cluster-section-title" v-if="selectedCluster.problems.length">
+          🔍 Main Issues Detected
+        </div>
+
+        <div class="cp-card" v-for="p in selectedCluster.problems" :key="p.key">
+          <div class="cp-top">
+            <span class="cp-emoji">{{ p.emoji }}</span>
+            <div class="cp-info">
+              <span class="cp-label">{{ p.label }}</span>
+              <span class="cp-stat">{{ p.count }} of {{ selectedCluster.count }} families ({{ p.pct }}%)</span>
+            </div>
+          </div>
+          <div class="cp-bar-track">
+            <div class="cp-bar-fill" :style="{ width: p.pct + '%' }"></div>
+          </div>
+          <div class="cp-action">💡 {{ p.action }}</div>
+          <p class="cp-solution">{{ p.solution }}</p>
+          <div class="cp-scheme">📋 {{ p.scheme }}</div>
+        </div>
+
+        <div class="cluster-ok" v-if="!selectedCluster.problems.length">
+          ✅ No major issues detected in this cluster based on current filters.
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -325,6 +421,9 @@ let viewer      = null
 const entityMap  = new Map()   // entityId → house
 const buildingIds = new Set()  // 3D box entity IDs
 const pointIds    = new Set()  // point beacon entity IDs
+const clusterIds   = new Set()  // High-Need cluster entity IDs
+const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
+const cropLabelIds = new Set()  // Crop/season emoji label entity IDs
 let retryTimer    = null
 let twinLoadSeq   = 0
 
@@ -467,6 +566,157 @@ const selectedVillageLabel = computed(() => {
   return villageOptions.value.find(v => String(v.id) === String(pendingVillage.value))?.name || 'All Villages'
 })
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Sanitation')
+
+// ── Problem Filter state ──────────────────────────────────────────────────────
+// Array of active problem keys; v-model on checkboxes drives buildEntities()
+const activeProblemFilters = ref([])
+
+// Static metadata — one entry per problem type
+const PROBLEM_FILTER_META = [
+  { key: 'noRationCard', label: 'No Ration Card', color: '#f97316' },
+  { key: 'noIrrigation', label: 'No Irrigation',  color: '#a78bfa' },
+  { key: 'noLand',       label: 'No Own Land',    color: '#ef4444' },
+]
+
+// Returns true if the house matches the given problem key
+function matchesProblemFilter(house, key) {
+  if (key === 'noRationCard') {
+    const r = (house.rationCard || '').toLowerCase().trim()
+    return !r || r === 'none' || r === 'na' || r === 'no ration card'
+  }
+  if (key === 'noIrrigation') return isRainFed(house)
+  if (key === 'noLand') {
+    const land = parseFloat(house.totalLand) || 0
+    const own  = (house.ownLand || '').toLowerCase()
+    return land <= 0 || own !== 'yes'
+  }
+  return false
+}
+
+// Returns true if house satisfies ALL active problem filters (AND logic)
+function matchesAllProblems(house) {
+  return activeProblemFilters.value.every(k => matchesProblemFilter(house, k))
+}
+
+// Per-key counts for the sidebar display
+const problemFilterStats = computed(() => {
+  const list = filteredHouses.value
+  return {
+    noRationCard: list.filter(h => matchesProblemFilter(h, 'noRationCard')).length,
+    noIrrigation: list.filter(h => matchesProblemFilter(h, 'noIrrigation')).length,
+    noLand:       list.filter(h => matchesProblemFilter(h, 'noLand')).length,
+  }
+})
+
+// Total households matching ALL active problem filters simultaneously
+const problemMatchCount = computed(() => {
+  if (!activeProblemFilters.value.length) return 0
+  return filteredHouses.value.filter(matchesAllProblems).length
+})
+
+// ── Cluster solution panel state ──────────────────────────────────────────────
+const selectedCluster = ref(null)  // { count, lat, lng, problems[] }
+
+// ── Crop / Season emoji visualization ─────────────────────────────────────────
+const showCropLabels = ref(false)
+
+// Map kharif/rabi crop names → emoji
+const KHARIF_EMOJI = {
+  rice: '🌾', paddy: '🌾', wheat: '🌾',
+  maize: '🌽', corn: '🌽',
+  sugarcane: '🎋', sugar: '🎋',
+  cotton: '🌿',
+  soybean: '🫘', soya: '🫘',
+  groundnut: '🥜', peanut: '🥜',
+  vegetables: '🥬', vegetable: '🥬',
+  onion: '🧅', tomato: '🍅', chilly: '🌶️', chilli: '🌶️',
+  jowar: '🌾', bajra: '🌾', tur: '🫘', mung: '🫘', urad: '🫘',
+}
+const RABI_EMOJI = {
+  wheat: '🌾', rice: '🌾',
+  gram: '🫘', chickpea: '🫘',
+  mustard: '🌿', sunflower: '🌻',
+  vegetables: '🥬', vegetable: '🥬',
+  onion: '🧅', tomato: '🍅',
+  jowar: '🌾', bajra: '🌾',
+  maize: '🌽', corn: '🌽',
+}
+
+function getCropEmoji(cropName, map) {
+  if (!cropName) return null
+  const key = cropName.toLowerCase().trim()
+  if (map[key]) return map[key]
+  // partial match
+  for (const [k, v] of Object.entries(map)) {
+    if (key.includes(k) || k.includes(key)) return v
+  }
+  return '🌱'  // generic fallback
+}
+
+function getCropSeasonEmojis(house) {
+  const parts = []
+  // Kharif crops 🌧️
+  if (house.kharif && house.kharif !== 'none' && house.kharif !== '-') {
+    const crops = house.kharif.split(/[,/&]+/).map(s => s.trim()).filter(Boolean)
+    const emojis = [...new Set(crops.map(c => getCropEmoji(c, KHARIF_EMOJI)))]
+    if (emojis.length) parts.push(...emojis, '🌧️')
+  }
+  // Rabi crops ❄️
+  if (house.rabi && house.rabi !== 'none' && house.rabi !== '-') {
+    const crops = house.rabi.split(/[,/&]+/).map(s => s.trim()).filter(Boolean)
+    const emojis = [...new Set(crops.map(c => getCropEmoji(c, RABI_EMOJI)))]
+    if (emojis.length) parts.push(...emojis, '❄️')
+  }
+  return parts
+}
+
+function buildHouseLabelText(house) {
+  const cropEmojis = getCropSeasonEmojis(house)
+  if (!cropEmojis.length) return null
+  return '🏠 ' + cropEmojis.join(' ')
+}
+
+// Problem metadata used for cluster analysis (emoji + plain-language text)
+const CLUSTER_PROBLEM_META = [
+  {
+    key:      'noRationCard',
+    label:    'No Ration Card',
+    emoji:    '🪪',
+    action:   'Organise a ration card enrollment camp in this area',
+    solution: 'Families can visit the local Gram Panchayat office with their Aadhaar card to enroll under the National Food Security Act and get subsidised food grains.',
+    scheme:   'National Food Security Act (NFSA)',
+  },
+  {
+    key:      'noIrrigation',
+    label:    'No Irrigation',
+    emoji:    '💧',
+    action:   'Run an irrigation subsidy camp for this cluster',
+    solution: 'Households can apply for free drip or sprinkler irrigation at the District Agriculture Office. Government pays up to 90% of the cost — families pay very little.',
+    scheme:   'PMKSY – Pradhan Mantri Krishi Sinchai Yojana',
+  },
+  {
+    key:      'noLand',
+    label:    'No Own Land',
+    emoji:    '🌾',
+    action:   'Connect families with lease farming and livelihood groups',
+    solution: 'Landless families can join Farmer Producer Organisations (FPOs) for shared lease farming, pooled resources, and stable income — no land ownership required.',
+    scheme:   'PM-FME / NRLM via Gram Panchayat',
+  },
+]
+
+// Analyse the houses inside a cluster → top 2 problems with counts + solutions
+function analyzeCluster(houseList) {
+  const total = houseList.length
+  return CLUSTER_PROBLEM_META
+    .map(meta => ({
+      ...meta,
+      count: houseList.filter(h => matchesProblemFilter(h, meta.key)).length,
+    }))
+    .filter(p => p.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 2)
+    .map(p => ({ ...p, pct: Math.round((p.count / total) * 100) }))
+}
 
 // When filter changes, rebuild entities and fly to filtered data
 watch(filteredHouses, (newHouses) => {
@@ -848,6 +1098,8 @@ function updateZoomVisibility() {
       entity.show = showBuildings
     } else if (pointIds.has(entity.id)) {
       entity.show = !showBuildings   // points always on when buildings are off
+    } else if (cropLabelIds.has(entity.id)) {
+      entity.show = showBuildings    // crop labels only visible when zoomed in
     }
   })
 }
@@ -891,6 +1143,103 @@ function computeJitteredPositions(houseList) {
   return out
 }
 
+// ── Haversine distance (metres) ───────────────────────────────────────────────
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R  = 6_371_000
+  const φ1 = (lat1 * Math.PI) / 180
+  const φ2 = (lat2 * Math.PI) / 180
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180
+  const a  = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Group problem houses that lie within RADIUS_M of each other.
+// Returns clusters with ≥ MIN_SIZE members only (centroid + count).
+function computeProblemClusters(houseList) {
+  const RADIUS_M = 300
+  const MIN_SIZE = 5
+  const visited  = new Set()
+  const clusters = []
+
+  houseList.forEach((h, i) => {
+    if (!Number.isFinite(h.latitude) || !Number.isFinite(h.longitude)) return
+    if (visited.has(i)) return
+    const group = [i]
+    visited.add(i)
+    houseList.forEach((h2, j) => {
+      if (visited.has(j) || !Number.isFinite(h2.latitude) || !Number.isFinite(h2.longitude)) return
+      if (haversineM(h.latitude, h.longitude, h2.latitude, h2.longitude) <= RADIUS_M) {
+        group.push(j)
+        visited.add(j)
+      }
+    })
+    if (group.length >= MIN_SIZE) {
+      const lat    = group.reduce((s, idx) => s + houseList[idx].latitude,  0) / group.length
+      const lng    = group.reduce((s, idx) => s + houseList[idx].longitude, 0) / group.length
+      const houses = group.map(idx => houseList[idx])   // actual house objects for analysis
+      clusters.push({ lat, lng, count: group.length, houses })
+    }
+  })
+
+  return clusters
+}
+
+// Draw a translucent red circle + "High Need Area" label for each cluster.
+// Also registers each entity in clusterMap so clicks can open the solution panel.
+function addClusterEntities(problemHouses) {
+  clusterMap.clear()
+  const clusters = computeProblemClusters(problemHouses)
+
+  clusters.forEach(({ lat, lng, count, houses }) => {
+    const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 0)
+
+    // Pre-analyse once so the click handler doesn't redo work
+    const problems = analyzeCluster(houses)
+    const clusterData = { count, lat, lng, problems }
+
+    const circleEnt = viewer.entities.add({
+      position: pos,
+      show: true,
+      ellipse: {
+        semiMajorAxis:   130,
+        semiMinorAxis:   130,
+        material:        Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.15),
+        outline:         true,
+        outlineColor:    Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.75),
+        outlineWidth:    2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    })
+
+    const labelEnt = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, 35),
+      show: true,
+      label: {
+        text:             `⚠ High Need Area\n${count} households`,
+        font:             '600 12px system-ui, sans-serif',
+        fillColor:        Cesium.Color.WHITE,
+        outlineColor:     Cesium.Color.fromCssColorString('#7f1d1d'),
+        outlineWidth:     2,
+        style:            Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin:   Cesium.VerticalOrigin.BOTTOM,
+        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        pixelOffset:      new Cesium.Cartesian2(0, -6),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        showBackground:   true,
+        backgroundColor:  Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.88),
+        backgroundPadding: new Cesium.Cartesian2(8, 5),
+      },
+    })
+
+    // Register both entities so either can be clicked to open the panel
+    clusterIds.add(circleEnt.id)
+    clusterIds.add(labelEnt.id)
+    clusterMap.set(circleEnt.id, clusterData)
+    clusterMap.set(labelEnt.id,  clusterData)
+  })
+}
+
 // ── Build Cesium entities ─────────────────────────────────────────────────────
 function buildEntities() {
   if (!viewer) return
@@ -898,32 +1247,53 @@ function buildEntities() {
   entityMap.clear()
   buildingIds.clear()
   pointIds.clear()
+  clusterIds.clear()
+  clusterMap.clear()
+  cropLabelIds.clear()
+  selectedCluster.value = null
 
-  const selectedId    = selectedHouse.value?.familyId
-  const camH          = viewer.camera.positionCartographic?.height ?? cameraHeight.value
-  const showBuildings = camH < THRESHOLD_BUILDINGS
-  const houseList     = filteredHouses.value
-  const jittered      = computeJitteredPositions(houseList)
+  const selectedId       = selectedHouse.value?.familyId
+  const camH             = viewer.camera.positionCartographic?.height ?? cameraHeight.value
+  const showBuildings    = camH < THRESHOLD_BUILDINGS
+  const houseList        = filteredHouses.value
+  const jittered         = computeJitteredPositions(houseList)
+  const hasProblemFilter = activeProblemFilters.value.length > 0
+
+  // Collect problem-matched houses for cluster analysis after the loop
+  const problemHouses = []
 
   houseList.forEach((house, idx) => {
     const { lat, lng } = jittered[idx]
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
 
-    const isSelected = house.familyId === selectedId
+    const isSelected    = house.familyId === selectedId
+    const isProblem     = hasProblemFilter && matchesAllProblems(house)
 
-    // Roof: condition color at full opacity; selected = gold
+    // When a problem filter is active, skip houses that don't match
+    // (keeps entity count low; selected house always shown)
+    if (hasProblemFilter && !isProblem && !isSelected) return
+
+    if (isProblem) problemHouses.push(house)
+
+    // ── Colour logic ──────────────────────────────────────────────────────────
+    // Selected → gold; problem match → forced red; normal → condition colour
     const roofColor = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
-      : cesiumColor(house).withAlpha(1.0)
+      : isProblem
+        ? Cesium.Color.fromCssColorString('#ef4444').withAlpha(1.0)
+        : cesiumColor(house).withAlpha(1.0)
 
-    // Wall: warm sandstone — opaque, realistic, dark enough to read outlines
     const wallColor = isSelected
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
-      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(1.0)
+      : isProblem
+        ? Cesium.Color.fromCssColorString('#fca5a5').withAlpha(1.0)   // light red wall
+        : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(1.0)   // sandstone
 
     const wallOutline = isSelected
-      ? Cesium.Color.fromCssColorString('#f59e0b')
-      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(1.0)
+      ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
+      : isProblem
+        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
+        : Cesium.Color.fromCssColorString('#7a6040').withAlpha(1.0)
 
     const footprint = 10
     const baseH     = 7
@@ -938,7 +1308,7 @@ function buildEntities() {
         material:     wallColor,
         outline:      true,
         outlineColor: wallOutline,
-        outlineWidth: isSelected ? 2 : 1.5,
+        outlineWidth: isSelected ? 2 : (isProblem ? 2 : 1.5),
       },
     })
 
@@ -952,7 +1322,7 @@ function buildEntities() {
         outlineColor: isSelected
           ? Cesium.Color.WHITE
           : roofColor.darken(0.25, new Cesium.Color()),
-        outlineWidth: isSelected ? 2 : 1.5,
+        outlineWidth: isSelected ? 2 : (isProblem ? 2 : 1.5),
       },
     })
 
@@ -961,10 +1331,10 @@ function buildEntities() {
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
       show: !showBuildings,
       point: {
-        pixelSize:       isSelected ? 13 : 8,
+        pixelSize:       isSelected ? 13 : (isProblem ? 10 : 8),
         color:           roofColor,
         outlineColor:    isSelected ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(0.7),
-        outlineWidth:    isSelected ? 2 : 1.5,
+        outlineWidth:    isSelected ? 2 : (isProblem ? 2 : 1.5),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
     })
@@ -977,6 +1347,41 @@ function buildEntities() {
     entityMap.set(roofEnt.id, house)
     entityMap.set(ptEnt.id,   house)
   })
+
+  // Add High-Need Area cluster markers when problem filters are active
+  if (hasProblemFilter && problemHouses.length >= 5) {
+    addClusterEntities(problemHouses)
+  }
+
+  // ── Crop / Season emoji labels ───────────────────────────────────────────────
+  if (showCropLabels.value) {
+    houseList.forEach((house, idx) => {
+      const { lat, lng } = jittered[idx]
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+      const labelText = buildHouseLabelText(house)
+      if (!labelText) return
+
+      const labelEnt = viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 18),
+        label: {
+          text: labelText,
+          font: '13px sans-serif',
+          style: Cesium.LabelStyle.FILL,
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, -4),
+          scaleByDistance: new Cesium.NearFarScalar(200, 1.2, 2000, 0.5),
+          translucencyByDistance: new Cesium.NearFarScalar(500, 1.0, 3000, 0.0),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          show: showBuildings,
+        },
+      })
+      cropLabelIds.add(labelEnt.id)
+    })
+  }
 }
 
 // ── PDF download ──────────────────────────────────────────────────────────────
@@ -1091,8 +1496,10 @@ async function downloadPDF() {
 }
 
 // ── Watchers ──────────────────────────────────────────────────────────────────
-watch(colorMode,     () => { if (viewer) buildEntities() })
-watch(selectedHouse, () => { if (viewer) buildEntities() })
+watch(colorMode,            () => { if (viewer) buildEntities() })
+watch(selectedHouse,        () => { if (viewer) buildEntities() })
+watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
+watch(showCropLabels,       () => { if (viewer) buildEntities() })
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 function clearRetryTimer() {
@@ -1182,14 +1589,31 @@ onMounted(async () => {
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-42), roll: 0 },
     })
 
-    // Click → select
+    // Click → select house OR open cluster solution panel
     viewer.screenSpaceEventHandler.setInputAction((e) => {
       const picked = viewer.scene.pick(e.position)
       if (Cesium.defined(picked) && picked.id) {
-        const house = entityMap.get(picked.id.id)
-        if (house) { selectedHouse.value = house; return }
+        const entityId = picked.id.id
+
+        // House entity → open detail panel
+        const house = entityMap.get(entityId)
+        if (house) {
+          selectedHouse.value   = house
+          selectedCluster.value = null
+          return
+        }
+
+        // Cluster entity → open solution panel
+        const cluster = clusterMap.get(entityId)
+        if (cluster) {
+          selectedCluster.value = cluster
+          selectedHouse.value   = null
+          return
+        }
       }
-      selectedHouse.value = null
+      // Clicked empty space → clear both
+      selectedHouse.value   = null
+      selectedCluster.value = null
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
     // Double-click → zoom
@@ -1835,6 +2259,270 @@ onUnmounted(() => {
 .drawer-enter-active { transition: all 0.18s ease-out; }
 .drawer-leave-active { transition: all 0.1s ease-in; }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* ═══════════════════════════════════════════════
+   CLUSTER SOLUTION PANEL
+═══════════════════════════════════════════════ */
+.cluster-panel {
+  position: absolute;
+  right: 0.75rem;
+  top: 60px;
+  width: 292px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  z-index: 100;
+  background: #ffffff;
+  border: 1.5px solid #fca5a5;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(239,68,68,0.14), 0 3px 8px rgba(0,0,0,0.07);
+  scrollbar-width: thin;
+  scrollbar-color: #fca5a5 transparent;
+}
+
+.cluster-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+}
+
+.cluster-header {
+  padding: 1rem 1rem 0.7rem;
+  background: linear-gradient(135deg, #fef2f2 0%, #fff7f7 100%);
+  border-bottom: 1.5px solid #fecaca;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.cluster-badge {
+  display: inline-block;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.42rem;
+}
+
+.cluster-count {
+  font-size: 0.82rem;
+  color: #374151;
+  line-height: 1.3;
+}
+.cluster-count strong { color: #ef4444; font-size: 1.1rem; }
+
+.cluster-section-title {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #374151;
+  padding: 0.75rem 1rem 0.3rem;
+}
+
+/* Individual problem card */
+.cp-card {
+  margin: 0 0.75rem 0.65rem;
+  padding: 0.65rem 0.7rem;
+  background: #fafafa;
+  border: 1.5px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid #ef4444;
+}
+
+.cp-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+.cp-emoji { font-size: 1.25rem; flex-shrink: 0; line-height: 1.2; }
+.cp-info  { flex: 1; min-width: 0; }
+.cp-label { display: block; font-size: 0.8rem; font-weight: 700; color: #111827; }
+.cp-stat  { font-size: 0.66rem; color: #6b7280; margin-top: 0.1rem; display: block; }
+
+.cp-bar-track {
+  height: 5px;
+  background: #f3f4f6;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.52rem;
+}
+.cp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444, #f87171);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.cp-action {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 0.3rem;
+}
+.cp-solution {
+  font-size: 0.72rem;
+  color: #374151;
+  line-height: 1.55;
+  margin: 0 0 0.38rem;
+}
+.cp-scheme {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #6b7280;
+  padding: 0.18rem 0.48rem;
+  border: 1.5px solid #d1d5db;
+  border-radius: 4px;
+  display: inline-block;
+  background: #ffffff;
+}
+
+.cluster-ok {
+  font-size: 0.73rem;
+  color: #15803d;
+  padding: 0.75rem 1rem 1rem;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════
+   PROBLEM FILTER PANEL
+═══════════════════════════════════════════════ */
+.pf-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.25rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s;
+  margin-bottom: 0.18rem;
+}
+.pf-item:hover { background: #f9fafb; }
+
+.pf-check {
+  width: 13px; height: 13px;
+  accent-color: #ef4444;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pf-pip {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.pf-label {
+  flex: 1;
+  font-size: 0.72rem;
+  color: #111827;
+  font-weight: 500;
+}
+.pf-count {
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  background: #f3f4f6;
+  padding: 0.06rem 0.4rem;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.pf-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  color: #dc2626;
+}
+.pf-summary strong { color: #dc2626; }
+
+.pf-clear-btn {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pf-clear-btn:hover { background: #dc2626; }
+
+.pf-hint {
+  font-size: 0.64rem;
+  color: #9ca3af;
+  line-height: 1.5;
+  margin-top: 0.45rem;
+  font-style: italic;
+}
+
+/* ── Crop / Season Emoji Legend ──────────────────── */
+.crop-legend-card { border-top: 2px solid #a3e635; }
+
+.cl-section {
+  margin-bottom: 0.65rem;
+}
+.cl-section-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.cl-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.18rem 0;
+  font-size: 0.69rem;
+}
+.cl-emoji {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 1.4rem;
+  text-align: center;
+}
+.cl-text {
+  color: #374151;
+  line-height: 1.3;
+}
+.cl-example {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  margin-bottom: 0.4rem;
+}
+.cl-example-box {
+  font-size: 1.2rem;
+  letter-spacing: 0.1em;
+  text-align: center;
+  margin: 0.25rem 0;
+}
+.cl-example-text {
+  font-size: 0.62rem;
+  color: #6b7280;
+  text-align: center;
+  line-height: 1.4;
+}
+.cl-tip {
+  font-size: 0.62rem;
+  color: #9ca3af;
+  font-style: italic;
+  line-height: 1.4;
+  margin-top: 0.2rem;
+}
 
 /* ═══════════════════════════════════════════════
    RESPONSIVE
