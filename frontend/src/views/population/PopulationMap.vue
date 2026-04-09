@@ -58,6 +58,7 @@
           <select v-model="colorMode" class="control-select">
             <option value="population_density">Population Density</option>
             <option value="bpl_status">BPL Status</option>
+            <option value="divyang_presence">Divyang Presence</option>
             <option value="literacy">Literacy</option>
             <option value="working_population">Working Population</option>
           </select>
@@ -232,10 +233,69 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;')
 }
 
+function normalizeText(value) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function parseIncomeValue(value) {
+  const numeric = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function getBplStatusLabel(house) {
+  const category = normalizeText(house.FAMILY_BELONG_BPL_CATEGORY)
+  if (category) {
+    if (category.includes('non-bpl') || category === 'no' || category === 'apl' || category.includes('above poverty')) {
+      return 'Non-BPL'
+    }
+    if (category.includes('bpl') || category === 'yes') {
+      return 'BPL'
+    }
+  }
+
+  const rationCardType = normalizeText(house.RATION_CARD_TYPE)
+  if (rationCardType.includes('bpl') || rationCardType.includes('aay') || rationCardType.includes('antyodaya')) {
+    return 'BPL'
+  }
+
+  const annualIncome = parseIncomeValue(house.ANNUAL_INCOME)
+  if (annualIncome !== null && annualIncome < 100000) {
+    return 'BPL'
+  }
+
+  return 'Non-BPL'
+}
+
+function getBplColor(house) {
+  return getBplStatusLabel(house) === 'BPL' ? '#e53935' : '#2e7d32'
+}
+
+function hasDivyangPresence(house) {
+  return Number(house.has_disability || 0) === 1
+}
+
+function getDivyangStatusLabel(house) {
+  return hasDivyangPresence(house) ? 'Yes' : 'No'
+}
+
+function getDivyangColor(house) {
+  return hasDivyangPresence(house) ? '#7b1fa2' : '#2e7d32'
+}
+
+function getMarkerColor(house) {
+  if (colorMode.value === 'bpl_status') return getBplColor(house)
+  if (colorMode.value === 'divyang_presence') return getDivyangColor(house)
+  return '#2c7a7b'
+}
+
 function buildTooltipContent(house) {
   const houseNo = escapeHtml(house.house_no || 'N/A')
   const headName = escapeHtml(house.head_name || '')
   const members = Number(house.total_members || 0)
+  if (colorMode.value === 'bpl_status') {
+    const category = escapeHtml(getBplStatusLabel(house))
+    return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}<br/>Category: ${category}`
+  }
   return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}`
 }
 
@@ -244,6 +304,8 @@ function buildQueryParams() {
   if (selectedDistrict.value) params.district_id = selectedDistrict.value
   if (selectedTaluka.value) params.taluka_id = selectedTaluka.value
   if (selectedVillage.value) params.village_id = selectedVillage.value
+  if (colorMode.value === 'bpl_status') params.color_by = 'bpl'
+  if (colorMode.value === 'divyang_presence') params.color_by = 'divyang'
   return params
 }
 
@@ -335,24 +397,23 @@ function clearMarkerLayer() {
   }
 }
 
-function renderMarkers() {
+function renderMarkers(options = {}) {
+  const { fitBounds = true } = options
   if (!map || !markerLayer) return
 
   clearMarkerLayer()
   selectedMarker.value = null
 
   markers.value.forEach((marker) => {
-    const markerStyle = {
-      radius: 6,
-      color: '#fff',
-      weight: 1.5,
-      opacity: 1,
-      fillColor: '#2c7a7b',
-      fillOpacity: 0.88,
-    }
+    const markerColor = getMarkerColor(marker)
 
     const circle = L.circleMarker([marker.lat, marker.lng], {
-      ...markerStyle,
+      radius: 8,
+      fillColor: markerColor,
+      color: '#ffffff',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9,
     })
 
     circle.bindTooltip(buildTooltipContent(marker), {
@@ -370,7 +431,9 @@ function renderMarkers() {
     circle.addTo(markerLayer)
   })
 
-  fitMapToMarkers()
+  if (fitBounds) {
+    fitMapToMarkers()
+  }
 }
 
 function fitMapToMarkers() {
@@ -545,18 +608,44 @@ const analyticsCards = computed(() => {
 const detailStats = computed(() => {
   const marker = selectedMarker.value
   if (!marker) return []
+
+  if (colorMode.value === 'divyang_presence') {
+    return [
+      { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
+      { label: 'Female', value: Number(marker.female_members || 0).toLocaleString() },
+      { label: 'Disability', value: getDivyangStatusLabel(marker), style: { color: getDivyangColor(marker) } },
+    ]
+  }
+
   return [
+    { label: 'Category', value: getBplStatusLabel(marker), style: { color: getBplColor(marker) } },
     { label: 'Members', value: Number(marker.total_members || 0).toLocaleString() },
     { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
     { label: 'Female', value: Number(marker.female_members || 0).toLocaleString() },
   ]
 })
 
-const headerLegend = computed(() => ([
-  { color: '#ef4444', label: 'BPL households' },
-  { color: '#0f766e', label: 'Literate population' },
-  { color: '#16a34a', label: 'Working population' },
-]))
+const headerLegend = computed(() => {
+  if (colorMode.value === 'divyang_presence') {
+    return [
+      { color: '#7b1fa2', label: 'Divyang present' },
+      { color: '#2e7d32', label: 'No disability' },
+    ]
+  }
+
+  if (colorMode.value === 'bpl_status') {
+    return [
+      { color: '#e53935', label: 'BPL households' },
+      { color: '#2e7d32', label: 'Non-BPL households' },
+    ]
+  }
+
+  return [
+    { color: '#ef4444', label: 'BPL households' },
+    { color: '#0f766e', label: 'Literate population' },
+    { color: '#16a34a', label: 'Working population' },
+  ]
+})
 
 function setViewMode(mode) {
   viewMode.value = mode
@@ -588,6 +677,13 @@ watch(selectedDistrict, async () => {
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
   await loadLocationOptions()
+})
+
+watch(colorMode, () => {
+  if (!map) return
+  if (viewMode.value === 'points') {
+    renderMarkers({ fitBounds: false })
+  }
 })
 
 onMounted(async () => {

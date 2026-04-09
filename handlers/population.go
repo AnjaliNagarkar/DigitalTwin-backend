@@ -38,14 +38,18 @@ type PopulationEmploymentResponse struct {
 }
 
 type PopulationMapMarker struct {
-	ExternalFamilyID string  `json:"external_family_id"`
-	HouseNo          string  `json:"house_no"`
-	HeadName         string  `json:"head_name"`
-	Lat              float64 `json:"lat"`
-	Lng              float64 `json:"lng"`
-	TotalMembers     int     `json:"total_members"`
-	MaleMembers      int     `json:"male_members"`
-	FemaleMembers    int     `json:"female_members"`
+	ExternalFamilyID        string  `json:"external_family_id"`
+	HouseNo                 string  `json:"house_no"`
+	HeadName                string  `json:"head_name"`
+	Lat                     float64 `json:"lat"`
+	Lng                     float64 `json:"lng"`
+	TotalMembers            int     `json:"total_members"`
+	MaleMembers             int     `json:"male_members"`
+	FemaleMembers           int     `json:"female_members"`
+	HasDisability           int     `json:"has_disability"`
+	FamilyBelongBPLCategory string  `json:"FAMILY_BELONG_BPL_CATEGORY"`
+	RationCardType          string  `json:"RATION_CARD_TYPE"`
+	AnnualIncome            string  `json:"ANNUAL_INCOME"`
 }
 
 type PopulationMapInsightsResponse struct {
@@ -408,6 +412,13 @@ func (h *PopulationHandler) buildPopulationFamilyFilters(alias string, c *gin.Co
 // It returns household markers and total member counts for the population map.
 func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 	log.Println("[SELECT] GET /population/map-data")
+	colorBy := strings.TrimSpace(c.Query("color_by"))
+	if strings.EqualFold(colorBy, "bpl") {
+		log.Println("[SELECT] population map color mode: bpl")
+	}
+	if strings.EqualFold(colorBy, "divyang") {
+		log.Println("[SELECT] population map color mode: divyang")
+	}
 
 	where, args := h.buildPopulationFamilyFilters("f", c)
 	where = fmt.Sprintf("WHERE f.LATITUDE IS NOT NULL AND f.LONGITUDE IS NOT NULL AND f.LATITUDE != 0 AND f.LONGITUDE != 0 AND %s", where)
@@ -423,6 +434,16 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			)), '') AS head_name,
 			f.LATITUDE AS lat,
 			f.LONGITUDE AS lng,
+			MAX(CASE
+				WHEN UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+					OR NULLIF(TRIM(COALESCE(fm.DISABILITY, '')), '') IS NOT NULL
+					OR NULLIF(TRIM(COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR), '')), '') IS NOT NULL
+				THEN 1
+				ELSE 0
+			END) AS has_disability,
+			COALESCE(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, '')), '') AS FAMILY_BELONG_BPL_CATEGORY,
+			COALESCE(TRIM(COALESCE(f.RATION_CARD_TYPE, '')), '') AS RATION_CARD_TYPE,
+			COALESCE(TRIM(CAST(f.ANNUAL_INCOME AS CHAR)), '') AS ANNUAL_INCOME,
 			COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
 			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
 			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members
@@ -436,7 +457,10 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			f.MIDDLE_NAME_HOUSEHOLD_HEAD,
 			f.LAST_NAME_HOUSEHOLD_HEAD,
 			f.LATITUDE,
-			f.LONGITUDE
+			f.LONGITUDE,
+			f.FAMILY_BELONG_BPL_CATEGORY,
+			f.RATION_CARD_TYPE,
+			f.ANNUAL_INCOME
 		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
 	`, where)
 
@@ -456,6 +480,10 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.HeadName,
 			&marker.Lat,
 			&marker.Lng,
+			&marker.HasDisability,
+			&marker.FamilyBelongBPLCategory,
+			&marker.RationCardType,
+			&marker.AnnualIncome,
 			&marker.TotalMembers,
 			&marker.MaleMembers,
 			&marker.FemaleMembers,
