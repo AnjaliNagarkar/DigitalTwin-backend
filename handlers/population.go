@@ -38,18 +38,23 @@ type PopulationEmploymentResponse struct {
 }
 
 type PopulationMapMarker struct {
-	ExternalFamilyID        string  `json:"external_family_id"`
-	HouseNo                 string  `json:"house_no"`
-	HeadName                string  `json:"head_name"`
-	Lat                     float64 `json:"lat"`
-	Lng                     float64 `json:"lng"`
-	TotalMembers            int     `json:"total_members"`
-	MaleMembers             int     `json:"male_members"`
-	FemaleMembers           int     `json:"female_members"`
-	HasDisability           int     `json:"has_disability"`
-	FamilyBelongBPLCategory string  `json:"FAMILY_BELONG_BPL_CATEGORY"`
-	RationCardType          string  `json:"RATION_CARD_TYPE"`
-	AnnualIncome            string  `json:"ANNUAL_INCOME"`
+	ExternalFamilyID        string   `json:"external_family_id"`
+	HouseNo                 string   `json:"house_no"`
+	HeadName                string   `json:"head_name"`
+	Lat                     float64  `json:"lat"`
+	Lng                     float64  `json:"lng"`
+	TotalMembers            int      `json:"total_members"`
+	MaleMembers             int      `json:"male_members"`
+	FemaleMembers           int      `json:"female_members"`
+	WorkingMembers          int      `json:"working_members"`
+	NonWorkingMembers       int      `json:"non_working_members"`
+	WorkingOccupations      string   `json:"working_occupations"`
+	OccupationListRaw       string   `json:"occupation_list"`
+	OccupationList          []string `json:"occupation_list_array"`
+	HasDisability           int      `json:"has_disability"`
+	FamilyBelongBPLCategory string   `json:"FAMILY_BELONG_BPL_CATEGORY"`
+	RationCardType          string   `json:"RATION_CARD_TYPE"`
+	AnnualIncome            string   `json:"ANNUAL_INCOME"`
 }
 
 type PopulationMapInsightsResponse struct {
@@ -419,6 +424,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 	if strings.EqualFold(colorBy, "divyang") {
 		log.Println("[SELECT] population map color mode: divyang")
 	}
+	if strings.EqualFold(colorBy, "employment") {
+		log.Println("[SELECT] population map color mode: employment")
+	}
 
 	where, args := h.buildPopulationFamilyFilters("f", c)
 	where = fmt.Sprintf("WHERE f.LATITUDE IS NOT NULL AND f.LONGITUDE IS NOT NULL AND f.LATITUDE != 0 AND f.LONGITUDE != 0 AND %s", where)
@@ -434,33 +442,78 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			)), '') AS head_name,
 			f.LATITUDE AS lat,
 			f.LONGITUDE AS lng,
-			MAX(CASE
-				WHEN UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
-					OR NULLIF(TRIM(COALESCE(fm.DISABILITY, '')), '') IS NOT NULL
-					OR NULLIF(TRIM(COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR), '')), '') IS NOT NULL
-				THEN 1
-				ELSE 0
-			END) AS has_disability,
+			COALESCE(fm_agg.has_disability, 0) AS has_disability,
 			COALESCE(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, '')), '') AS FAMILY_BELONG_BPL_CATEGORY,
 			COALESCE(TRIM(COALESCE(f.RATION_CARD_TYPE, '')), '') AS RATION_CARD_TYPE,
 			COALESCE(TRIM(CAST(f.ANNUAL_INCOME AS CHAR)), '') AS ANNUAL_INCOME,
-			COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members
+			COALESCE(fm_agg.total_members, 0) AS total_members,
+			COALESCE(fm_agg.male_members, 0) AS male_members,
+			COALESCE(fm_agg.female_members, 0) AS female_members,
+			COALESCE(fm_agg.working_members, 0) AS working_members,
+			(COALESCE(fm_agg.total_members, 0) - COALESCE(fm_agg.working_members, 0)) AS non_working_members,
+			COALESCE(REPLACE(fm_agg.occupation_list, '|', ', '), '') AS working_occupations,
+			COALESCE(fm_agg.occupation_list, '') AS occupation_list
 		FROM FAMILY f
-		LEFT JOIN FAMILY_MEMBER fm ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		LEFT JOIN (
+			SELECT
+				fm.EXTERNAL_FAMILY_ID,
+				COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
+				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
+				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members,
+				MAX(CASE
+					WHEN UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+						OR NULLIF(TRIM(COALESCE(fm.DISABILITY, '')), '') IS NOT NULL
+						OR NULLIF(TRIM(COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR), '')), '') IS NOT NULL
+					THEN 1
+					ELSE 0
+				END) AS has_disability,
+				SUM(CASE
+					WHEN fm.OCCUPATION IS NOT NULL
+						AND TRIM(fm.OCCUPATION) != ''
+						AND LOWER(TRIM(fm.OCCUPATION)) NOT IN (
+							'housewife',
+							'homemaker',
+							'student',
+							'studying',
+							'not applicable',
+							'na',
+							'n/a',
+							'none',
+							'unemployed',
+							'child',
+							'nil',
+							'no work'
+						)
+					THEN 1
+					ELSE 0
+				END) AS working_members,
+				COALESCE(GROUP_CONCAT(
+					DISTINCT
+					CASE
+						WHEN fm.OCCUPATION IS NOT NULL
+							AND TRIM(fm.OCCUPATION) != ''
+							AND LOWER(TRIM(fm.OCCUPATION)) NOT IN (
+								'housewife',
+								'homemaker',
+								'student',
+								'studying',
+								'not applicable',
+								'na',
+								'n/a',
+								'none',
+								'unemployed',
+								'child',
+								'nil',
+								'no work'
+							)
+						THEN TRIM(fm.OCCUPATION)
+					END
+					SEPARATOR '|'
+				), '') AS occupation_list
+			FROM FAMILY_MEMBER fm
+			GROUP BY fm.EXTERNAL_FAMILY_ID
+		) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		%s
-		GROUP BY
-			f.EXTERNAL_FAMILY_ID,
-			f.HOUSE_NO,
-			f.FIRST_NAME_HOUSEHOLD_HEAD,
-			f.MIDDLE_NAME_HOUSEHOLD_HEAD,
-			f.LAST_NAME_HOUSEHOLD_HEAD,
-			f.LATITUDE,
-			f.LONGITUDE,
-			f.FAMILY_BELONG_BPL_CATEGORY,
-			f.RATION_CARD_TYPE,
-			f.ANNUAL_INCOME
 		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
 	`, where)
 
@@ -487,10 +540,19 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.TotalMembers,
 			&marker.MaleMembers,
 			&marker.FemaleMembers,
+			&marker.WorkingMembers,
+			&marker.NonWorkingMembers,
+			&marker.WorkingOccupations,
+			&marker.OccupationListRaw,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan population map marker", "detail": err.Error()})
 			return
 		}
+
+		if marker.OccupationListRaw != "" {
+			marker.OccupationList = strings.Split(marker.OccupationListRaw, "|")
+		}
+
 		markers = append(markers, marker)
 	}
 

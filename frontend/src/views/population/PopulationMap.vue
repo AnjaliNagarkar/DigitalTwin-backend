@@ -59,6 +59,7 @@
             <option value="population_density">Population Density</option>
             <option value="bpl_status">BPL Status</option>
             <option value="divyang_presence">Divyang Presence</option>
+            <option value="employment">Employment Status</option>
             <option value="literacy">Literacy</option>
             <option value="working_population">Working Population</option>
           </select>
@@ -282,9 +283,31 @@ function getDivyangColor(house) {
   return hasDivyangPresence(house) ? '#7b1fa2' : '#2e7d32'
 }
 
+function getWorkingMembers(house) {
+  return Number(house.working_members || 0)
+}
+
+function getOccupationList(house) {
+  if (Array.isArray(house.occupation_list_array) && house.occupation_list_array.length) {
+    return house.occupation_list_array
+  }
+  if (typeof house.occupation_list === 'string' && house.occupation_list.trim()) {
+    return house.occupation_list
+      .split('|')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  return []
+}
+
+function getEmploymentColor(house) {
+  return getWorkingMembers(house) > 0 ? '#2e7d32' : '#f57c00'
+}
+
 function getMarkerColor(house) {
   if (colorMode.value === 'bpl_status') return getBplColor(house)
   if (colorMode.value === 'divyang_presence') return getDivyangColor(house)
+  if (colorMode.value === 'employment') return getEmploymentColor(house)
   return '#2c7a7b'
 }
 
@@ -292,6 +315,12 @@ function buildTooltipContent(house) {
   const houseNo = escapeHtml(house.house_no || 'N/A')
   const headName = escapeHtml(house.head_name || '')
   const members = Number(house.total_members || 0)
+
+  if (colorMode.value === 'employment') {
+    const workingMembers = getWorkingMembers(house)
+    return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}<br/>Working Members: ${workingMembers}`
+  }
+
   if (colorMode.value === 'bpl_status') {
     const category = escapeHtml(getBplStatusLabel(house))
     return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}<br/>Category: ${category}`
@@ -306,6 +335,7 @@ function buildQueryParams() {
   if (selectedVillage.value) params.village_id = selectedVillage.value
   if (colorMode.value === 'bpl_status') params.color_by = 'bpl'
   if (colorMode.value === 'divyang_presence') params.color_by = 'divyang'
+  if (colorMode.value === 'employment') params.color_by = 'employment'
   return params
 }
 
@@ -529,7 +559,9 @@ async function fetchMapData() {
       renderMarkers()
     }
   } catch (error) {
-    console.error('Population map load failed:', error)
+    if (error?.name !== 'AbortError') {
+      console.error('Population map load failed:', error)
+    }
     markers.value = []
   } finally {
     if (token === requestToken) {
@@ -609,6 +641,19 @@ const detailStats = computed(() => {
   const marker = selectedMarker.value
   if (!marker) return []
 
+  if (colorMode.value === 'employment') {
+    const totalMembers = Number(marker.total_members || 0)
+    const workingMembers = getWorkingMembers(marker)
+    const nonWorkingMembers = Math.max(totalMembers - workingMembers, 0)
+    const occupations = getOccupationList(marker)
+
+    return [
+      { label: 'Working Members', value: workingMembers.toLocaleString(), style: { color: getEmploymentColor(marker) } },
+      { label: 'Non-working Members', value: nonWorkingMembers.toLocaleString() },
+      { label: 'Occupations', value: occupations.length ? occupations.join(', ') : 'N/A' },
+    ]
+  }
+
   if (colorMode.value === 'divyang_presence') {
     return [
       { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
@@ -626,6 +671,13 @@ const detailStats = computed(() => {
 })
 
 const headerLegend = computed(() => {
+  if (colorMode.value === 'employment') {
+    return [
+      { color: '#2e7d32', label: 'Working household' },
+      { color: '#f57c00', label: 'No earning member' },
+    ]
+  }
+
   if (colorMode.value === 'divyang_presence') {
     return [
       { color: '#7b1fa2', label: 'Divyang present' },

@@ -1,5 +1,6 @@
 const BASE = '/api'
 const TIMEOUT_DEFAULT = 5000
+const MAP_DATA_TIMEOUT = 45000
 
 async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
   const controller = new AbortController()
@@ -31,7 +32,7 @@ export function getPopulationEmployment() {
 
 export function getPopulationMapData(params = {}) {
   const query = new URLSearchParams(params).toString()
-  return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`)
+  return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)
 }
 
 export function getPopulationMapSummary(params = {}) {

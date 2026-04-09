@@ -1,0 +1,20 @@
+2026/04/09 21:39:27.409259 [STARTUP] Agriculture Digital Twin backend starting on :8081
+2026/04/09 21:39:27.410435 [STARTUP] Mode: READ-ONLY — all endpoints use SELECT queries only
+2026/04/09 21:39:27.657586 [STARTUP] Routes registered:
+2026/04/09 21:39:27.657586   GET /ping
+2026/04/09 21:39:27.658194   GET /houses           — geo-mapped household data (2D map + 3D twin)
+2026/04/09 21:39:27.658194   GET /house/:id        — single household detail + family members
+2026/04/09 21:39:27.658829   GET /insights/governance  — sanitation, lighting, geo coverage
+2026/04/09 21:39:27.658829   GET /insights/agriculture — land distribution, irrigation, crops
+2026/04/09 21:39:27.659368   GET /insights/welfare     — BPL households, ration card data
+2026/04/09 21:39:27.659368   GET /population/dashboard — population top-card metrics
+2026/04/09 21:39:27.659894   GET /crops            — kharif/rabi cultivation data
+2026/04/09 21:39:27.659894   GET /land             — land area records
+2026/04/09 21:39:27.660421   GET /irrigation       — water source records
+2026/04/09 21:39:27.660421   GET /farmers          — farmer registry
+2026/04/09 21:39:27.660950   GET /soil /schemes /market  — static reference data
+2026/04/09 21:39:27.661488   POST /pdf/report            — generate PDF report (DB read-only)
+2026/04/09 21:39:28.157509 [REQUEST] GET /ping → 200 (710.8µs)
+2026/04/09 21:39:38.430860 [SELECT] GET /population/map-data
+2026/04/09 21:39:39.482518 [REQUEST] GET /population/map-data → 200 (1.0516768s)
+exit status 1
