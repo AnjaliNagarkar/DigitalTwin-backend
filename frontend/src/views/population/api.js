@@ -30,6 +30,11 @@ export function getPopulationEmployment() {
   return fetchJSON('/population/employment')
 }
 
+export function getPopulationRegistry(params = {}) {
+  const query = new URLSearchParams(params).toString()
+  return fetchJSON(`/population/registry${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)
+}
+
 export function getPopulationMapData(params = {}) {
   const query = new URLSearchParams(params).toString()
   return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)

@@ -41,9 +41,14 @@ type PopulationMapMarker struct {
 	ExternalFamilyID        string   `json:"external_family_id"`
 	HouseNo                 string   `json:"house_no"`
 	HeadName                string   `json:"head_name"`
+	VillageID               string   `json:"village_id"`
+	VillageName             string   `json:"village_name"`
 	Lat                     float64  `json:"lat"`
 	Lng                     float64  `json:"lng"`
 	TotalMembers            int      `json:"total_members"`
+	LiterateMembers         int      `json:"literate_members"`
+	VillageWorkingMembers   int      `json:"village_working_members"`
+	DivyangMembers          int      `json:"divyang_members"`
 	MaleMembers             int      `json:"male_members"`
 	FemaleMembers           int      `json:"female_members"`
 	WorkingMembers          int      `json:"working_members"`
@@ -384,6 +389,20 @@ func (h *PopulationHandler) familyColumnExists(column string) bool {
 	return count > 0
 }
 
+func (h *PopulationHandler) populationMemberColumnExists(column string) bool {
+	var count int
+	if err := h.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'FAMILY_MEMBER'
+		  AND COLUMN_NAME = ?
+	`, column).Scan(&count); err != nil {
+		return false
+	}
+	return count > 0
+}
+
 func (h *PopulationHandler) buildPopulationFamilyFilters(alias string, c *gin.Context) (string, []interface{}) {
 	clauses := []string{"1=1"}
 	args := []interface{}{}
@@ -430,6 +449,49 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 
 	where, args := h.buildPopulationFamilyFilters("f", c)
 	where = fmt.Sprintf("WHERE f.LATITUDE IS NOT NULL AND f.LONGITUDE IS NOT NULL AND f.LATITUDE != 0 AND f.LONGITUDE != 0 AND %s", where)
+	villageNameExpr := "''"
+	if h.familyColumnExists("VILLAGE_NAME") {
+		villageNameExpr = "TRIM(COALESCE(f.VILLAGE_NAME, ''))"
+	}
+
+	literateMembersExpr := "0"
+	if h.populationMemberColumnExists("EVER_ATTENDED_SCHOOL") {
+		literateMembersExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' THEN 1 ELSE 0 END)"
+	}
+
+	villageWorkingMembersExpr := `SUM(CASE
+					WHEN (
+						fm.OCCUPATION IS NOT NULL
+						AND TRIM(fm.OCCUPATION) != ''
+						AND LOWER(TRIM(fm.OCCUPATION)) NOT IN ('not working', 'unemployed')
+					)
+					THEN 1
+					ELSE 0
+				END)`
+	if h.populationMemberColumnExists("NATURE_WAGE_WORK") {
+		villageWorkingMembersExpr = `SUM(CASE
+					WHEN (
+						fm.OCCUPATION IS NOT NULL
+						AND TRIM(fm.OCCUPATION) != ''
+						AND LOWER(TRIM(fm.OCCUPATION)) NOT IN ('not working', 'unemployed')
+					)
+					OR NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), '') IS NOT NULL
+					THEN 1
+					ELSE 0
+				END)`
+	}
+
+	divyangCase := "0"
+	hasDivyang := h.populationMemberColumnExists("DIVYANG")
+	hasDisability := h.populationMemberColumnExists("DISABILITY")
+	if hasDivyang && hasDisability {
+		divyangCase = "CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES' OR UPPER(TRIM(COALESCE(fm.DISABILITY, ''))) = 'YES' THEN 1 ELSE 0 END"
+	} else if hasDivyang {
+		divyangCase = "CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES' THEN 1 ELSE 0 END"
+	} else if hasDisability {
+		divyangCase = "CASE WHEN UPPER(TRIM(COALESCE(fm.DISABILITY, ''))) = 'YES' THEN 1 ELSE 0 END"
+	}
+	divyangMembersExpr := fmt.Sprintf("SUM(%s)", divyangCase)
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -440,6 +502,8 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), '') AS head_name,
+			COALESCE(CAST(f.VILLAGE_ID AS CHAR), '') AS village_id,
+			COALESCE(%s, '') AS village_name,
 			f.LATITUDE AS lat,
 			f.LONGITUDE AS lng,
 			COALESCE(fm_agg.has_disability, 0) AS has_disability,
@@ -447,6 +511,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			COALESCE(TRIM(COALESCE(f.RATION_CARD_TYPE, '')), '') AS RATION_CARD_TYPE,
 			COALESCE(TRIM(CAST(f.ANNUAL_INCOME AS CHAR)), '') AS ANNUAL_INCOME,
 			COALESCE(fm_agg.total_members, 0) AS total_members,
+			COALESCE(fm_agg.literate_members, 0) AS literate_members,
+			COALESCE(fm_agg.village_working_members, 0) AS village_working_members,
+			COALESCE(fm_agg.divyang_members, 0) AS divyang_members,
 			COALESCE(fm_agg.male_members, 0) AS male_members,
 			COALESCE(fm_agg.female_members, 0) AS female_members,
 			COALESCE(fm_agg.working_members, 0) AS working_members,
@@ -458,6 +525,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			SELECT
 				fm.EXTERNAL_FAMILY_ID,
 				COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
+				%s AS literate_members,
+				%s AS village_working_members,
+				%s AS divyang_members,
 				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
 				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members,
 				MAX(CASE
@@ -515,7 +585,7 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 		) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		%s
 		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
-	`, where)
+	`, villageNameExpr, literateMembersExpr, villageWorkingMembersExpr, divyangMembersExpr, where)
 
 	rows, err := h.DB.Query(query, args...)
 	if err != nil {
@@ -531,6 +601,8 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.ExternalFamilyID,
 			&marker.HouseNo,
 			&marker.HeadName,
+			&marker.VillageID,
+			&marker.VillageName,
 			&marker.Lat,
 			&marker.Lng,
 			&marker.HasDisability,
@@ -538,6 +610,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.RationCardType,
 			&marker.AnnualIncome,
 			&marker.TotalMembers,
+			&marker.LiterateMembers,
+			&marker.VillageWorkingMembers,
+			&marker.DivyangMembers,
 			&marker.MaleMembers,
 			&marker.FemaleMembers,
 			&marker.WorkingMembers,

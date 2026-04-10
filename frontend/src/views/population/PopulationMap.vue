@@ -135,24 +135,24 @@
             <button class="panel-close" @click="clearClusterSelection">×</button>
             <div class="village-badge">{{ selectedCluster.level }}</div>
             <h3 class="panel-title">{{ selectedCluster.name }}</h3>
-            <div class="panel-id">{{ selectedCluster.count.toLocaleString() }} households covered</div>
+            <div class="panel-id">{{ selectedCluster.households.toLocaleString() }} households covered</div>
 
             <div class="village-stats">
-              <div class="vstat" :class="issueClass(selectedCluster.bpl, selectedCluster.count)">
-                <div class="vstat-val">{{ pct(selectedCluster.bpl, selectedCluster.count) }}%</div>
+              <div class="vstat" :class="issueClass(selectedCluster.bpl_percent)">
+                <div class="vstat-val">{{ selectedCluster.bpl_percent }}%</div>
                 <div class="vstat-label">BPL Families</div>
               </div>
-              <div class="vstat" :class="issueClass(selectedCluster.noToilet, selectedCluster.count)">
-                <div class="vstat-val">{{ pct(selectedCluster.noToilet, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Sanitation</div>
+              <div class="vstat" :class="issueClass(selectedCluster.literacy_percent, null, true)">
+                <div class="vstat-val">{{ selectedCluster.literacy_percent }}%</div>
+                <div class="vstat-label">Literacy</div>
               </div>
-              <div class="vstat" :class="issueClass(selectedCluster.noElec, selectedCluster.count)">
-                <div class="vstat-val">{{ pct(selectedCluster.noElec, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Electricity</div>
+              <div class="vstat" :class="issueClass(selectedCluster.working_percent, null, true)">
+                <div class="vstat-val">{{ selectedCluster.working_percent }}%</div>
+                <div class="vstat-label">Working Population</div>
               </div>
-              <div class="vstat" :class="issueClass(selectedCluster.noIrrig, selectedCluster.count)">
-                <div class="vstat-val">{{ pct(selectedCluster.noIrrig, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Irrigation</div>
+              <div class="vstat" :class="issueClass(selectedCluster.divyang_percent)">
+                <div class="vstat-val">{{ selectedCluster.divyang_percent }}%</div>
+                <div class="vstat-label">Divyang Population</div>
               </div>
             </div>
 
@@ -356,8 +356,13 @@ function pct(value, total) {
   return Math.round((value / total) * 100)
 }
 
-function issueClass(value, total) {
-  const share = pct(value, total)
+function issueClass(value, total = null, higherIsBetter = false) {
+  const share = total === null ? Number(value || 0) : pct(value, total)
+  if (higherIsBetter) {
+    if (share >= 60) return 'vstat-ok'
+    if (share >= 30) return 'vstat-warn'
+    return 'vstat-bad'
+  }
   if (share >= 60) return 'vstat-bad'
   if (share >= 30) return 'vstat-warn'
   return 'vstat-ok'
@@ -373,42 +378,54 @@ function buildVillageClusters(rows) {
     const lngKey = Math.round(house.lng * 20) / 20
     const key = villageId ? `village:${villageId}` : `${latKey}:${lngKey}`
     const existing = buckets.get(key) || {
+      cluster_id: villageId || `cluster-${buckets.size + 1}`,
+      village_id: villageId,
       latitude: latKey,
       longitude: lngKey,
       count: 0,
-      bpl: 0,
-      noToilet: 0,
-      noElec: 0,
-      noIrrig: 0,
+      households: 0,
+      total_population: 0,
+      bpl_families: 0,
+      literate_members: 0,
+      working_members: 0,
+      divyang_members: 0,
       name: house.village_name || (villageId ? `Village ${villageId}` : `Village Cluster ${buckets.size + 1}`),
       level: villageId ? 'Village ID' : 'Live Cluster',
     }
 
     existing.count += 1
-    const latrine = (house.latrine || '').toLowerCase()
-    const lighting = (house.lighting || '').toLowerCase()
-    const water = (house.water_source || '').toLowerCase()
-    const ration = (house.ration_card || '').toLowerCase()
+    existing.households += 1
+    existing.total_population += Number(house.total_members || 0)
+    existing.literate_members += Number(house.literate_members || 0)
+    existing.working_members += Number(house.village_working_members || 0)
+    existing.divyang_members += Number(house.divyang_members || 0)
 
-    if (!latrine || latrine === 'no latrine' || latrine === 'none') existing.noToilet += 1
-    if (!lighting || lighting === 'kerosene' || lighting === 'none') existing.noElec += 1
-    if (!water || water === 'rain fed' || water === 'none') existing.noIrrig += 1
-    if (ration.includes('bpl') || ration.includes('antyodaya')) existing.bpl += 1
+    if (normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'yes') {
+      existing.bpl_families += 1
+    }
 
     buckets.set(key, existing)
   })
 
-  return [...buckets.values()].sort((a, b) => b.count - a.count)
+  return [...buckets.values()]
+    .map((cluster) => ({
+      ...cluster,
+      bpl_percent: pct(cluster.bpl_families, cluster.households),
+      literacy_percent: pct(cluster.literate_members, cluster.total_population),
+      working_percent: pct(cluster.working_members, cluster.total_population),
+      divyang_percent: pct(cluster.divyang_members, cluster.total_population),
+    }))
+    .sort((a, b) => b.count - a.count)
 }
 
 const clusterIssues = computed(() => {
   const cluster = selectedCluster.value
   if (!cluster) return []
   return [
-    { label: 'BPL Families', pct: pct(cluster.bpl, cluster.count), color: '#60a5fa' },
-    { label: 'No Sanitation', pct: pct(cluster.noToilet, cluster.count), color: '#ef4444' },
-    { label: 'No Electricity', pct: pct(cluster.noElec, cluster.count), color: '#f59e0b' },
-    { label: 'No Irrigation', pct: pct(cluster.noIrrig, cluster.count), color: '#a78bfa' },
+    { label: 'BPL Families', pct: cluster.bpl_percent, color: '#60a5fa' },
+    { label: 'Literacy', pct: cluster.literacy_percent, color: '#10b981' },
+    { label: 'Working Population', pct: cluster.working_percent, color: '#f59e0b' },
+    { label: 'Divyang Population', pct: cluster.divyang_percent, color: '#a78bfa' },
   ]
 })
 
@@ -718,6 +735,29 @@ function handleResize() {
   }
 }
 
+async function addMaharashtraHighlight(mapInstance) {
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson')
+    const data = await res.json()
+    const mh = data.features.find((f) =>
+      Object.values(f.properties || {}).some((v) => String(v).toUpperCase().includes('MAHARASHTRA')),
+    )
+    if (mh) {
+      L.geoJSON(mh, {
+        style: { color: '#f59e0b', weight: 2.5, opacity: 0.9, fillColor: '#f59e0b', fillOpacity: 0.05, dashArray: '8,5' },
+      }).addTo(mapInstance).bringToBack()
+
+      const center = L.geoJSON(mh).getBounds().getCenter()
+      L.marker(center, {
+        icon: L.divIcon({ className: '', html: '<div class="mh-label">Maharashtra</div>', iconSize: [120, 24], iconAnchor: [60, 12] }),
+        interactive: false,
+      }).addTo(mapInstance)
+    }
+  } catch (e) {
+    console.warn('Maharashtra boundary unavailable:', e.message)
+  }
+}
+
 watch(selectedDistrict, async () => {
   selectedTaluka.value = ''
   selectedVillage.value = ''
@@ -747,6 +787,8 @@ onMounted(async () => {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
   }).addTo(map)
+
+  await addMaharashtraHighlight(map)
 
   markerLayer = L.layerGroup().addTo(map)
   clusterLayer = L.layerGroup().addTo(map)
@@ -1361,5 +1403,17 @@ onUnmounted(() => {
 
 .leaflet-popup-content-wrapper.map-tooltip {
   border-radius: 8px !important;
+}
+
+.mh-label {
+  font-family: sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f59e0b;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  white-space: nowrap;
+  pointer-events: none;
 }
 </style>
