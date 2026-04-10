@@ -71,9 +71,8 @@
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
               <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
               <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }" @click="selectColorMode('bpl_status')">BPL Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'education_status' }" @click="selectColorMode('education_status')">Education Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'employment_status' }" @click="selectColorMode('employment_status')">Employment Status</div>
               <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }" @click="selectColorMode('divyang_presence')">Divyang Presence</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'employment_status' }" @click="selectColorMode('employment_status')">Employment Status</div>
             </div>
           </div>
         </div>
@@ -83,7 +82,7 @@
         </button>
 
         <div class="dl-wrap" v-if="!loadingLiveData && houses.length">
-          <button class="dl-btn" type="button" title="PDF report placeholder">⬇ PDF Report</button>
+          <button class="dl-btn" type="button" :disabled="pdfLoading" @click="downloadPDF" :title="`Download PDF report for ${houses.length} households`">{{ pdfLoading ? '⏳ Generating…' : '⬇ PDF Report' }}</button>
           <span class="dl-count">{{ houses.length.toLocaleString() }} rows</span>
         </div>
       </div>
@@ -219,6 +218,7 @@ const selectedHouse = ref(null)
 const hoveredHouse = ref(null)
 const mouseX = ref(0)
 const mouseY = ref(0)
+const pdfLoading = ref(false)
 const tileStyle = ref('street')
 const sidebarCollapsed = ref(false)
 const cameraHeight = ref(120000)
@@ -613,6 +613,166 @@ function buildQueryParams() {
     taluka_id: filterTaluka.value || '',
     village_id: filterVillage.value || '',
     color_by: colorBy,
+  }
+}
+
+function renderChartToBase64(segments) {
+  const valid = (segments || []).filter((s) => Number(s?.count || 0) > 0)
+  const total = valid.reduce((sum, s) => sum + Number(s.count || 0), 0)
+  if (!total) return ''
+
+  const size = 280
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+
+  const cx = size / 2
+  const cy = size / 2
+  const outerR = 110
+  const innerR = 58
+  let startAngle = -Math.PI / 2
+
+  valid.forEach((seg) => {
+    const sliceAngle = (Number(seg.count || 0) / total) * 2 * Math.PI
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.arc(cx, cy, outerR, startAngle, startAngle + sliceAngle)
+    ctx.closePath()
+    ctx.fillStyle = seg.color
+    ctx.fill()
+    startAngle += sliceAngle
+  })
+
+  ctx.beginPath()
+  ctx.arc(cx, cy, innerR, 0, 2 * Math.PI)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+
+  return canvas.toDataURL('image/png').replace('data:image/png;base64,', '')
+}
+
+function getFilterName(options, id) {
+  if (!id) return ''
+  return options.find((item) => String(item.id) === String(id))?.name || ''
+}
+
+function buildPopulationCharts() {
+  const male = Number(maleMembers.value || 0)
+  const female = Number(femaleMembers.value || 0)
+
+  const working = Number(houses.value.reduce((sum, h) => sum + Number(h.working_members || 0), 0))
+  const dependent = Math.max(Number(totalMembers.value || 0) - working, 0)
+
+  const edu = insights.value?.education_status || {}
+  const literate = Number(edu.literate || 0)
+  const illiterate = Number(edu.illiterate || 0)
+  const students = Number(edu.students || 0)
+  const dropouts = Number(edu.dropouts || 0)
+
+  const bpl = houses.value.filter((h) => getBplStatusLabel(h) === 'BPL').length
+  const nonBpl = Math.max(houses.value.length - bpl, 0)
+
+  const fs1to2 = houses.value.filter((h) => Number(h.total_members || 0) <= 2).length
+  const fs3to5 = houses.value.filter((h) => {
+    const m = Number(h.total_members || 0)
+    return m >= 3 && m <= 5
+  }).length
+  const fs6plus = houses.value.filter((h) => Number(h.total_members || 0) >= 6).length
+
+  const chartDefs = [
+    {
+      title: 'Gender Ratio Chart',
+      segments: [
+        { count: male, color: '#2563eb' },
+        { count: female, color: '#ec4899' },
+      ],
+    },
+    {
+      title: 'Employment Distribution Chart',
+      segments: [
+        { count: working, color: '#16a34a' },
+        { count: dependent, color: '#f59e0b' },
+      ],
+    },
+    {
+      title: 'Education Distribution Chart',
+      segments: [
+        { count: literate, color: '#3b82f6' },
+        { count: illiterate, color: '#6b7280' },
+        { count: students, color: '#14b8a6' },
+        { count: dropouts, color: '#ef4444' },
+      ],
+    },
+    {
+      title: 'BPL Distribution Chart',
+      segments: [
+        { count: bpl, color: '#ef4444' },
+        { count: nonBpl, color: '#16a34a' },
+      ],
+    },
+    {
+      title: 'Family Size Distribution Chart',
+      segments: [
+        { count: fs1to2, color: '#22c55e' },
+        { count: fs3to5, color: '#f59e0b' },
+        { count: fs6plus, color: '#ef4444' },
+      ],
+    },
+  ]
+
+  return chartDefs
+    .map((c) => ({ title: c.title, image: renderChartToBase64(c.segments) }))
+    .filter((c) => c.image)
+}
+
+async function downloadPDF() {
+  if (pdfLoading.value) return
+  pdfLoading.value = true
+  try {
+    const districtName = filterDistrict.value ? getFilterName(districtOptions.value, filterDistrict.value) : ''
+    const talukaName = filterTaluka.value ? getFilterName(talukaOptions.value, filterTaluka.value) : ''
+    const villageName = filterVillage.value ? getFilterName(villageOptions.value, filterVillage.value) : ''
+
+    const body = {
+      districtId: filterDistrict.value ? String(filterDistrict.value) : '',
+      districtName,
+      talukaId: filterTaluka.value ? String(filterTaluka.value) : '',
+      talukaName,
+      villageId: filterVillage.value ? String(filterVillage.value) : '',
+      villageName,
+      charts: buildPopulationCharts(),
+    }
+
+    const res = await fetch('/api/pdf/population-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      console.error('[Population PDF] Generation failed:', err)
+      return
+    }
+
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const stem = ['PopTwin', districtName.replace(/\s+/g, '_') || '', talukaName.replace(/\s+/g, '_') || '', villageName.replace(/\s+/g, '_') || '', new Date().toISOString().slice(0, 10)]
+      .filter(Boolean)
+      .join('_')
+    a.download = `${stem}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('[Population PDF] Download error:', error)
+  } finally {
+    pdfLoading.value = false
   }
 }
 

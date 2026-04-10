@@ -60,8 +60,6 @@
             <option value="bpl_status">BPL Status</option>
             <option value="divyang_presence">Divyang Presence</option>
             <option value="employment">Employment Status</option>
-            <option value="literacy">Literacy</option>
-            <option value="working_population">Working Population</option>
           </select>
         </div>
 

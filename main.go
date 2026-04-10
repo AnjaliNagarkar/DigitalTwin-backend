@@ -93,6 +93,7 @@ func main() {
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	r.POST("/pdf/report", pdfHandler.GeneratePDF)
+	r.POST("/pdf/population-report", populationHandler.GeneratePopulationPDF)
 
 	// ── Insights Engine (new) ─────────────────────────────────────────────────
 	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
@@ -125,6 +126,7 @@ func main() {
 	log.Println("  GET /farmers          — farmer registry")
 	log.Println("  GET /soil /schemes /market  — static reference data")
 	log.Println("  POST /pdf/report            — generate PDF report (DB read-only)")
+	log.Println("  POST /pdf/population-report — generate population PDF report (DB read-only)")
 
 	if err := r.Run(serverAddr); err != nil {
 		log.Fatalf("[FATAL] Server failed to start on %s: %v", serverAddr, err)
