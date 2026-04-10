@@ -219,10 +219,11 @@ const selectedHouse = ref(null)
 const hoveredHouse = ref(null)
 const mouseX = ref(0)
 const mouseY = ref(0)
-const tileStyle = ref('satellite')
+const tileStyle = ref('street')
 const sidebarCollapsed = ref(false)
 const cameraHeight = ref(120000)
-const colorMode = ref('population_density')
+const selectedColorBy = ref('population_density')
+const colorMode = selectedColorBy
 const openDropdown = ref(null)
 
 const districtOptions = ref([])
@@ -238,6 +239,8 @@ const pendingVillage = ref('')
 
 let viewer = null
 const entityMap = new Map()
+const buildingIds = new Set()
+const pointIds = new Set()
 
 const THRESHOLD_BUILDINGS = 3500
 
@@ -254,7 +257,7 @@ const legendTitle = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Legend
 const currentLegend = computed(() => {
   if (colorMode.value === 'population_density') {
     return [
-      { color: '#16a34a', label: '1-2 members' },
+      { color: '#22c55e', label: '1-2 members' },
       { color: '#f59e0b', label: '3-5 members' },
       { color: '#ef4444', label: '6+ members' },
     ]
@@ -362,18 +365,18 @@ function resetFilters() {
 }
 
 function buildImageryProvider(style) {
-  const selected = style || tileStyle.value
-  if (selected === 'street') {
+  const s = style || tileStyle.value
+  if (s === 'street') {
     return new Cesium.UrlTemplateImageryProvider({
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
       credit: 'Tiles © Esri',
-      maximumLevel: 19,
+      maximumLevel: 19, tileWidth: 256, tileHeight: 256,
     })
   }
   return new Cesium.UrlTemplateImageryProvider({
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     credit: 'Tiles © Esri',
-    maximumLevel: 19,
+    maximumLevel: 19, tileWidth: 256, tileHeight: 256,
   })
 }
 
@@ -399,7 +402,7 @@ function getConditionColor(house) {
   const members = Number(house.total_members || 0)
 
   if (colorMode.value === 'population_density') {
-    if (members <= 2) return '#16a34a'
+    if (members <= 2) return '#22c55e'
     if (members <= 5) return '#f59e0b'
     return '#ef4444'
   }
@@ -421,6 +424,11 @@ function getConditionColor(house) {
   return Number(house.has_disability || 0) === 1 ? '#7b1fa2' : '#16a34a'
 }
 
+function cesiumColor(house) {
+  const base = Cesium.Color.fromCssColorString(getConditionColor(house))
+  return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
+}
+
 function buildingHeight(house) {
   return Math.max(Number(house.total_members || 0) * 2, 4)
 }
@@ -429,7 +437,18 @@ function updateZoomVisibility() {
   if (!viewer || viewer.isDestroyed()) return
   const pos = viewer.camera.positionCartographic
   if (!pos) return
-  cameraHeight.value = Math.round(pos.height)
+  const h = pos.height
+  cameraHeight.value = Math.round(h)
+
+  const showBuildings = h < THRESHOLD_BUILDINGS
+
+  viewer.entities.values.forEach((entity) => {
+    if (buildingIds.has(entity.id)) {
+      entity.show = showBuildings
+    } else if (pointIds.has(entity.id)) {
+      entity.show = !showBuildings
+    }
+  })
 }
 
 function flyToPoints(list) {
@@ -441,9 +460,9 @@ function flyToPoints(list) {
   if (!pts.length) return
 
   const sphere = Cesium.BoundingSphere.fromPoints(pts)
-  const range = Math.max(sphere.radius * 2.2, 300)
+  const range = Math.max(sphere.radius * 2.6, 300)
   viewer.camera.flyToBoundingSphere(sphere, {
-    duration: 1.8,
+    duration: 2,
     offset: new Cesium.HeadingPitchRange(
       Cesium.Math.toRadians(5),
       Cesium.Math.toRadians(-42),
@@ -461,47 +480,154 @@ function flyToHouse(house) {
   })
 }
 
+function computeJitteredPositions(list) {
+  const posMap = new Map()
+
+  list.forEach((house, idx) => {
+    const lat = Number(house.lat)
+    const lng = Number(house.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    const key = `${lat.toFixed(6)},${lng.toFixed(6)}`
+    if (!posMap.has(key)) posMap.set(key, [])
+    posMap.get(key).push(idx)
+  })
+
+  const out = list.map((house) => ({
+    lat: Number(house.lat),
+    lng: Number(house.lng),
+  }))
+
+  posMap.forEach((indices) => {
+    if (indices.length < 2) return
+
+    const count = indices.length
+    const radiusM = Math.min(7 + count * 1.2, 20)
+    const ref = list[indices[0]]
+    const refLat = Number(ref.lat)
+    const refLng = Number(ref.lng)
+    const cosLat = Math.cos((refLat * Math.PI) / 180)
+
+    indices.forEach((listIdx, slot) => {
+      const angle = (2 * Math.PI * slot) / count
+      out[listIdx] = {
+        lat: refLat + (radiusM * Math.cos(angle)) / 111000,
+        lng: refLng + (radiusM * Math.sin(angle)) / (111000 * cosLat),
+      }
+    })
+  })
+
+  return out
+}
+
 function buildEntities() {
   if (!viewer) return
   viewer.entities.removeAll()
   entityMap.clear()
+  buildingIds.clear()
+  pointIds.clear()
 
-  houses.value.forEach((house) => {
-    const lat = Number(house.lat)
-    const lng = Number(house.lng)
+  const selectedNo = selectedHouse.value?.house_no
+  const camH = viewer.camera.positionCartographic?.height ?? cameraHeight.value
+  const showBuildings = camH < THRESHOLD_BUILDINGS
+  const jittered = computeJitteredPositions(houses.value)
+
+  houses.value.forEach((house, idx) => {
+    const { lat, lng } = jittered[idx]
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
 
-    const height = buildingHeight(house)
-    const color = Cesium.Color.fromCssColorString(getConditionColor(house)).withAlpha(0.98)
+    const isSelected = selectedNo && String(house.house_no || '') === String(selectedNo)
 
-    const entity = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lng, lat, height / 2),
+    const roofColor = isSelected
+      ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
+      : cesiumColor(house).withAlpha(1.0)
+
+    const wallColor = isSelected
+      ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
+      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(1.0)
+
+    const wallOutline = isSelected
+      ? Cesium.Color.fromCssColorString('#f59e0b')
+      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(1.0)
+
+    const footprint = 10
+    const baseH = 7
+    const roofH = Math.max(2.5, Math.min(buildingHeight(house) * 0.22, 5))
+
+    const baseEnt = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH / 2),
+      show: showBuildings,
       box: {
-        dimensions: new Cesium.Cartesian3(10, 10, height),
-        material: color,
+        dimensions: new Cesium.Cartesian3(footprint, footprint, baseH),
+        material: wallColor,
         outline: true,
-        outlineColor: Cesium.Color.fromCssColorString('#7a6040'),
-        outlineWidth: 1.5,
+        outlineColor: wallOutline,
+        outlineWidth: isSelected ? 2 : 1.5,
       },
     })
 
-    entityMap.set(entity.id, house)
+    const roofEnt = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH + roofH / 2),
+      show: showBuildings,
+      box: {
+        dimensions: new Cesium.Cartesian3(footprint * 0.88, footprint * 0.88, roofH),
+        material: roofColor,
+        outline: true,
+        outlineColor: isSelected
+          ? Cesium.Color.WHITE
+          : roofColor.darken(0.25, new Cesium.Color()),
+        outlineWidth: isSelected ? 2 : 1.5,
+      },
+    })
+
+    const ptEnt = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
+      show: !showBuildings,
+      point: {
+        pixelSize: isSelected ? 13 : 8,
+        color: roofColor,
+        outlineColor: isSelected ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(0.7),
+        outlineWidth: isSelected ? 2 : 1.5,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    })
+
+    buildingIds.add(baseEnt.id)
+    buildingIds.add(roofEnt.id)
+    pointIds.add(ptEnt.id)
+
+    entityMap.set(baseEnt.id, house)
+    entityMap.set(roofEnt.id, house)
+    entityMap.set(ptEnt.id, house)
   })
 }
 
 function buildQueryParams() {
-  const params = {}
-  if (filterDistrict.value) params.district_id = filterDistrict.value
-  if (filterTaluka.value) params.taluka_id = filterTaluka.value
-  if (filterVillage.value) params.village_id = filterVillage.value
-  return params
+  let colorBy = 'population_density'
+  if (selectedColorBy.value === 'bpl_status') colorBy = 'bpl'
+  else if (selectedColorBy.value === 'employment_status') colorBy = 'employment'
+  else if (selectedColorBy.value === 'divyang_presence') colorBy = 'divyang'
+  else if (selectedColorBy.value === 'education_status') colorBy = 'education'
+
+  return {
+    district_id: filterDistrict.value || '',
+    taluka_id: filterTaluka.value || '',
+    village_id: filterVillage.value || '',
+    color_by: colorBy,
+  }
 }
 
 async function loadLocationOptions() {
-  const res = await getLocationOptions({ district_id: pendingDistrict.value || undefined, taluka_id: pendingTaluka.value || undefined })
-  districtOptions.value = res?.districts || []
-  talukaOptions.value = res?.talukas || []
-  villageOptions.value = res?.villages || []
+  try {
+    const res = await getLocationOptions({ district_id: pendingDistrict.value || undefined, taluka_id: pendingTaluka.value || undefined })
+    districtOptions.value = res?.districts || []
+    talukaOptions.value = res?.talukas || []
+    villageOptions.value = res?.villages || []
+  } catch (error) {
+    districtOptions.value = []
+    talukaOptions.value = []
+    villageOptions.value = []
+    console.warn('Population 3D twin location options unavailable:', error?.message || error)
+  }
 }
 
 async function loadTwinData() {
@@ -532,9 +658,11 @@ watch(colorMode, () => {
   if (viewer) buildEntities()
 })
 
-onMounted(async () => {
-  await loadLocationOptions()
+watch(selectedHouse, () => {
+  if (viewer) buildEntities()
+})
 
+onMounted(async () => {
   viewer = new Cesium.Viewer(cesiumContainer.value, {
     animation: false,
     timeline: false,
@@ -547,7 +675,7 @@ onMounted(async () => {
     selectionIndicator: false,
     infoBox: false,
     shouldAnimate: false,
-    imageryProvider: buildImageryProvider(),
+    imageryProvider: buildImageryProvider('street'),
   })
 
   viewer.scene.globe.enableLighting = true
@@ -581,6 +709,7 @@ onMounted(async () => {
   viewer.camera.changed.addEventListener(updateZoomVisibility)
 
   await loadTwinData()
+  loadLocationOptions()
 })
 
 onUnmounted(() => {
