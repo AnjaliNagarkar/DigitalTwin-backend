@@ -18,6 +18,18 @@
             @click="activeFilter = activeFilter === f.value ? '' : f.value">
             {{ f.label }}
           </button>
+          <div class="filter-divider"></div>
+          <button v-for="w in waterFilters" :key="w.value" class="chip"
+            :class="{ active: irrigationFilter === w.value }"
+            @click="irrigationFilter = irrigationFilter === w.value ? '' : w.value">
+            {{ w.label }}
+          </button>
+          <div class="filter-divider"></div>
+          <button v-for="r in rationFilters" :key="r.value" class="chip"
+            :class="{ active: rationFilter === r.value }"
+            @click="rationFilter = rationFilter === r.value ? '' : r.value">
+            {{ r.label }}
+          </button>
         </div>
       </div>
     </header>
@@ -44,6 +56,15 @@
                 Last Name
                 <span v-if="sortKey === 'lastName'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
+              <th @click="toggleSort('totalLand')" class="sortable">
+                Land (ac)
+                <span v-if="sortKey === 'totalLand'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th @click="toggleSort('waterSource')" class="sortable">
+                Water Source
+                <span v-if="sortKey === 'waterSource'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th>Ration Card</th>
               <th>Owns Agri Land</th>
               <th>Status</th>
             </tr>
@@ -53,6 +74,17 @@
               <td class="td-index">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
               <td class="td-name">{{ farmer.firstName || '—' }}</td>
               <td class="td-name">{{ farmer.lastName || '—' }}</td>
+              <td class="td-num">{{ farmer.totalLand ? farmer.totalLand + ' ac' : '—' }}</td>
+              <td class="td-water">
+                <span class="water-badge" :class="waterClass(farmer.waterSource)">
+                  {{ farmer.waterSource || '—' }}
+                </span>
+              </td>
+              <td class="td-ration">
+                <span class="ration-badge" :class="rationClass(farmer.rationCard)">
+                  {{ farmer.rationCard || '—' }}
+                </span>
+              </td>
               <td>
                 <span class="land-badge" :class="landClass(farmer.ownAgricultureLand)">
                   {{ farmer.ownAgricultureLand || 'Unknown' }}
@@ -92,6 +124,20 @@ const filters = [
   { label: 'No Land',     value: 'No'  },
 ]
 
+const waterFilters = [
+  { label: 'Irrigated',  value: 'irrigated' },
+  { label: 'Rain-fed',   value: 'rainfed'   },
+]
+
+const rationFilters = [
+  { label: 'BPL',  value: 'BPL' },
+  { label: 'APL',  value: 'APL' },
+  { label: 'None', value: 'None' },
+]
+
+const irrigationFilter = ref('')
+const rationFilter = ref('')
+
 onMounted(async () => {
   try { farmers.value = await getFarmers() }
   catch (e) { console.error(e) }
@@ -110,8 +156,26 @@ const filteredFarmers = computed(() => {
     list = list.filter(f => (f.firstName||'').toLowerCase().includes(s) || (f.lastName||'').toLowerCase().includes(s))
   }
   if (activeFilter.value) list = list.filter(f => f.ownAgricultureLand === activeFilter.value)
+  if (irrigationFilter.value) {
+    if (irrigationFilter.value === 'irrigated') {
+      list = list.filter(f => !isRainFed(f))
+    } else if (irrigationFilter.value === 'rainfed') {
+      list = list.filter(f => isRainFed(f))
+    }
+  }
+  if (rationFilter.value) {
+    list = list.filter(f => {
+      if (rationFilter.value === 'None') return !f.rationCard || f.rationCard === '—' || f.rationCard === ''
+      return (f.rationCard||'').includes(rationFilter.value)
+    })
+  }
   if (sortKey.value) {
     list.sort((a, b) => {
+      if (sortKey.value === 'totalLand') {
+        const av = parseFloat(a.totalLand) || 0
+        const bv = parseFloat(b.totalLand) || 0
+        return sortDir.value === 'asc' ? av - bv : bv - av
+      }
       const av = (a[sortKey.value]||'').toLowerCase()
       const bv = (b[sortKey.value]||'').toLowerCase()
       return sortDir.value === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
@@ -126,12 +190,31 @@ const paginatedFarmers = computed(() => {
   return filteredFarmers.value.slice(start, start + pageSize)
 })
 
-watch([search, activeFilter], () => { currentPage.value = 1 })
+watch([search, activeFilter, irrigationFilter, rationFilter], () => { currentPage.value = 1 })
 
 function landClass(val) {
   if (val === 'Yes') return 'land-yes'
   if (val === 'No')  return 'land-no'
   return 'land-unknown'
+}
+
+function isRainFed(farmer) {
+  if (!farmer.waterSource) return false
+  const v = farmer.waterSource.toLowerCase()
+  return v.includes('rain') || v === 'none'
+}
+
+function waterClass(val) {
+  if (!val) return 'water-unknown'
+  const v = val.toLowerCase()
+  if (v.includes('rain') || v === 'none') return 'water-rainfed'
+  return 'water-irrigated'
+}
+
+function rationClass(val) {
+  if (val === 'BPL' || val === 'Antyodaya') return 'ration-bpl'
+  if (val === 'APL') return 'ration-apl'
+  return 'ration-none'
 }
 </script>
 
@@ -171,7 +254,8 @@ function landClass(val) {
 }
 .search-input::placeholder { color: var(--text-dim); }
 
-.filter-chips { display: flex; gap: 0.5rem; }
+.filter-chips { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.filter-divider { width: 1px; height: 20px; background: var(--border); }
 .chip {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -244,6 +328,37 @@ function landClass(val) {
 .land-yes     { background: var(--green-dim); color: var(--green); }
 .land-no      { background: var(--red-dim);   color: var(--red); }
 .land-unknown { background: var(--bg-surface); color: var(--text-dim); }
+
+.td-num   { font-variant-numeric: tabular-nums; color: var(--text-body); font-size: 0.8rem; }
+.td-water { max-width: 160px; }
+.td-ration { max-width: 120px; }
+
+.water-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.water-irrigated { background: #dcfce7; color: #15803d; }
+.water-rainfed   { background: #fee2e2; color: #b91c1c; }
+.water-unknown   { background: var(--bg-surface); color: var(--text-dim); }
+
+.ration-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ration-bpl  { background: var(--amber-dim); color: var(--amber); }
+.ration-apl  { background: var(--green-dim); color: var(--green); }
+.ration-none { background: var(--bg-surface); color: var(--text-dim); }
 
 .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .status-dot.active   { background: var(--green); box-shadow: 0 0 6px var(--green-dim); }

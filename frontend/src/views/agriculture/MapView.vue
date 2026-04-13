@@ -147,16 +147,94 @@
         <!-- Household Detail Panel -->
         <transition name="slide">
           <aside v-if="selectedHouse && viewMode === 'points'" class="detail-panel">
-            <button class="panel-close" @click="selectedHouse = null">×</button>
-            <h3 class="panel-title">{{ selectedHouse.headName || 'Household' }}</h3>
-            <div class="panel-id">ID: {{ selectedHouse.familyId }}</div>
-            <div class="panel-grid">
-              <div class="panel-stat" v-for="s in detailStats" :key="s.label">
-                <div class="panel-stat-label">{{ s.label }}</div>
-                <div class="panel-stat-value" :style="s.style || {}">{{ s.value }}</div>
+
+            <!-- ── Header ── -->
+            <div class="detail-header">
+              <div class="detail-header-info">
+                <div class="detail-badge"
+                     :style="{ background: getConditionColor(selectedHouse) + '18',
+                               borderColor: getConditionColor(selectedHouse) + '55',
+                               color: getConditionColor(selectedHouse) }">
+                  {{ getConditionLabel(selectedHouse) }}
+                </div>
+                <div class="detail-name">{{ selectedHouse.headName || 'Household' }}</div>
+                <div class="detail-sub">
+                  <span class="detail-id-chip">ID {{ selectedHouse.familyId }}</span>
+                  <span v-if="selectedHouse.villageName">{{ selectedHouse.villageName }}</span>
+                  <span v-if="selectedHouse.talukaName"> · {{ selectedHouse.talukaName }}</span>
+                </div>
+              </div>
+              <button class="detail-close" @click="selectedHouse = null" title="Close">×</button>
+            </div>
+
+            <!-- ── Land & Crops ── -->
+            <div class="dp-section-label">
+              <span class="dp-section-icon">🌾</span> Agriculture
+            </div>
+
+            <div class="dp-stat-row">
+              <div class="dp-stat">
+                <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+                <div class="dp-stat-key">Total Land</div>
+              </div>
+              <div class="dp-stat">
+                <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+                <div class="dp-stat-key">Cultivated</div>
               </div>
             </div>
-            <div class="panel-coords">{{ selectedHouse.latitude.toFixed(6) }}, {{ selectedHouse.longitude.toFixed(6) }}</div>
+
+            <div class="dp-chip-row">
+              <div class="dp-chip-block">
+                <div class="dp-chip-label">Kharif Crop</div>
+                <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+              </div>
+              <div class="dp-chip-block">
+                <div class="dp-chip-label">Rabi Crop</div>
+                <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+              </div>
+            </div>
+
+            <div class="dp-field-row">
+              <span class="dp-field-icon">💧</span>
+              <span class="dp-field-key">Irrigation Source</span>
+              <span class="dp-field-val"
+                    :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
+                {{ selectedHouse.waterSource || '—' }}
+              </span>
+            </div>
+
+            <!-- ── Infrastructure ── -->
+            <div class="dp-section-label">
+              <span class="dp-section-icon">🏠</span> Infrastructure
+            </div>
+
+            <div class="dp-field-row">
+              <span class="dp-field-icon">🚽</span>
+              <span class="dp-field-key">Latrine / Sanitation</span>
+              <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
+                {{ selectedHouse.latrine || '—' }}
+              </span>
+            </div>
+
+            <div class="dp-field-row">
+              <span class="dp-field-icon">⚡</span>
+              <span class="dp-field-key">Lighting / Electricity</span>
+              <span class="dp-field-val"
+                    :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
+                {{ selectedHouse.lighting || '—' }}
+              </span>
+            </div>
+
+            <div class="dp-field-row">
+              <span class="dp-field-icon">🪪</span>
+              <span class="dp-field-key">Ration Card</span>
+              <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
+            </div>
+
+            <div class="panel-coords">
+              {{ selectedHouse.latitude.toFixed(6) }}, {{ selectedHouse.longitude.toFixed(6) }}
+            </div>
+
           </aside>
         </transition>
 
@@ -464,6 +542,13 @@ function getConditionColor(house) {
   return '#22c55e'
 }
 
+function getConditionLabel(house) {
+  const color = getConditionColor(house)
+  if (color === '#ef4444') return 'High Risk'
+  if (color === '#f59e0b') return 'Needs Attention'
+  return 'Good Standing'
+}
+
 function getMarkerColor(house) {
   if (colorMode.value === 'crops') {
     const k = (house.kharif || '').toLowerCase() === 'yes'
@@ -748,7 +833,7 @@ function plotMarkers(data) {
       weight: 1.5, opacity: 1, fillOpacity: 0.88,
     }).addTo(map)
     markerRefs.push({ marker, house })
-    marker.on('click', () => { selectedHouse.value = house })
+    marker.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedHouse.value = house })
     marker.bindTooltip(`
       <strong>${house.headName || 'Household'}</strong><br/>
       Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
@@ -798,7 +883,7 @@ onMounted(async () => {
   await nextTick()
 
   if (mapContainer.value) {
-    map = L.map(mapContainer.value, { center: [19.75, 75.71], zoom: 7, zoomControl: false })
+    map = L.map(mapContainer.value, { center: [19.75, 75.71], zoom: 7, zoomControl: false, doubleClickZoom: false })
     L.control.zoom({ position: 'topright' }).addTo(map)
     addTiles(map)
     addMaharashtraHighlight(map)
@@ -1125,6 +1210,109 @@ watch(selectedTaluka, async () => {
 }
 
 .map-container { position: absolute; inset: 0; z-index: 1; }
+
+/* ═══════════════════════════════════════════════
+   DETAIL PANEL — household click popup
+═══════════════════════════════════════════════ */
+.detail-panel {
+  position: absolute;
+  top: 1rem; right: 1rem;
+  width: 320px;
+  max-height: calc(100% - 2rem);
+  overflow-y: auto;
+  z-index: 500;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.16), 0 4px 12px rgba(0,0,0,0.08);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Header */
+.detail-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 0.5rem; padding: 1rem 1rem 0.8rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px 12px 0 0;
+}
+.detail-header-info { flex: 1; min-width: 0; }
+.detail-badge {
+  display: inline-block; padding: 0.18rem 0.55rem;
+  border-radius: 20px; border: 1.5px solid;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+  margin-bottom: 0.38rem; text-transform: uppercase;
+}
+.detail-name {
+  font-size: 1rem; font-weight: 800; color: #0f172a;
+  line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-sub {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem;
+  font-size: 0.66rem; color: #64748b; margin-top: 0.28rem; font-weight: 500;
+}
+.detail-id-chip {
+  background: #1e293b; color: #f8fafc;
+  border-radius: 4px; padding: 0.08rem 0.38rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+}
+.detail-close {
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  border-radius: 50%; color: #64748b;
+  font-size: 1.1rem; line-height: 1; cursor: pointer;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.15s;
+}
+.detail-close:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+
+/* Section labels */
+.dp-section-label {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.09em;
+  color: #475569; font-weight: 800;
+  padding: 0.85rem 1rem 0.35rem;
+  border-top: 1px solid #f1f5f9;
+}
+.dp-section-icon { font-size: 0.85rem; }
+
+/* Big stat row */
+.dp-stat-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  padding: 0 1rem;
+}
+.dp-stat {
+  background: #f8fafc; border: 1.5px solid #e2e8f0;
+  border-radius: 8px; padding: 0.6rem 0.75rem; text-align: center;
+}
+.dp-stat-val { font-size: 1.25rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+.dp-stat-val small { font-size: 0.65rem; color: #64748b; font-weight: 600; }
+.dp-stat-key { font-size: 0.57rem; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; font-weight: 600; margin-top: 0.18rem; }
+
+/* Crop chips */
+.dp-chip-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+}
+.dp-chip-block { display: flex; flex-direction: column; gap: 0.22rem; }
+.dp-chip-label { font-size: 0.57rem; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; font-weight: 600; }
+.dp-chip {
+  padding: 0.3rem 0.55rem; border-radius: 6px;
+  font-size: 0.72rem; font-weight: 600; text-align: center;
+}
+.dp-chip-kharif { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+.dp-chip-rabi   { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+/* Field rows */
+.dp-field-row {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid #f8fafc;
+}
+.dp-field-icon { font-size: 0.85rem; flex-shrink: 0; width: 1.2rem; text-align: center; }
+.dp-field-key  { font-size: 0.68rem; color: #64748b; font-weight: 600; flex: 1; }
+.dp-field-val  { font-size: 0.76rem; color: #0f172a; font-weight: 700; text-align: right; max-width: 55%; }
 
 .panel-coords {
   margin-top: 0.9rem;

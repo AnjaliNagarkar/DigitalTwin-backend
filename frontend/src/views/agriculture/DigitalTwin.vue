@@ -302,47 +302,98 @@
     <!-- DETAIL PANEL -->
     <transition name="slide">
       <div v-if="selectedHouse" class="detail-panel">
+
+        <!-- ── Header ── -->
         <div class="detail-header">
-          <div>
-            <div class="detail-badge" :style="{ background: getConditionColor(selectedHouse) + '18', borderColor: getConditionColor(selectedHouse) + '60', color: getConditionColor(selectedHouse) }">
+          <div class="detail-header-info">
+            <div class="detail-badge"
+                 :style="{ background: getConditionColor(selectedHouse) + '18',
+                           borderColor: getConditionColor(selectedHouse) + '55',
+                           color: getConditionColor(selectedHouse) }">
               {{ getConditionLabel(selectedHouse) }}
             </div>
             <div class="detail-name">{{ selectedHouse.headName || 'Household' }}</div>
-            <div class="detail-sub">ID {{ selectedHouse.familyId }} · {{ selectedHouse.villageName }}</div>
+            <div class="detail-sub">
+              <span class="detail-id-chip">ID {{ selectedHouse.familyId }}</span>
+              <span>{{ selectedHouse.villageName }}</span>
+              <span v-if="selectedHouse.talukaName"> · {{ selectedHouse.talukaName }}</span>
+            </div>
           </div>
-          <button class="detail-close" @click="selectedHouse = null">×</button>
+          <button class="detail-close" @click="selectedHouse = null" title="Close">×</button>
         </div>
 
-        <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 Zoom to House</button>
+        <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 Zoom to Location</button>
 
-        <div class="detail-section">Agriculture</div>
-        <div class="kv-grid">
-          <div class="kv"><span class="kv-k">Total Land</span><span class="kv-v">{{ selectedHouse.totalLand || '0' }} ac</span></div>
-          <div class="kv"><span class="kv-k">Cultivated</span><span class="kv-v">{{ selectedHouse.cultivatedLand || '0' }} ac</span></div>
-          <div class="kv"><span class="kv-k">Kharif</span><span class="kv-v">{{ selectedHouse.kharif || '—' }}</span></div>
-          <div class="kv"><span class="kv-k">Rabi</span><span class="kv-v">{{ selectedHouse.rabi || '—' }}</span></div>
-          <div class="kv"><span class="kv-k">Irrigation</span>
-            <span class="kv-v" :style="{ color: isIrrigated(selectedHouse) ? '#16a34a' : '#dc2626' }">
-              {{ selectedHouse.waterSource || '—' }}
-            </span>
+        <!-- ── Land & Crops ── -->
+        <div class="dp-section-label">
+          <span class="dp-section-icon">🌾</span> Agriculture
+        </div>
+
+        <div class="dp-stat-row">
+          <div class="dp-stat">
+            <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+            <div class="dp-stat-key">Total Land</div>
+          </div>
+          <div class="dp-stat">
+            <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+            <div class="dp-stat-key">Cultivated</div>
           </div>
         </div>
 
-        <div class="detail-section">Infrastructure</div>
-        <div class="kv-grid">
-          <div class="kv">
-            <span class="kv-k">Sanitation</span>
-            <span class="kv-v" :style="{ color: getConditionColor(selectedHouse) }">{{ selectedHouse.latrine || '—' }}</span>
+        <div class="dp-chip-row">
+          <div class="dp-chip-block">
+            <div class="dp-chip-label">Kharif Crop</div>
+            <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
           </div>
-          <div class="kv">
-            <span class="kv-k">Electricity</span>
-            <span class="kv-v" :style="{ color: selectedHouse.lighting === 'Electricity' ? '#16a34a' : '#d97706' }">{{ selectedHouse.lighting || '—' }}</span>
+          <div class="dp-chip-block">
+            <div class="dp-chip-label">Rabi Crop</div>
+            <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
           </div>
-          <div class="kv"><span class="kv-k">Ration Card</span><span class="kv-v">{{ selectedHouse.rationCard || '—' }}</span></div>
         </div>
 
+        <!-- Irrigation source full-width -->
+        <div class="dp-field-row">
+          <span class="dp-field-icon">💧</span>
+          <span class="dp-field-key">Irrigation Source</span>
+          <span class="dp-field-val"
+                :class="isIrrigated(selectedHouse) ? 'dp-ok' : 'dp-warn'">
+            {{ selectedHouse.waterSource || '—' }}
+          </span>
+        </div>
+
+        <!-- ── Infrastructure ── -->
+        <div class="dp-section-label">
+          <span class="dp-section-icon">🏠</span> Infrastructure
+        </div>
+
+        <div class="dp-field-row">
+          <span class="dp-field-icon">🚽</span>
+          <span class="dp-field-key">Latrine / Sanitation</span>
+          <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
+            {{ selectedHouse.latrine || '—' }}
+          </span>
+        </div>
+
+        <div class="dp-field-row">
+          <span class="dp-field-icon">⚡</span>
+          <span class="dp-field-key">Lighting / Electricity</span>
+          <span class="dp-field-val"
+                :class="(selectedHouse.lighting || '').toLowerCase() === 'electricity' ? 'dp-ok' : 'dp-warn'">
+            {{ selectedHouse.lighting || '—' }}
+          </span>
+        </div>
+
+        <div class="dp-field-row">
+          <span class="dp-field-icon">🪪</span>
+          <span class="dp-field-key">Ration Card</span>
+          <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
+        </div>
+
+        <!-- ── Farm Advisory ── -->
         <div v-if="getIssues(selectedHouse).length" class="detail-issues">
-          <div class="detail-section">Farm Advisory</div>
+          <div class="dp-section-label">
+            <span class="dp-section-icon">⚠️</span> Farm Advisory
+          </div>
           <div class="advisory-card" v-for="iss in getIssues(selectedHouse)" :key="iss.label"
                :style="{ borderLeftColor: iss.color }">
             <div class="advisory-title" :style="{ color: iss.color }">{{ iss.label }}</div>
@@ -360,6 +411,7 @@
         <div v-else class="all-good">
           <span>✓</span> This household looks well-resourced
         </div>
+
       </div>
     </transition>
 
@@ -1398,8 +1450,22 @@ async function downloadPDF() {
 
     // Render all sidebar donut charts to PNG and ship them to the backend
     const charts = pieCharts.value
-      .map(chart => ({ title: chart.title, image: renderChartToBase64(chart.segments) || '' }))
+      .map(chart => ({
+        title:    chart.title,
+        image:    renderChartToBase64(chart.segments) || '',
+        segments: chart.segments.map(s => ({ label: s.label, pct: s.pct, color: s.color })),
+      }))
       .filter(c => c.image)
+
+    // Build problem filter summary to embed in PDF
+    const problemFilters = PROBLEM_FILTER_META.map(pf => ({
+      key:        pf.key,
+      label:      pf.label,
+      count:      problemFilterStats.value[pf.key] ?? 0,
+      total:      filteredHouses.value.length,
+      active:     activeProblemFilters.value.includes(pf.key),
+    }))
+    const problemMatchTotal = problemMatchCount.value
 
     const body = {
       districtId:   filterDistrict.value ? String(filterDistrict.value) : '',
@@ -1409,6 +1475,8 @@ async function downloadPDF() {
       villageId:    filterVillage.value  ? String(filterVillage.value)  : '',
       villageName,
       charts,
+      problemFilters,
+      problemMatchTotal,
     }
 
     const res = await fetch('/api/pdf/report', {
@@ -2156,81 +2224,134 @@ onUnmounted(() => {
 /* ═══════════════════════════════════════════════
    DETAIL PANEL (right slide-in)
 ═══════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════
+   DETAIL PANEL (farmer click popup)
+═══════════════════════════════════════════════ */
 .detail-panel {
   position: absolute;
   right: 0.75rem; top: 60px;
-  width: 288px;
+  width: 320px;
   max-height: calc(100vh - 72px);
   overflow-y: auto;
   z-index: 100;
   background: #ffffff;
-  border: 1.5px solid #d1d5db;
-  border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.14), 0 3px 8px rgba(0,0,0,0.07);
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.16), 0 4px 12px rgba(0,0,0,0.08);
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
+/* ── Header ── */
 .detail-header {
   display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 0.5rem; padding: 0.9rem 0.9rem 0.65rem;
-  border-bottom: 1.5px solid #e5e7eb;
-  background: #f9fafb;
-  border-radius: var(--radius) var(--radius) 0 0;
+  gap: 0.5rem; padding: 1rem 1rem 0.8rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px 12px 0 0;
 }
+.detail-header-info { flex: 1; min-width: 0; }
 .detail-badge {
-  display: inline-block; padding: 0.2rem 0.6rem;
+  display: inline-block; padding: 0.18rem 0.55rem;
   border-radius: 20px; border: 1.5px solid;
-  font-size: 0.66rem; font-weight: 700;
-  margin-bottom: 0.32rem;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+  margin-bottom: 0.38rem; text-transform: uppercase;
 }
-.detail-name  { font-size: 0.97rem; font-weight: 800; color: #111827; line-height: 1.2; }
-.detail-sub   { font-size: 0.66rem; color: #6b7280; margin-top: 0.22rem; font-weight: 500; }
+.detail-name {
+  font-size: 1rem; font-weight: 800; color: #0f172a;
+  line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-sub {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem;
+  font-size: 0.66rem; color: #64748b; margin-top: 0.28rem; font-weight: 500;
+}
+.detail-id-chip {
+  background: #1e293b; color: #f8fafc;
+  border-radius: 4px; padding: 0.08rem 0.38rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+}
 .detail-close {
-  background: #f3f4f6; border: 1px solid #e5e7eb;
-  border-radius: 50%; color: #6b7280;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  border-radius: 50%; color: #64748b;
   font-size: 1.1rem; line-height: 1; cursor: pointer;
-  width: 24px; height: 24px;
+  width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; transition: all 0.15s;
 }
 .detail-close:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
 
+/* ── Zoom button ── */
 .focus-btn {
-  display: block; width: calc(100% - 1.8rem);
-  margin: 0.65rem 0.9rem 0;
+  display: block; width: calc(100% - 2rem);
+  margin: 0.8rem 1rem 0;
   background: #f0fdf4; border: 1.5px solid #86efac;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   color: #15803d; font-size: 0.73rem; font-weight: 600;
-  padding: 0.38rem 0.6rem; cursor: pointer; text-align: center;
-  transition: all 0.15s; box-shadow: 0 1px 3px rgba(22,163,74,0.15);
+  padding: 0.42rem 0.7rem; cursor: pointer; text-align: center;
+  transition: all 0.15s; box-shadow: 0 1px 3px rgba(22,163,74,0.12);
 }
 .focus-btn:hover { background: #16a34a; border-color: #15803d; color: #fff; }
 
-.detail-section {
-  font-size: 0.59rem; text-transform: uppercase; letter-spacing: 0.1em;
-  color: #374151; font-weight: 800;            /* was text3 = invisible */
-  padding: 0.75rem 0.9rem 0.32rem;
-  border-top: 1px solid #f3f4f6;
+/* ── Section labels ── */
+.dp-section-label {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.09em;
+  color: #475569; font-weight: 800;
+  padding: 0.85rem 1rem 0.35rem;
+  border-top: 1px solid #f1f5f9;
 }
+.dp-section-icon { font-size: 0.85rem; }
 
-.kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.38rem; padding: 0 0.9rem; }
-.kv {
-  background: #f9fafb; border: 1.5px solid #e5e7eb;
-  border-radius: var(--radius-sm); padding: 0.38rem 0.52rem;
+/* ── Big stat row (Land) ── */
+.dp-stat-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  padding: 0 1rem;
 }
-.kv-k { font-size: 0.57rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; display: block; font-weight: 600; }
-.kv-v { font-size: 0.76rem; color: #111827; font-weight: 600; margin-top: 0.1rem; display: block; }
+.dp-stat {
+  background: #f8fafc; border: 1.5px solid #e2e8f0;
+  border-radius: 8px; padding: 0.6rem 0.75rem; text-align: center;
+}
+.dp-stat-val {
+  font-size: 1.25rem; font-weight: 800; color: #0f172a; line-height: 1.1;
+}
+.dp-stat-val small { font-size: 0.65rem; color: #64748b; font-weight: 600; }
+.dp-stat-key { font-size: 0.57rem; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; font-weight: 600; margin-top: 0.18rem; }
 
-/* Advisory cards */
-.detail-issues { padding: 0 0.9rem 0.9rem; }
+/* ── Crop season chips ── */
+.dp-chip-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+}
+.dp-chip-block { display: flex; flex-direction: column; gap: 0.22rem; }
+.dp-chip-label { font-size: 0.57rem; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; font-weight: 600; }
+.dp-chip {
+  padding: 0.3rem 0.55rem; border-radius: 6px;
+  font-size: 0.72rem; font-weight: 600; text-align: center;
+}
+.dp-chip-kharif { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+.dp-chip-rabi   { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+/* ── Full-width field rows ── */
+.dp-field-row {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid #f8fafc;
+}
+.dp-field-icon { font-size: 0.85rem; flex-shrink: 0; width: 1.2rem; text-align: center; }
+.dp-field-key  { font-size: 0.68rem; color: #64748b; font-weight: 600; flex: 1; }
+.dp-field-val  { font-size: 0.76rem; color: #0f172a; font-weight: 700; text-align: right; max-width: 55%; }
+.dp-ok   { color: #15803d !important; }
+.dp-warn { color: #b45309 !important; }
+
+/* ── Advisory cards ── */
+.detail-issues { padding: 0 1rem 1rem; }
 .advisory-card {
-  border-left: 3px solid; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: #f9fafb;
-  border-top: 1px solid #e5e7eb;
-  border-right: 1px solid #e5e7eb;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0.6rem 0.7rem;
+  border-left: 3px solid; border-radius: 0 8px 8px 0;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.65rem 0.75rem;
   margin-bottom: 0.55rem;
 }
 .advisory-title { font-size: 0.8rem; font-weight: 700; margin-bottom: 0.42rem; }
@@ -2254,8 +2375,8 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: 0.45rem;
   font-size: 0.73rem; color: #15803d; font-weight: 600;
   padding: 0.55rem 0.9rem 0.9rem;
-  background: #f0fdf4; margin: 0.5rem 0.9rem 0.9rem;
-  border-radius: var(--radius-sm); border: 1px solid #bbf7d0;
+  background: #f0fdf4; margin: 0.6rem 1rem 1rem;
+  border-radius: 8px; border: 1px solid #bbf7d0;
 }
 
 /* ═══════════════════════════════════════════════

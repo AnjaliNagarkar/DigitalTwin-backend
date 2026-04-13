@@ -27,12 +27,32 @@ type PDFRequest struct {
 	// Charts holds optional pre-rendered donut chart images from the frontend
 	// (base64-encoded PNG, no data-URL prefix).
 	Charts []PDFChartImage `json:"charts"`
+	// ProblemFilters holds the sidebar problem-filter counts from the frontend.
+	ProblemFilters   []PDFProblemFilter `json:"problemFilters"`
+	ProblemMatchTotal int               `json:"problemMatchTotal"`
 }
 
 // PDFChartImage is one rendered chart sent from the frontend.
 type PDFChartImage struct {
-	Title string `json:"title"`
-	Image string `json:"image"` // base64 PNG, without the "data:image/png;base64," prefix
+	Title    string            `json:"title"`
+	Image    string            `json:"image"`    // base64 PNG, without the "data:image/png;base64," prefix
+	Segments []PDFChartSegment `json:"segments"` // colour legend data
+}
+
+// PDFChartSegment is one slice of a pie/donut chart.
+type PDFChartSegment struct {
+	Label string `json:"label"`
+	Pct   int    `json:"pct"`
+	Color string `json:"color"` // CSS hex, e.g. "#16a34a"
+}
+
+// PDFProblemFilter holds a single problem-filter entry from the frontend sidebar.
+type PDFProblemFilter struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Count  int    `json:"count"`
+	Total  int    `json:"total"`
+	Active bool   `json:"active"`
 }
 
 // PDFHandler handles PDF generation (POST /pdf/report).
@@ -392,7 +412,89 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 	}
 	doc.SetY(y0 + 25)
 
-	// ── 4. COLOUR LEGEND ────────────────────────────────────────────────────
+	// ── 4. PROBLEM FILTER SUMMARY ───────────────────────────────────────────
+	if len(req.ProblemFilters) > 0 {
+		pdfSectionTitle(doc, "PROBLEM FILTER SUMMARY", ml, uw)
+		doc.Ln(3)
+
+		// Three filter boxes side by side
+		pfW := (uw - float64(len(req.ProblemFilters)-1)*4) / float64(len(req.ProblemFilters))
+		pfY := doc.GetY()
+
+		// Colour mapping for each known filter key
+		filterColors := map[string]rgbColor{
+			"noRationCard": pAmber,
+			"noIrrigation": pPurple,
+			"noLand":       pRed,
+		}
+
+		for i, pf := range req.ProblemFilters {
+			pfX := ml + float64(i)*(pfW+4)
+			col := filterColors[pf.Key]
+			if col == (rgbColor{}) {
+				col = pGray
+			}
+
+			// Box background
+			doc.SetFillColor(pLightGray.r, pLightGray.g, pLightGray.b)
+			doc.Rect(pfX, pfY, pfW, 22, "F")
+
+			// Top accent stripe (thicker if active)
+			stripeH := 1.5
+			if pf.Active {
+				stripeH = 3.0
+			}
+			doc.SetFillColor(col.r, col.g, col.b)
+			doc.Rect(pfX, pfY, pfW, stripeH, "F")
+
+			// Count value
+			doc.SetXY(pfX, pfY+stripeH+2)
+			doc.SetFont("Helvetica", "B", 14)
+			doc.SetTextColor(pDark.r, pDark.g, pDark.b)
+			doc.CellFormat(pfW, 8, fmt.Sprintf("%d", pf.Count), "", 1, "C", false, 0, "")
+
+			// Label
+			doc.SetX(pfX)
+			doc.SetFont("Helvetica", "B", 6.5)
+			doc.SetTextColor(pTextGray.r, pTextGray.g, pTextGray.b)
+			doc.CellFormat(pfW, 4, pf.Label, "", 1, "C", false, 0, "")
+
+			// Percentage note
+			pct := 0
+			if pf.Total > 0 {
+				pct = int(float64(pf.Count)/float64(pf.Total)*100 + 0.5)
+			}
+			activeTag := ""
+			if pf.Active {
+				activeTag = " ★ filtered"
+			}
+			doc.SetX(pfX)
+			doc.SetFont("Helvetica", "", 6)
+			doc.SetTextColor(col.r, col.g, col.b)
+			doc.CellFormat(pfW, 4, fmt.Sprintf("%d%% of total%s", pct, activeTag), "", 1, "C", false, 0, "")
+		}
+		doc.SetY(pfY + 26)
+
+		// If multiple filters were active, show the combined match count
+		if req.ProblemMatchTotal > 0 {
+			doc.SetFont("Helvetica", "I", 7)
+			doc.SetTextColor(pTextGray.r, pTextGray.g, pTextGray.b)
+			activeLbls := []string{}
+			for _, pf := range req.ProblemFilters {
+				if pf.Active {
+					activeLbls = append(activeLbls, pf.Label)
+				}
+			}
+			if len(activeLbls) > 1 {
+				doc.CellFormat(uw, 4.5,
+					fmt.Sprintf("Combined match (%s): %d households", strings.Join(activeLbls, " + "), req.ProblemMatchTotal),
+					"", 1, "L", false, 0, "")
+				doc.Ln(2)
+			}
+		}
+	}
+
+	// ── 5. COLOUR LEGEND ────────────────────────────────────────────────────
 	pdfSectionTitle(doc, "COLOUR LEGEND", ml, uw)
 	doc.Ln(2)
 
@@ -426,7 +528,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 	}
 	doc.SetY(ly0 + float64(rows3)*6 + 4)
 
-	// ── 5. AGRICULTURE STACKED BAR CHARTS ───────────────────────────────────
+	// ── 6. AGRICULTURE STACKED BAR CHARTS ───────────────────────────────────
 	pdfSectionTitle(doc, "AGRICULTURE OVERVIEW", ml, uw)
 	doc.Ln(3)
 
@@ -519,7 +621,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 		doc.Ln(7)
 	}
 
-	// ── 6. HOUSEHOLD TABLE ───────────────────────────────────────────────────
+	// ── 7. HOUSEHOLD TABLE ───────────────────────────────────────────────────
 	doc.Ln(2)
 
 	tableHouses := houses
@@ -663,7 +765,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 		doc.Ln(5)
 	}
 
-	// ── 7. FRONTEND CHART IMAGES (optional, second page) ─────────────────────
+	// ── 8. FRONTEND CHART IMAGES (optional, second page) ─────────────────────
 	validCharts := make([]PDFChartImage, 0, len(req.Charts))
 	for _, ch := range req.Charts {
 		if ch.Image == "" {
@@ -683,6 +785,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 		doc.Ln(5)
 
 		imgW := (uw - 6) / 2 // two charts per row, 6 mm gap
+		imgH := 52.0          // fixed image height so legend placement is predictable
 		cix := ml
 		ciy := doc.GetY()
 
@@ -695,26 +798,60 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 				bytes.NewReader(imgBytes),
 			)
 			if !doc.Ok() {
-				// Clear error state by creating a fresh error-free check;
-				// gofpdf accumulates errors so skip image and move on.
 				break
 			}
 
-			// Chart title
-			doc.SetFont("Helvetica", "B", 9)
+			// ── Chart title ───────────────────────────────────────────────
+			doc.SetFont("Helvetica", "B", 8.5)
 			doc.SetTextColor(pDark.r, pDark.g, pDark.b)
 			doc.SetXY(cix, ciy)
 			doc.CellFormat(imgW, 5, ch.Title, "", 0, "C", false, 0, "")
 
-			// Image (h=0 → auto-scale from width)
-			doc.ImageOptions(key, cix, ciy+6, imgW, 0, false,
+			// ── Donut image ───────────────────────────────────────────────
+			doc.ImageOptions(key, cix+(imgW-imgH)/2, ciy+6, imgH, imgH, false,
 				fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+
+			// ── Colour legend below the image ─────────────────────────────
+			legendY := ciy + 6 + imgH + 3
+			dotSize := 3.0
+			rowH := 5.0
+
+			// Two-column layout inside the chart cell
+			colW2 := imgW / 2
+			for j, seg := range ch.Segments {
+				col := j % 2
+				row := j / 2
+				lx := cix + float64(col)*colW2 + 1
+				ly := legendY + float64(row)*rowH
+
+				col2 := hexToRGB(seg.Color)
+				doc.SetFillColor(col2.r, col2.g, col2.b)
+				doc.Rect(lx, ly+0.9, dotSize, dotSize, "F")
+
+				doc.SetFont("Helvetica", "", 6.5)
+				doc.SetTextColor(pDark.r, pDark.g, pDark.b)
+				doc.SetXY(lx+dotSize+1.5, ly)
+				label := seg.Label
+				if seg.Pct > 0 {
+					label = fmt.Sprintf("%s  %d%%", seg.Label, seg.Pct)
+				}
+				doc.CellFormat(colW2-dotSize-3, rowH, label, "", 0, "L", false, 0, "")
+			}
+
+			// Height used by this chart cell = title + image + legend rows
+			legendRows := (len(ch.Segments) + 1) / 2
+			cellH := 5 + imgH + 3 + float64(legendRows)*rowH + 6
 
 			if i%2 == 0 {
 				cix += imgW + 6
 			} else {
-				ciy = doc.GetY() + 8
+				ciy += cellH
 				cix = ml
+				// Ensure we have enough space for the next row; add page if needed
+				if ciy+cellH > 270 {
+					doc.AddPage()
+					ciy = doc.GetY()
+				}
 			}
 		}
 	}
@@ -753,6 +890,34 @@ func pdfTrunc(s string, maxRunes int) string {
 		return s
 	}
 	return string(runes[:maxRunes-2]) + ".."
+}
+
+// hexToRGB parses a CSS hex colour (#rrggbb or #rgb) into an rgbColor.
+// Returns pGray on any parse failure.
+func hexToRGB(h string) rgbColor {
+	h = strings.TrimPrefix(h, "#")
+	if len(h) == 3 {
+		h = string([]byte{h[0], h[0], h[1], h[1], h[2], h[2]})
+	}
+	if len(h) != 6 {
+		return pGray
+	}
+	parse := func(s string) int {
+		n := 0
+		for _, c := range s {
+			n <<= 4
+			switch {
+			case c >= '0' && c <= '9':
+				n |= int(c - '0')
+			case c >= 'a' && c <= 'f':
+				n |= int(c-'a') + 10
+			case c >= 'A' && c <= 'F':
+				n |= int(c-'A') + 10
+			}
+		}
+		return n
+	}
+	return rgbColor{parse(h[0:2]), parse(h[2:4]), parse(h[4:6])}
 }
 
 // isValidPNG checks the 8-byte PNG magic header.

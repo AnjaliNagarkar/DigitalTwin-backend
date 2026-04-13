@@ -11,6 +11,9 @@ type FarmerRecord struct {
 	FirstName          string `json:"firstName"`
 	LastName           string `json:"lastName"`
 	OwnAgricultureLand string `json:"ownAgricultureLand"`
+	TotalLand          string `json:"totalLand"`
+	WaterSource        string `json:"waterSource"`
+	RationCard         string `json:"rationCard"`
 }
 
 type FarmerHandler struct {
@@ -22,7 +25,10 @@ func (h *FarmerHandler) GetFarmers(c *gin.Context) {
 		SELECT
 			COALESCE(fm.FIRST_NAME, ''),
 			COALESCE(fm.LAST_NAME, ''),
-			COALESCE(f.OWN_AGRICULTURE_LAND, '')
+			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
+			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
+			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.RATION_CARD_TYPE, '')
 		FROM FAMILY f
 		JOIN FAMILY_MEMBER fm ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 	`)
@@ -35,7 +41,7 @@ func (h *FarmerHandler) GetFarmers(c *gin.Context) {
 	var farmers []FarmerRecord
 	for rows.Next() {
 		var farmer FarmerRecord
-		if err := rows.Scan(&farmer.FirstName, &farmer.LastName, &farmer.OwnAgricultureLand); err != nil {
+		if err := rows.Scan(&farmer.FirstName, &farmer.LastName, &farmer.OwnAgricultureLand, &farmer.TotalLand, &farmer.WaterSource, &farmer.RationCard); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan farmer record"})
 			return
 		}
