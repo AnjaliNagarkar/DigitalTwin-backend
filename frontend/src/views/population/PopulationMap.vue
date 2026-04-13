@@ -686,6 +686,12 @@ const detailStats = computed(() => {
 })
 
 const headerLegend = computed(() => {
+  if (colorMode.value === 'population_density') {
+    return [
+      { color: '#2c7a7b', label: 'Population households' },
+    ]
+  }
+
   if (colorMode.value === 'employment') {
     return [
       { color: '#2e7d32', label: 'Working household' },
@@ -707,11 +713,7 @@ const headerLegend = computed(() => {
     ]
   }
 
-  return [
-    { color: '#ef4444', label: 'BPL households' },
-    { color: '#0f766e', label: 'Literate population' },
-    { color: '#16a34a', label: 'Working population' },
-  ]
+  return []
 })
 
 function setViewMode(mode) {
@@ -962,6 +964,7 @@ onUnmounted(() => {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  flex-basis: 100%;
 }
 
 .legend-item {
