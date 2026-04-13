@@ -18,28 +18,58 @@
           </button>
         </div>
 
+        <!-- District -->
         <div class="map-control-group">
           <label class="control-label">District</label>
-          <select v-model="selectedDistrict" class="control-select">
-            <option value="">All</option>
-            <option v-for="d in districtOptions" :key="d.id" :value="d.id">{{ d.name }}</option>
-          </select>
+          <div class="custom-select" :class="{ open: openDropdown === 'district' }"
+               @click.stop="toggleDropdown('district')">
+            <button class="cs-trigger" type="button">
+              <span class="cs-value">{{ selectedDistrictLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedDistrict }" @click="selectDistrict('')">All</div>
+              <div class="cs-option" v-for="d in districtOptions" :key="d.id"
+                   :class="{ selected: String(selectedDistrict) === String(d.id) }"
+                   @click="selectDistrict(d.id)">{{ d.name }}</div>
+            </div>
+          </div>
         </div>
 
+        <!-- Taluka -->
         <div class="map-control-group">
           <label class="control-label">Taluka</label>
-          <select v-model="selectedTaluka" class="control-select" :disabled="!talukaOptions.length">
-            <option value="">All</option>
-            <option v-for="t in talukaOptions" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
+          <div class="custom-select" :class="{ open: openDropdown === 'taluka', disabled: !talukaOptions.length }"
+               @click.stop="talukaOptions.length && toggleDropdown('taluka')">
+            <button class="cs-trigger" type="button" :disabled="!talukaOptions.length">
+              <span class="cs-value">{{ selectedTalukaLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">All</div>
+              <div class="cs-option" v-for="t in talukaOptions" :key="t.id"
+                   :class="{ selected: String(selectedTaluka) === String(t.id) }"
+                   @click="selectTaluka(t.id)">{{ t.name }}</div>
+            </div>
+          </div>
         </div>
 
+        <!-- Village -->
         <div class="map-control-group">
           <label class="control-label">Village</label>
-          <select v-model="selectedVillage" class="control-select village-select" :disabled="!villageOptions.length">
-            <option value="">All</option>
-            <option v-for="v in villageOptions" :key="v.id" :value="v.id">{{ v.name }}</option>
-          </select>
+          <div class="custom-select" :class="{ open: openDropdown === 'village', disabled: !villageOptions.length }"
+               @click.stop="villageOptions.length && toggleDropdown('village')">
+            <button class="cs-trigger" type="button" :disabled="!villageOptions.length">
+              <span class="cs-value">{{ selectedVillageLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">All</div>
+              <div class="cs-option" v-for="v in villageOptions" :key="v.id"
+                   :class="{ selected: String(selectedVillage) === String(v.id) }"
+                   @click="selectVillage(v.id)">{{ v.name }}</div>
+            </div>
+          </div>
         </div>
 
         <div class="map-control-group">
@@ -50,11 +80,18 @@
         <!-- Color by (only in points mode) -->
         <div class="map-control-group" v-if="viewMode === 'points'">
           <label class="control-label">Color by</label>
-          <select v-model="colorMode" class="control-select">
-            <option value="sanitation">Sanitation</option>
-            <option value="crops">Crops / Season</option>
-            <option value="land">Land Holdings</option>
-          </select>
+          <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
+               @click.stop="toggleDropdown('colorMode')">
+            <button class="cs-trigger" type="button">
+              <span class="cs-value">{{ selectedColorModeLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
+              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }" @click="selectColorMode('sanitation')">Sanitation</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'crops' }"      @click="selectColorMode('crops')">Crops / Season</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'land' }"       @click="selectColorMode('land')">Land Holdings</div>
+            </div>
+          </div>
         </div>
 
         <div class="map-legend">
@@ -188,6 +225,59 @@ const villageOptions = ref([])
 const selectedDistrict = ref('')
 const selectedTaluka = ref('')
 const selectedVillage = ref('')
+
+// ── Custom dropdown state ─────────────────────────────────────────────────────
+const openDropdown = ref(null)
+
+function toggleDropdown(name) {
+  openDropdown.value = openDropdown.value === name ? null : name
+}
+
+function closeDropdowns() {
+  openDropdown.value = null
+}
+
+// Selection handlers — the existing watchers handle cascade reset + API refetch
+function selectDistrict(id) {
+  selectedDistrict.value = id   // watcher fires: resets taluka/village + reloads options
+  closeDropdowns()
+}
+
+function selectTaluka(id) {
+  selectedTaluka.value = id     // watcher fires: resets village + reloads options
+  closeDropdowns()
+}
+
+function selectVillage(id) {
+  selectedVillage.value = id
+  closeDropdowns()
+}
+
+const COLOR_MODE_LABELS_MAP = {
+  sanitation: 'Sanitation',
+  crops:      'Crops / Season',
+  land:       'Land Holdings',
+}
+
+function selectColorMode(mode) {
+  colorMode.value = mode
+  closeDropdowns()
+}
+
+// Human-readable labels shown in the trigger button
+const selectedDistrictLabel = computed(() => {
+  if (!selectedDistrict.value) return 'All'
+  return districtOptions.value.find(d => String(d.id) === String(selectedDistrict.value))?.name || 'All'
+})
+const selectedTalukaLabel = computed(() => {
+  if (!selectedTaluka.value) return 'All'
+  return talukaOptions.value.find(t => String(t.id) === String(selectedTaluka.value))?.name || 'All'
+})
+const selectedVillageLabel = computed(() => {
+  if (!selectedVillage.value) return 'All'
+  return villageOptions.value.find(v => String(v.id) === String(selectedVillage.value))?.name || 'All'
+})
+const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Sanitation')
 
 let map = null
 const markerRefs    = []   // { marker, house }
@@ -715,6 +805,7 @@ onMounted(async () => {
     setTimeout(handleMapResize, 60)
     setTimeout(handleMapResize, 250)
     window.addEventListener('resize', handleMapResize)
+    window.addEventListener('click', closeDropdowns)
   }
 
   loading.value = true
@@ -725,6 +816,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearRetryTimer()
   window.removeEventListener('resize', handleMapResize)
+  window.removeEventListener('click', closeDropdowns)
   if (map) { map.remove(); map = null }
 })
 
@@ -766,36 +858,104 @@ watch(selectedTaluka, async () => {
 .map-controls { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
 .map-control-group { display: flex; align-items: center; gap: 0.45rem; }
 .control-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); white-space: nowrap; }
-.control-select {
-  background: #ffffff;
-  border: 1px solid #d1d5db;
+/* ── Custom Select Dropdowns — no native <select>, immune to OS dark mode ── */
+.custom-select {
+  position: relative;
+  min-width: 90px;
+}
+
+.cs-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  width: 100%;
+  background: #ffffff !important;      /* defeat dark-theme inheritance */
+  border: 1px solid #d1d5db !important;
   border-radius: 6px;
-  color: #334155;
-  color-scheme: light;
-  appearance: none;
+  color: #334155 !important;
   font-family: var(--font-body);
   font-size: 0.76rem;
-  padding: 0.3rem 0.6rem; outline: none; cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+  white-space: nowrap;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.control-select option {
-  color: #334155;
-  background: #ffffff;
+.cs-trigger:hover:not(:disabled) {
+  border-color: #94a3b8 !important;
+  background: #f9fafb !important;
 }
-
-.village-select,
-.village-select option {
-  color: #334155;
-}
-
-.control-select:focus {
-  border-color: #14b8a6;
+.custom-select.open .cs-trigger {
+  border-color: #14b8a6 !important;
   box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.18);
 }
-
-.control-select:disabled {
-  background: #f3f4f6;
-  color: #9ca3af;
+.custom-select.disabled .cs-trigger,
+.cs-trigger:disabled {
+  background: #f3f4f6 !important;
+  color: #9ca3af !important;
+  border-color: #e5e7eb !important;
   cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.cs-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #334155 !important;
+}
+.cs-arrow {
+  font-size: 0.58rem;
+  color: #64748b !important;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+.custom-select.open .cs-arrow { transform: rotate(180deg); }
+
+/* Dropdown panel — hardcoded white, defeats dark theme entirely */
+.cs-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 3px 8px rgba(0,0,0,0.10);
+  z-index: 9999;          /* above everything — Leaflet, headers, overlays */
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+  /* Ensure it is never clipped by parent overflow */
+  isolation: isolate;
+}
+.cs-dropdown-right { left: auto; right: 0; }
+
+/* Option rows — all hardcoded, zero CSS variable inheritance */
+.cs-option {
+  padding: 0.42rem 0.75rem;
+  font-size: 0.76rem;
+  color: #1e293b !important;
+  background: #ffffff !important;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+}
+.cs-option:first-child { border-radius: 8px 8px 0 0; }
+.cs-option:last-child  { border-radius: 0 0 8px 8px; }
+.cs-option:hover {
+  background: #f0fdfa !important;
+  color: #0f766e !important;
+}
+.cs-option.selected {
+  background: #ccfbf1 !important;
+  color: #0f766e !important;
+  font-weight: 600;
 }
 
 .apply-btn {
