@@ -47,7 +47,9 @@ type PopulationMapMarker struct {
 	Lng                     float64  `json:"lng"`
 	TotalMembers            int      `json:"total_members"`
 	LiterateMembers         int      `json:"literate_members"`
+	IlliterateMembers       int      `json:"illiterate_members"`
 	VillageWorkingMembers   int      `json:"village_working_members"`
+	UnemployedMembers       int      `json:"unemployed_members"`
 	DivyangMembers          int      `json:"divyang_members"`
 	MaleMembers             int      `json:"male_members"`
 	FemaleMembers           int      `json:"female_members"`
@@ -459,6 +461,16 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 		literateMembersExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' THEN 1 ELSE 0 END)"
 	}
 
+	illiterateMembersExpr := "0"
+	if h.populationMemberColumnExists("EVER_ATTENDED_SCHOOL") {
+		illiterateMembersExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO' THEN 1 ELSE 0 END)"
+	}
+
+	unemployedMembersExpr := "0"
+	if h.populationMemberColumnExists("OCCUPATION") {
+		unemployedMembersExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN ('UNEMPLOYED', 'NOT WORKING') THEN 1 ELSE 0 END)"
+	}
+
 	villageWorkingMembersExpr := `SUM(CASE
 					WHEN (
 						fm.OCCUPATION IS NOT NULL
@@ -512,7 +524,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			COALESCE(TRIM(CAST(f.ANNUAL_INCOME AS CHAR)), '') AS ANNUAL_INCOME,
 			COALESCE(fm_agg.total_members, 0) AS total_members,
 			COALESCE(fm_agg.literate_members, 0) AS literate_members,
+			COALESCE(fm_agg.illiterate_members, 0) AS illiterate_members,
 			COALESCE(fm_agg.village_working_members, 0) AS village_working_members,
+			COALESCE(fm_agg.unemployed_members, 0) AS unemployed_members,
 			COALESCE(fm_agg.divyang_members, 0) AS divyang_members,
 			COALESCE(fm_agg.male_members, 0) AS male_members,
 			COALESCE(fm_agg.female_members, 0) AS female_members,
@@ -526,7 +540,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 				fm.EXTERNAL_FAMILY_ID,
 				COUNT(fm.FAMILY_MEMBER_ID) AS total_members,
 				%s AS literate_members,
+				%s AS illiterate_members,
 				%s AS village_working_members,
+				%s AS unemployed_members,
 				%s AS divyang_members,
 				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'male' THEN 1 ELSE 0 END) AS male_members,
 				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) = 'female' THEN 1 ELSE 0 END) AS female_members,
@@ -585,7 +601,7 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 		) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		%s
 		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
-	`, villageNameExpr, literateMembersExpr, villageWorkingMembersExpr, divyangMembersExpr, where)
+	`, villageNameExpr, literateMembersExpr, illiterateMembersExpr, villageWorkingMembersExpr, unemployedMembersExpr, divyangMembersExpr, where)
 
 	rows, err := h.DB.Query(query, args...)
 	if err != nil {
@@ -611,7 +627,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.AnnualIncome,
 			&marker.TotalMembers,
 			&marker.LiterateMembers,
+			&marker.IlliterateMembers,
 			&marker.VillageWorkingMembers,
+			&marker.UnemployedMembers,
 			&marker.DivyangMembers,
 			&marker.MaleMembers,
 			&marker.FemaleMembers,

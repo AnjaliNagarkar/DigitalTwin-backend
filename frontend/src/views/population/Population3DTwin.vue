@@ -115,10 +115,35 @@
         <div class="panel-card">
           <div class="card-title">{{ legendTitle }}</div>
           <div class="legend-item" v-for="leg in currentLegend" :key="leg.label">
-            <span class="legend-swatch" :style="{ background: leg.color }"></span>
+            <span class="mini-house" :style="{ '--mh-roof': leg.color }">
+              <span class="mh-roof"></span>
+              <span class="mh-wall"></span>
+            </span>
             <span class="legend-text">{{ leg.label }}</span>
           </div>
-          <div class="legend-note">Building roof color follows selected filter</div>
+          <div class="legend-note">{{ legendNote }}</div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-title">Problem Filter
+            <span class="card-title-sub">highlight on map</span>
+          </div>
+          <label class="pf-item" v-for="pf in PROBLEM_FILTER_META" :key="pf.key">
+            <input class="pf-check" type="checkbox" :value="pf.key" v-model="activeProblemFilters" />
+            <span class="mini-house mini-house-sm" :style="{ '--mh-roof': pf.color }">
+              <span class="mh-roof"></span>
+              <span class="mh-wall"></span>
+            </span>
+            <span class="pf-label">{{ pf.label }}</span>
+            <span class="pf-count">{{ problemFilterStats[pf.key] }}</span>
+          </label>
+          <div class="pf-summary" v-if="activeProblemFilters.length">
+            <span><strong>{{ problemMatchCount }}</strong> flagged</span>
+            <button class="pf-clear-btn" @click="activeProblemFilters = []">✕ Clear</button>
+          </div>
+          <div class="pf-hint" v-else>
+            Select filters to highlight at-risk households and find high-need clusters on map
+          </div>
         </div>
 
         <div class="panel-card">
@@ -198,6 +223,43 @@
         </div>
       </div>
     </transition>
+
+    <transition name="slide">
+      <div v-if="selectedCluster" class="cluster-panel">
+        <button class="detail-close cluster-close" @click="selectedCluster = null">×</button>
+
+        <div class="cluster-header">
+          <div class="cluster-badge">⚠ High Need Area</div>
+          <div class="cluster-count">
+            <strong>{{ selectedCluster.count }}</strong> households in this zone
+          </div>
+        </div>
+
+        <div class="cluster-section-title" v-if="selectedCluster.problems.length">
+          🔍 Main Issues Detected
+        </div>
+
+        <div class="cp-card" v-for="p in selectedCluster.problems" :key="p.key">
+          <div class="cp-top">
+            <span class="cp-emoji">{{ p.emoji }}</span>
+            <div class="cp-info">
+              <span class="cp-label">{{ p.label }}</span>
+              <span class="cp-stat">{{ p.count }} of {{ selectedCluster.count }} households ({{ p.pct }}%)</span>
+            </div>
+          </div>
+          <div class="cp-bar-track">
+            <div class="cp-bar-fill" :style="{ width: p.pct + '%' }"></div>
+          </div>
+          <div class="cp-action">💡 {{ p.action }}</div>
+          <p class="cp-solution">{{ p.solution }}</p>
+          <div class="cp-scheme">📋 {{ p.scheme }}</div>
+        </div>
+
+        <div class="cluster-ok" v-if="!selectedCluster.problems.length">
+          ✅ No major issues detected in this cluster based on current filters.
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -225,6 +287,8 @@ const cameraHeight = ref(120000)
 const selectedColorBy = ref('population_density')
 const colorMode = selectedColorBy
 const openDropdown = ref(null)
+const activeProblemFilters = ref([])
+const selectedCluster = ref(null)
 
 const districtOptions = ref([])
 const talukaOptions = ref([])
@@ -241,6 +305,8 @@ let viewer = null
 const entityMap = new Map()
 const buildingIds = new Set()
 const pointIds = new Set()
+const clusterIds = new Set()
+const clusterMap = new Map()
 
 const THRESHOLD_BUILDINGS = 3500
 
@@ -253,6 +319,13 @@ const COLOR_MODE_LABELS = {
 }
 
 const legendTitle = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Legend')
+
+const legendNote = computed(() => {
+  if (colorMode.value === 'population_density') {
+    return 'Building roof color = family size'
+  }
+  return `Roof color = ${legendTitle.value.toLowerCase()} status`
+})
 
 const currentLegend = computed(() => {
   if (colorMode.value === 'population_density') {
@@ -285,6 +358,97 @@ const currentLegend = computed(() => {
     { color: '#16a34a', label: 'No disability' },
   ]
 })
+
+const PROBLEM_FILTER_META = [
+  { key: 'bplFamilies', label: 'BPL Families', color: '#60a5fa' },
+  { key: 'illiterateMembers', label: 'Illiterate Members', color: '#f59e0b' },
+  { key: 'unemployedMembers', label: 'Unemployed Members', color: '#ef4444' },
+  { key: 'divyangMembers', label: 'Divyang Members', color: '#7b1fa2' },
+]
+
+function matchesProblemFilter(house, key) {
+  if (key === 'bplFamilies') {
+    return normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'yes'
+  }
+  if (key === 'illiterateMembers') {
+    return Number(house.illiterate_members || 0) > 0
+  }
+  if (key === 'unemployedMembers') {
+    return Number(house.unemployed_members || 0) > 0
+  }
+  if (key === 'divyangMembers') {
+    return Number(house.divyang_members || 0) > 0 || Number(house.has_disability || 0) === 1
+  }
+  return false
+}
+
+function matchesAllProblems(house) {
+  return activeProblemFilters.value.every((key) => matchesProblemFilter(house, key))
+}
+
+const problemFilterStats = computed(() => ({
+  bplFamilies: houses.value.filter((h) => matchesProblemFilter(h, 'bplFamilies')).length,
+  illiterateMembers: houses.value.filter((h) => matchesProblemFilter(h, 'illiterateMembers')).length,
+  unemployedMembers: houses.value.filter((h) => matchesProblemFilter(h, 'unemployedMembers')).length,
+  divyangMembers: houses.value.filter((h) => matchesProblemFilter(h, 'divyangMembers')).length,
+}))
+
+const problemMatchCount = computed(() => {
+  if (!activeProblemFilters.value.length) return 0
+  return houses.value.filter(matchesAllProblems).length
+})
+
+const CLUSTER_PROBLEM_META = [
+  {
+    key: 'bplFamilies',
+    label: 'BPL Families',
+    emoji: '🧾',
+    action: 'Ensure food and health entitlement access across this zone',
+    solution: 'Ensure access to food security and health support benefits.',
+    scheme: 'NFSA Ration Card eligibility · Ayushman Bharat support',
+  },
+  {
+    key: 'illiterateMembers',
+    label: 'Illiterate Members',
+    emoji: '📚',
+    action: 'Run school and Anganwadi enrollment outreach for this cluster',
+    solution: 'Encourage enrollment in school or Anganwadi education services.',
+    scheme: 'Anganwadi education support',
+  },
+  {
+    key: 'unemployedMembers',
+    label: 'Unemployed Members',
+    emoji: '🧰',
+    action: 'Mobilize e-Shram and SHG registration camp in this area',
+    solution: 'Encourage registration on e-Shram portal and participation in Self Help Groups.',
+    scheme: 'e-Shram employment support',
+  },
+  {
+    key: 'divyangMembers',
+    label: 'Divyang Members',
+    emoji: '♿',
+    action: 'Verify disability certification and pension enrollment status',
+    solution: 'Ensure disability certificate and enrollment in disability pension schemes.',
+    scheme: 'Disability Pension Support',
+  },
+]
+
+function analyzeCluster(houseList) {
+  const total = houseList.length
+  const selectedKeys = activeProblemFilters.value.length
+    ? activeProblemFilters.value
+    : CLUSTER_PROBLEM_META.map((p) => p.key)
+
+  return CLUSTER_PROBLEM_META
+    .filter((meta) => selectedKeys.includes(meta.key))
+    .map((meta) => ({
+      ...meta,
+      count: houseList.filter((h) => matchesProblemFilter(h, meta.key)).length,
+    }))
+    .filter((p) => p.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .map((p) => ({ ...p, pct: Math.round((p.count / total) * 100) }))
+}
 
 const totalMembers = computed(() => houses.value.reduce((sum, h) => sum + Number(h.total_members || 0), 0))
 const maleMembers = computed(() => houses.value.reduce((sum, h) => sum + Number(h.male_members || 0), 0))
@@ -519,35 +683,145 @@ function computeJitteredPositions(list) {
   return out
 }
 
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const p1 = (lat1 * Math.PI) / 180
+  const p2 = (lat2 * Math.PI) / 180
+  const dp = ((lat2 - lat1) * Math.PI) / 180
+  const dl = ((lng2 - lng1) * Math.PI) / 180
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function computeProblemClusters(houseList) {
+  const RADIUS_M = 300
+  const MIN_SIZE = 5
+  const visited = new Set()
+  const clusters = []
+
+  houseList.forEach((h, i) => {
+    const lat = Number(h.lat)
+    const lng = Number(h.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || visited.has(i)) return
+
+    const group = [i]
+    visited.add(i)
+
+    houseList.forEach((h2, j) => {
+      const lat2 = Number(h2.lat)
+      const lng2 = Number(h2.lng)
+      if (visited.has(j) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) return
+      if (haversineM(lat, lng, lat2, lng2) <= RADIUS_M) {
+        group.push(j)
+        visited.add(j)
+      }
+    })
+
+    if (group.length >= MIN_SIZE) {
+      const clLat = group.reduce((sum, idx) => sum + Number(houseList[idx].lat), 0) / group.length
+      const clLng = group.reduce((sum, idx) => sum + Number(houseList[idx].lng), 0) / group.length
+      const clHouses = group.map((idx) => houseList[idx])
+      clusters.push({ lat: clLat, lng: clLng, count: group.length, houses: clHouses })
+    }
+  })
+
+  return clusters
+}
+
+function addClusterEntities(problemHouses) {
+  clusterMap.clear()
+  const clusters = computeProblemClusters(problemHouses)
+
+  clusters.forEach(({ lat, lng, count, houses: clusterHouses }) => {
+    const pos = Cesium.Cartesian3.fromDegrees(Number(lng), Number(lat), 0)
+    const problems = analyzeCluster(clusterHouses)
+    const clusterData = { count, lat, lng, problems }
+
+    const circleEnt = viewer.entities.add({
+      position: pos,
+      show: true,
+      ellipse: {
+        semiMajorAxis: 130,
+        semiMinorAxis: 130,
+        material: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.15),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.75),
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    })
+
+    const labelEnt = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(Number(lng), Number(lat), 35),
+      show: true,
+      label: {
+        text: `⚠ High Need Area\n${count} households`,
+        font: '600 12px system-ui, sans-serif',
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.fromCssColorString('#7f1d1d'),
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        pixelOffset: new Cesium.Cartesian2(0, -6),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.88),
+        backgroundPadding: new Cesium.Cartesian2(8, 5),
+      },
+    })
+
+    clusterIds.add(circleEnt.id)
+    clusterIds.add(labelEnt.id)
+    clusterMap.set(circleEnt.id, clusterData)
+    clusterMap.set(labelEnt.id, clusterData)
+  })
+}
+
 function buildEntities() {
   if (!viewer) return
   viewer.entities.removeAll()
   entityMap.clear()
   buildingIds.clear()
   pointIds.clear()
+  clusterIds.clear()
+  clusterMap.clear()
+  selectedCluster.value = null
 
   const selectedNo = selectedHouse.value?.house_no
   const camH = viewer.camera.positionCartographic?.height ?? cameraHeight.value
   const showBuildings = camH < THRESHOLD_BUILDINGS
   const jittered = computeJitteredPositions(houses.value)
+  const hasProblemFilter = activeProblemFilters.value.length > 0
+  const problemHouses = []
 
   houses.value.forEach((house, idx) => {
     const { lat, lng } = jittered[idx]
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
 
     const isSelected = selectedNo && String(house.house_no || '') === String(selectedNo)
+    const isProblem = hasProblemFilter && matchesAllProblems(house)
+    const isBackground = hasProblemFilter && !isProblem && !isSelected
+
+    if (isProblem) {
+      problemHouses.push(house)
+    }
 
     const roofColor = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
-      : cesiumColor(house).withAlpha(1.0)
+      : cesiumColor(house).withAlpha(isBackground ? 0.35 : 1.0)
 
     const wallColor = isSelected
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
-      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(1.0)
+      : isProblem
+        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
+        : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b')
-      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(1.0)
+      : isProblem
+        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
+        : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
 
     const footprint = 10
     const baseH = 7
@@ -583,10 +857,14 @@ function buildEntities() {
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
       show: !showBuildings,
       point: {
-        pixelSize: isSelected ? 13 : 8,
+        pixelSize: isSelected ? 13 : isProblem ? 11 : isBackground ? 5 : 8,
         color: roofColor,
-        outlineColor: isSelected ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(0.7),
-        outlineWidth: isSelected ? 2 : 1.5,
+        outlineColor: isSelected
+          ? Cesium.Color.WHITE
+          : isProblem
+            ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(0.9)
+            : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(isBackground ? 0.25 : 0.7),
+        outlineWidth: isSelected ? 2 : isProblem ? 2.5 : 1.5,
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
     })
@@ -599,6 +877,10 @@ function buildEntities() {
     entityMap.set(roofEnt.id, house)
     entityMap.set(ptEnt.id, house)
   })
+
+  if (hasProblemFilter && problemHouses.length) {
+    addClusterEntities(problemHouses)
+  }
 }
 
 function buildQueryParams() {
@@ -818,6 +1100,10 @@ watch(colorMode, () => {
   if (viewer) buildEntities()
 })
 
+watch(activeProblemFilters, () => {
+  if (viewer) buildEntities()
+}, { deep: true })
+
 watch(selectedHouse, () => {
   if (viewer) buildEntities()
 })
@@ -844,8 +1130,18 @@ onMounted(async () => {
   viewer.screenSpaceEventHandler.setInputAction((event) => {
     const picked = viewer.scene.pick(event.position)
     if (!picked?.id) return
-    const house = entityMap.get(picked.id.id || picked.id)
-    if (house) selectedHouse.value = house
+    const entityId = picked.id.id || picked.id
+    const cluster = clusterMap.get(entityId)
+    if (cluster) {
+      selectedCluster.value = cluster
+      selectedHouse.value = null
+      return
+    }
+    const house = entityMap.get(entityId)
+    if (house) {
+      selectedHouse.value = house
+      selectedCluster.value = null
+    }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
   viewer.screenSpaceEventHandler.setInputAction((event) => {
@@ -1270,6 +1566,115 @@ onUnmounted(() => {
 .legend-text   { font-size: 0.7rem; color: #111827; font-weight: 500; }   /* dark, readable */
 .legend-note   { font-size: 0.62rem; color: #9ca3af; margin-top: 0.45rem; font-style: italic; }
 
+/* Mini 3D house icon to match Agriculture twin legend style */
+.mini-house {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.28));
+}
+
+.mh-roof {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 6px solid var(--mh-roof, #94a3b8);
+  transition: border-bottom-color 0.2s;
+}
+
+.mh-wall {
+  width: 12px;
+  height: 8px;
+  background: #c8a97e;
+  border: 1px solid rgba(0,0,0,0.18);
+  box-shadow: inset 1px 0 0 rgba(255,255,255,0.18), 1px 1px 0 rgba(0,0,0,0.12);
+}
+
+.mini-house-sm .mh-roof {
+  border-left-width: 6px;
+  border-right-width: 6px;
+  border-bottom-width: 5px;
+}
+
+.mini-house-sm .mh-wall {
+  width: 9px;
+  height: 6px;
+}
+
+.pf-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.32rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  margin-bottom: 0.3rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.pf-item:hover {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.pf-check {
+  margin: 0;
+  accent-color: #16a34a;
+}
+
+.pf-label {
+  flex: 1;
+  font-size: 0.7rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+.pf-count {
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.pf-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.68rem;
+  color: #374151;
+}
+
+.pf-clear-btn {
+  background: #fff1f2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.16rem 0.45rem;
+  cursor: pointer;
+}
+
+.pf-clear-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.pf-hint {
+  font-size: 0.66rem;
+  color: #6b7280;
+  line-height: 1.45;
+  margin-top: 0.35rem;
+}
+
 /* ── Field Issues ── */
 .issue-row {
   display: flex; align-items: center; gap: 0.45rem;
@@ -1466,6 +1871,158 @@ onUnmounted(() => {
   padding: 0.55rem 0.9rem 0.9rem;
   background: #f0fdf4; margin: 0.5rem 0.9rem 0.9rem;
   border-radius: var(--radius-sm); border: 1px solid #bbf7d0;
+}
+
+.cluster-panel {
+  position: absolute;
+  right: 0.75rem;
+  top: 60px;
+  width: 300px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  z-index: 100;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14), 0 3px 8px rgba(0,0,0,0.07);
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.cluster-close {
+  position: absolute;
+  right: 0.65rem;
+  top: 0.65rem;
+  z-index: 1;
+}
+
+.cluster-header {
+  padding: 0.95rem 0.9rem 0.7rem;
+  border-bottom: 1.5px solid #e5e7eb;
+  background: #fff1f2;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.cluster-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cluster-count {
+  margin-top: 0.45rem;
+  font-size: 0.74rem;
+  color: #374151;
+}
+
+.cluster-count strong {
+  color: #ef4444;
+  font-size: 1.1rem;
+}
+
+.cluster-section-title {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.7rem 0.9rem 0.35rem;
+}
+
+.cp-card {
+  margin: 0.5rem 0.9rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  background: #f9fafb;
+  padding: 0.6rem 0.65rem;
+}
+
+.cp-top {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  margin-bottom: 0.35rem;
+}
+
+.cp-emoji {
+  font-size: 0.95rem;
+  line-height: 1;
+  margin-top: 0.05rem;
+}
+
+.cp-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.cp-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.cp-stat {
+  font-size: 0.64rem;
+  color: #6b7280;
+}
+
+.cp-bar-track {
+  height: 5px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cp-bar-fill {
+  height: 100%;
+  background: #ef4444;
+  border-radius: 3px;
+}
+
+.cp-action {
+  margin-top: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b91c1c;
+}
+
+.cp-solution {
+  margin: 0.25rem 0 0;
+  font-size: 0.71rem;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.cp-scheme {
+  margin-top: 0.38rem;
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #b91c1c;
+  border: 1.5px solid #fca5a5;
+  border-radius: 4px;
+  padding: 0.18rem 0.48rem;
+  background: #fff1f2;
+}
+
+.cluster-ok {
+  margin: 0.7rem 0.9rem 0.9rem;
+  font-size: 0.72rem;
+  color: #15803d;
+  font-weight: 600;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
 }
 
 /* ═══════════════════════════════════════════════
