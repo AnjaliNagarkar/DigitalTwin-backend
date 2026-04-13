@@ -1532,6 +1532,9 @@ onMounted(async () => {
     viewer.scene.fog.enabled                  = false
     viewer.scene.globe.depthTestAgainstTerrain = false
 
+    // Restrict zoom: prevent users from getting closer than 500 m above the surface
+    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 500
+
     // Start at Maharashtra state level — no globe view
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 120000),
