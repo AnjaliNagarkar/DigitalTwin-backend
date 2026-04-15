@@ -105,6 +105,7 @@ func main() {
 	r.GET("/crops", cropHandler.GetCrops)
 	r.GET("/land", landHandler.GetLand)
 	r.GET("/irrigation", irrigationHandler.GetIrrigation)
+	r.GET("/citizens", farmerHandler.GetFarmers)
 	r.GET("/farmers", farmerHandler.GetFarmers)
 
 	// ── Static/in-memory modules ──────────────────────────────────────────────
@@ -123,6 +124,7 @@ func main() {
 	log.Println("  GET /crops            — kharif/rabi cultivation data")
 	log.Println("  GET /land             — land area records")
 	log.Println("  GET /irrigation       — water source records")
+	log.Println("  GET /citizens         — citizen registry")
 	log.Println("  GET /farmers          — farmer registry")
 	log.Println("  GET /soil /schemes /market  — static reference data")
 	log.Println("  POST /pdf/report            — generate PDF report (DB read-only)")

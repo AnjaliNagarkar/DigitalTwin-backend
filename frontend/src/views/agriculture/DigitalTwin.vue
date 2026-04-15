@@ -1,6 +1,17 @@
 <template>
   <div class="twin-page">
-    <div class="cesium-wrap" ref="cesiumContainer"></div>
+    <div class="cesium-wrap" ref="cesiumContainer">
+      <!-- MAP-ONLY FULLSCREEN TOGGLE -->
+      <button
+        class="map-fs-btn"
+        :class="{ shifted: selectedHouse || selectedCluster }"
+        @click="toggleTwinFullscreen"
+        :title="isTwinFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+        aria-label="Toggle fullscreen"
+      >
+        {{ isTwinFullscreen ? '⤡' : '⤢' }}
+      </button>
+    </div>
 
     <!-- ── TOP BAR ── -->
     <div class="topbar">
@@ -479,6 +490,7 @@ const agricultureInsights = ref(null)
 const loadingLiveData     = ref(true)
 const sidebarCollapsed    = ref(false)
 const cameraHeight        = ref(120000)
+const isTwinFullscreen    = ref(false)
 
 // Location filters — applied state (drives filteredHouses + map)
 const filterDistrict = ref('')
@@ -498,6 +510,11 @@ const clusterIds   = new Set()  // High-Need cluster entity IDs
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
 let retryTimer    = null
 let twinLoadSeq   = 0
+
+function handleTwinFullscreenChange() {
+  isTwinFullscreen.value = !!document.fullscreenElement
+  handleResize()
+}
 
 // Zoom thresholds (meters)
 const THRESHOLD_BUILDINGS = 3500   // below: show 3D boxes
@@ -1054,6 +1071,21 @@ function toggleTile() {
   if (!viewer) return
   viewer.imageryLayers.removeAll()
   viewer.imageryLayers.addImageryProvider(buildImageryProvider())
+}
+
+async function toggleTwinFullscreen() {
+  const el = cesiumContainer.value
+  if (!el) return
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+    await el.requestFullscreen()
+  } catch (e) {
+    console.warn('Fullscreen unavailable:', e?.message || e)
+  }
 }
 
 // ── Camera ────────────────────────────────────────────────────────────────────
@@ -1667,12 +1699,14 @@ onMounted(async () => {
   window.addEventListener('resize', handleResize)
   // Close any open custom dropdown when clicking outside
   window.addEventListener('click', closeDropdowns)
+  document.addEventListener('fullscreenchange', handleTwinFullscreenChange)
 })
 
 onUnmounted(() => {
   clearRetryTimer()
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('click', closeDropdowns)
+  document.removeEventListener('fullscreenchange', handleTwinFullscreenChange)
   if (viewer && !viewer.isDestroyed()) {
     viewer.camera.changed.removeEventListener(updateZoomVisibility)
     viewer.destroy()
@@ -1751,6 +1785,35 @@ onUnmounted(() => {
   background: var(--c-surface);
   border-bottom: 1px solid var(--c-border);
   box-shadow: var(--c-shadow);
+}
+
+.map-fs-btn {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  z-index: 210;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.map-fs-btn.shifted {
+  right: 340px;
+}
+.map-fs-btn:hover {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #f0fdf4;
 }
 
 /* Brand */
@@ -2013,9 +2076,7 @@ onUnmounted(() => {
   top: 70px;
   z-index: 100;
   width: 240px;
-  max-height: calc(100vh - 82px);
-  overflow-y: auto;
-  overflow-x: visible;
+  overflow: visible;
   scrollbar-width: thin;
   scrollbar-color: var(--c-border) transparent;
   transition: width 0.22s ease;
@@ -2024,7 +2085,7 @@ onUnmounted(() => {
 
 .sidebar-toggle {
   position: absolute;
-  right: -14px; top: 0;
+  right: -13px; top: 2px;
   width: 26px; height: 26px;
   background: #ffffff;
   border: 1.5px solid #d1d5db;
@@ -2039,6 +2100,9 @@ onUnmounted(() => {
 
 .sidebar-body {
   display: flex; flex-direction: column; gap: 0.55rem;
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+  overflow-x: visible;
   padding-right: 18px; /* room for toggle btn */
 }
 
@@ -2603,5 +2667,6 @@ onUnmounted(() => {
   .detail-panel  { width: calc(100vw - 1.5rem); right: 0.75rem; }
   .topbar        { gap: 0.5rem; }
   .brand-sub     { display: none; }
+  .map-fs-btn.shifted { right: 12px; }
 }
 </style>

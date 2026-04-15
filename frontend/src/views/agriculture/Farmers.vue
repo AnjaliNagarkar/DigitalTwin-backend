@@ -1,9 +1,9 @@
 <template>
-  <div class="farmers-page">
+  <div class="citizens-page">
     <header class="page-header">
       <div>
-        <h1 class="page-title">Farmer Registry</h1>
-        <p class="page-subtitle">Household-level agricultural records from survey data</p>
+        <h1 class="page-title">Citizen Registry</h1>
+        <p class="page-subtitle">Household-level records from survey data</p>
       </div>
       <div class="header-controls">
         <div class="search-box">
@@ -13,6 +13,13 @@
           <input v-model="search" placeholder="Search by name..." class="search-input" />
         </div>
         <div class="filter-chips">
+          <button
+            class="chip"
+            :class="{ active: farmerFilter }"
+            @click="farmerFilter = !farmerFilter"
+          >
+            Farmer
+          </button>
           <button v-for="f in filters" :key="f.value" class="chip"
             :class="{ active: activeFilter === f.value }"
             @click="activeFilter = activeFilter === f.value ? '' : f.value">
@@ -36,12 +43,12 @@
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Fetching farmer records...</span>
+      <span>Fetching citizen records...</span>
     </div>
 
     <div v-else class="table-container">
       <div class="table-info">
-        Showing <strong>{{ filteredFarmers.length }}</strong> of {{ farmers.length }} records
+        Showing <strong>{{ filteredCitizens.length }}</strong> of {{ citizens.length }} records
       </div>
       <div class="table-wrap">
         <table class="data-table">
@@ -70,28 +77,28 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(farmer, i) in paginatedFarmers" :key="i" class="table-row">
+            <tr v-for="(citizen, i) in paginatedCitizens" :key="i" class="table-row">
               <td class="td-index">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
-              <td class="td-name">{{ farmer.firstName || '—' }}</td>
-              <td class="td-name">{{ farmer.lastName || '—' }}</td>
-              <td class="td-num">{{ farmer.totalLand ? farmer.totalLand + ' ac' : '—' }}</td>
+              <td class="td-name">{{ citizen.firstName || '—' }}</td>
+              <td class="td-name">{{ citizen.lastName || '—' }}</td>
+              <td class="td-num">{{ citizen.totalLand ? citizen.totalLand + ' ac' : '—' }}</td>
               <td class="td-water">
-                <span class="water-badge" :class="waterClass(farmer.waterSource)">
-                  {{ farmer.waterSource || '—' }}
+                <span class="water-badge" :class="waterClass(citizen.waterSource)">
+                  {{ citizen.waterSource || '—' }}
                 </span>
               </td>
               <td class="td-ration">
-                <span class="ration-badge" :class="rationClass(farmer.rationCard)">
-                  {{ farmer.rationCard || '—' }}
+                <span class="ration-badge" :class="rationClass(citizen.rationCard)">
+                  {{ citizen.rationCard || '—' }}
                 </span>
               </td>
               <td>
-                <span class="land-badge" :class="landClass(farmer.ownAgricultureLand)">
-                  {{ farmer.ownAgricultureLand || 'Unknown' }}
+                <span class="land-badge" :class="landClass(citizen.ownAgricultureLand)">
+                  {{ citizen.ownAgricultureLand || 'Unknown' }}
                 </span>
               </td>
               <td>
-                <span class="status-dot" :class="farmer.ownAgricultureLand === 'Yes' ? 'active' : 'inactive'"></span>
+                <span class="status-dot" :class="citizen.ownAgricultureLand === 'Yes' ? 'active' : 'inactive'"></span>
               </td>
             </tr>
           </tbody>
@@ -108,12 +115,13 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getFarmers } from '../../api/index.js'
+import { getCitizens } from '../../api/index.js'
 
 const loading = ref(true)
-const farmers = ref([])
+const citizens = ref([])
 const search = ref('')
 const activeFilter = ref('')
+const farmerFilter = ref(false)
 const sortKey = ref('')
 const sortDir = ref('asc')
 const currentPage = ref(1)
@@ -139,7 +147,7 @@ const irrigationFilter = ref('')
 const rationFilter = ref('')
 
 onMounted(async () => {
-  try { farmers.value = await getFarmers() }
+  try { citizens.value = await getCitizens() }
   catch (e) { console.error(e) }
   finally { loading.value = false }
 })
@@ -149,12 +157,13 @@ function toggleSort(key) {
   else { sortKey.value = key; sortDir.value = 'asc' }
 }
 
-const filteredFarmers = computed(() => {
-  let list = [...farmers.value]
+const filteredCitizens = computed(() => {
+  let list = [...citizens.value]
   if (search.value) {
     const s = search.value.toLowerCase()
     list = list.filter(f => (f.firstName||'').toLowerCase().includes(s) || (f.lastName||'').toLowerCase().includes(s))
   }
+  if (farmerFilter.value) list = list.filter(isFarmerRecord)
   if (activeFilter.value) list = list.filter(f => f.ownAgricultureLand === activeFilter.value)
   if (irrigationFilter.value) {
     if (irrigationFilter.value === 'irrigated') {
@@ -184,18 +193,26 @@ const filteredFarmers = computed(() => {
   return list
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredFarmers.value.length / pageSize)))
-const paginatedFarmers = computed(() => {
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredCitizens.value.length / pageSize)))
+const paginatedCitizens = computed(() => {
   const start = (currentPage.value - 1) * pageSize
-  return filteredFarmers.value.slice(start, start + pageSize)
+  return filteredCitizens.value.slice(start, start + pageSize)
 })
 
-watch([search, activeFilter, irrigationFilter, rationFilter], () => { currentPage.value = 1 })
+watch([search, activeFilter, farmerFilter, irrigationFilter, rationFilter], () => { currentPage.value = 1 })
 
 function landClass(val) {
   if (val === 'Yes') return 'land-yes'
   if (val === 'No')  return 'land-no'
   return 'land-unknown'
+}
+
+function isFarmerRecord(citizen) {
+  const ownsLand = (citizen.ownAgricultureLand || '').toLowerCase() === 'yes'
+  if (ownsLand) return true
+
+  const occupation = `${citizen.occupation || ''} ${citizen.firstName || ''} ${citizen.lastName || ''}`.toLowerCase()
+  return occupation.includes('farmer') || occupation.includes('agri') || occupation.includes('cultivator')
 }
 
 function isRainFed(farmer) {
@@ -219,7 +236,7 @@ function rationClass(val) {
 </script>
 
 <style scoped>
-.farmers-page { padding: 2rem 2.5rem; max-width: 1200px; }
+.citizens-page { padding: 2rem 2.5rem; max-width: none; width: 100%; }
 
 .page-header { margin-bottom: 1.5rem; }
 

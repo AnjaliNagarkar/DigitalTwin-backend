@@ -10,6 +10,7 @@ import (
 type FarmerRecord struct {
 	FirstName          string `json:"firstName"`
 	LastName           string `json:"lastName"`
+	Occupation         string `json:"occupation"`
 	OwnAgricultureLand string `json:"ownAgricultureLand"`
 	TotalLand          string `json:"totalLand"`
 	WaterSource        string `json:"waterSource"`
@@ -25,6 +26,7 @@ func (h *FarmerHandler) GetFarmers(c *gin.Context) {
 		SELECT
 			COALESCE(fm.FIRST_NAME, ''),
 			COALESCE(fm.LAST_NAME, ''),
+			COALESCE(fm.OCCUPATION, ''),
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
@@ -41,7 +43,7 @@ func (h *FarmerHandler) GetFarmers(c *gin.Context) {
 	var farmers []FarmerRecord
 	for rows.Next() {
 		var farmer FarmerRecord
-		if err := rows.Scan(&farmer.FirstName, &farmer.LastName, &farmer.OwnAgricultureLand, &farmer.TotalLand, &farmer.WaterSource, &farmer.RationCard); err != nil {
+		if err := rows.Scan(&farmer.FirstName, &farmer.LastName, &farmer.Occupation, &farmer.OwnAgricultureLand, &farmer.TotalLand, &farmer.WaterSource, &farmer.RationCard); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan farmer record"})
 			return
 		}

@@ -109,44 +109,37 @@
       </div>
     </header>
 
-    <section class="analytics-grid" v-if="analyticsCards.length">
-      <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
-        <div class="analytics-card-head">
-          <div>
-            <h2 class="analytics-title">{{ card.title }}</h2>
-            <p class="analytics-subtitle">{{ card.subtitle }}</p>
-          </div>
-          <div class="analytics-total">{{ card.totalLabel }}</div>
-        </div>
-        <div class="chart-layout">
-          <div class="donut" :style="pieStyle(card.segments)">
-            <div class="donut-hole">
-              <div class="donut-label">{{ card.centerLabel }}</div>
-              <div class="donut-value">{{ card.centerValue }}</div>
-            </div>
-          </div>
-          <div class="legend-list">
-            <div class="legend-row" v-for="item in card.segments" :key="item.label">
-              <span class="legend-dot" :style="{ background: item.color }"></span>
-              <span class="legend-name">{{ item.label }}</span>
-              <span class="legend-value">{{ item.value.toLocaleString() }}</span>
-            </div>
-          </div>
-        </div>
-      </article>
-    </section>
-
     <section class="map-shell">
       <div v-if="!loading && !houses.length" class="empty-state">
         No live household data returned from the database API.
       </div>
 
-      <div class="map-content">
-        <div class="map-container" ref="mapContainer"></div>
+      <div class="map-content" ref="mapContentRef">
+        <div class="map-stage">
+          <div class="map-container" ref="mapContainer"></div>
 
-        <!-- Household Detail Panel -->
-        <transition name="slide">
-          <aside v-if="selectedHouse && viewMode === 'points'" class="detail-panel">
+          <div class="map-floating-controls">
+            <button
+              class="analytics-toggle"
+              type="button"
+              @click="analyticsPanelOpen = !analyticsPanelOpen"
+              :aria-expanded="analyticsPanelOpen"
+            >
+              {{ analyticsPanelOpen ? 'Hide Analytics' : 'View Analytics' }}
+            </button>
+            <button
+              class="fullscreen-toggle"
+              type="button"
+              @click="toggleFullscreen"
+              :aria-pressed="isFullscreen"
+            >
+              {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+            </button>
+          </div>
+
+          <!-- Household Detail Panel -->
+          <transition name="slide">
+            <aside v-if="selectedHouse && viewMode === 'points'" class="detail-panel">
 
             <!-- ── Header ── -->
             <div class="detail-header">
@@ -235,12 +228,12 @@
               {{ selectedHouse.latitude.toFixed(6) }}, {{ selectedHouse.longitude.toFixed(6) }}
             </div>
 
-          </aside>
-        </transition>
+            </aside>
+          </transition>
 
-        <!-- Village/GP Detail Panel -->
-        <transition name="slide">
-          <aside v-if="selectedCluster" class="detail-panel village-panel">
+          <!-- Village/GP Detail Panel -->
+          <transition name="slide">
+            <aside v-if="selectedCluster" class="detail-panel village-panel">
             <button class="panel-close" @click="clearClusterSelection">×</button>
             <div class="village-badge">{{ selectedCluster.level }}</div>
             <h3 class="panel-title">{{ selectedCluster.name }}</h3>
@@ -278,6 +271,43 @@
             <div class="panel-coords">
               {{ selectedCluster.latitude.toFixed(5) }}, {{ selectedCluster.longitude.toFixed(5) }}
             </div>
+            </aside>
+          </transition>
+        </div>
+
+        <transition name="analytics-panel-slide">
+          <aside v-if="analyticsPanelOpen" class="analytics-panel" aria-label="Map analytics">
+            <div class="analytics-panel-head">
+              <h2 class="analytics-panel-title">Map Analytics</h2>
+              <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
+            </div>
+
+            <div class="analytics-scroll" v-if="analyticsCards.length">
+              <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
+                <div class="analytics-card-head">
+                  <div>
+                    <h3 class="analytics-title">{{ card.title }}</h3>
+                    <p class="analytics-subtitle">{{ card.subtitle }}</p>
+                  </div>
+                  <div class="analytics-total">{{ card.totalLabel }}</div>
+                </div>
+                <div class="chart-layout">
+                  <div class="donut" :style="pieStyle(card.segments)">
+                    <div class="donut-hole">
+                      <div class="donut-label">{{ card.centerLabel }}</div>
+                      <div class="donut-value">{{ card.centerValue }}</div>
+                    </div>
+                  </div>
+                  <div class="legend-list">
+                    <div class="legend-row" v-for="item in card.segments" :key="item.label">
+                      <span class="legend-dot" :style="{ background: item.color }"></span>
+                      <span class="legend-name">{{ item.label }}</span>
+                      <span class="legend-value">{{ item.value.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
           </aside>
         </transition>
       </div>
@@ -295,8 +325,11 @@ const houses        = ref([])
 const selectedHouse  = ref(null)
 const selectedCluster = ref(null)
 const mapContainer  = ref(null)
+const mapContentRef = ref(null)
 const colorMode     = ref('sanitation')
 const viewMode      = ref('points')   // 'points' | 'villages'
+const analyticsPanelOpen = ref(false)
+const isFullscreen = ref(false)
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
@@ -357,15 +390,51 @@ const selectedVillageLabel = computed(() => {
 })
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Sanitation')
 
+const MAHARASHTRA_BOUNDS = L.latLngBounds(
+  [15.6, 72.5],
+  [22.2, 80.9]
+)
+
 let map = null
 const markerRefs    = []   // { marker, house }
 let clusterGroup    = null // L.layerGroup for village circles
 let highlightCircle = null // currently highlighted village circle
 let retryTimer = null
+function handleFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
+  handleMapResize()
+}
 
 function handleMapResize() {
   if (!map) return
   map.invalidateSize()
+}
+
+function getMaharashtraFitPadding() {
+  const width = window.innerWidth || 0
+  if (width < 1100) return [40, 40]
+  if (width > 1700) return [24, 24]
+  return [32, 32]
+}
+
+function fitToMaharashtra() {
+  if (!map) return
+  map.fitBounds(MAHARASHTRA_BOUNDS, { padding: getMaharashtraFitPadding() })
+}
+
+async function toggleFullscreen() {
+  const target = mapContentRef.value
+  if (!target) return
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+    await target.requestFullscreen()
+  } catch (error) {
+    console.warn('Fullscreen unavailable:', error?.message || error)
+  }
 }
 
 function clearMarkers() {
@@ -484,7 +553,6 @@ const analyticsCards = computed(() => {
   return [
     {
       title: 'Irrigation Coverage',
-      subtitle: 'Water access across plotted households',
       totalLabel: `${stats.value.total.toLocaleString()} HH`,
       centerLabel: 'Irrigated',
       centerValue: `${Math.max(total - stats.value.noIrrigation, 0).toLocaleString()}`,
@@ -753,10 +821,6 @@ function drawClusters(clusters) {
     dot.on('click', onClick)
     areaCircle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { className: 'map-tooltip' })
   })
-
-  // Fit map to all clusters
-  const bounds = L.latLngBounds(clusters.map(c => [c.latitude, c.longitude]))
-  map.fitBounds(bounds, { padding: [60, 60] })
 }
 
 function showPointLayer() {
@@ -839,8 +903,6 @@ function plotMarkers(data) {
       Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
     `, { className: 'map-tooltip' })
   })
-  const bounds = L.latLngBounds(data.map(h => [h.latitude, h.longitude]))
-  map.fitBounds(bounds, { padding: [40, 40] })
 }
 
 function clearRetryTimer() {
@@ -883,14 +945,16 @@ onMounted(async () => {
   await nextTick()
 
   if (mapContainer.value) {
-    map = L.map(mapContainer.value, { center: [19.75, 75.71], zoom: 7, zoomControl: false, doubleClickZoom: false })
+    map = L.map(mapContainer.value, { zoomControl: false, doubleClickZoom: false })
     L.control.zoom({ position: 'topright' }).addTo(map)
     addTiles(map)
     addMaharashtraHighlight(map)
+    fitToMaharashtra()
     setTimeout(handleMapResize, 60)
     setTimeout(handleMapResize, 250)
     window.addEventListener('resize', handleMapResize)
     window.addEventListener('click', closeDropdowns)
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
   }
 
   loading.value = true
@@ -902,6 +966,7 @@ onUnmounted(() => {
   clearRetryTimer()
   window.removeEventListener('resize', handleMapResize)
   window.removeEventListener('click', closeDropdowns)
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
   if (map) { map.remove(); map = null }
 })
 
@@ -914,6 +979,11 @@ watch(selectedDistrict, async () => {
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
   await loadLocationDropdowns()
+})
+
+watch(analyticsPanelOpen, async () => {
+  await nextTick()
+  handleMapResize()
 })
 
 </script>
@@ -930,19 +1000,19 @@ watch(selectedTaluka, async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
+  padding: 1.1rem 2rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
   z-index: 20;
   flex-shrink: 0;
 }
 
-.page-title { font-family: var(--font-display); font-size: 1.5rem; color: var(--text-primary); font-weight: 400; }
-.page-subtitle { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.2rem; display: flex; align-items: center; gap: 0.5rem; }
+.page-title { font-family: var(--font-display); font-size: 1.65rem; color: var(--text-primary); font-weight: 400; }
+.page-subtitle { color: var(--text-dim); font-size: 0.82rem; margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; }
 
-.map-controls { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
-.map-control-group { display: flex; align-items: center; gap: 0.45rem; }
-.control-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); white-space: nowrap; }
+.map-controls { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+.map-control-group { display: flex; align-items: center; gap: 0.55rem; }
+.control-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); white-space: nowrap; }
 /* ── Custom Select Dropdowns — no native <select>, immune to OS dark mode ── */
 .custom-select {
   position: relative;
@@ -1092,13 +1162,6 @@ watch(selectedTaluka, async () => {
   font-size: 0.8rem;
 }
 
-.analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  padding: 1rem 2rem 0.75rem;
-}
-
 .analytics-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1193,13 +1256,14 @@ watch(selectedTaluka, async () => {
 .legend-value { color: var(--text-body); font-variant-numeric: tabular-nums; }
 
 .map-shell {
-  padding: 0 2rem 1.5rem;
+  padding: 1rem 2rem 1.5rem;
   flex: 1;
   min-height: 0;
 }
 
 .map-content {
   position: relative;
+  display: flex;
   height: 100%;
   min-height: 520px;
   background: var(--bg-card);
@@ -1209,7 +1273,123 @@ watch(selectedTaluka, async () => {
   box-shadow: 0 12px 32px var(--shadow);
 }
 
-.map-container { position: absolute; inset: 0; z-index: 1; }
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.map-floating-controls {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 450;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.analytics-toggle {
+  border: 1px solid var(--teal);
+  background: color-mix(in srgb, var(--teal) 15%, var(--bg-card));
+  color: var(--teal);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.42rem 0.9rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+
+.analytics-toggle:hover {
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.fullscreen-toggle {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-body);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.42rem 0.9rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+
+.fullscreen-toggle:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.analytics-panel {
+  width: 360px;
+  max-width: 42vw;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+
+.analytics-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-panel-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--text-primary);
+}
+
+.analytics-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.analytics-scroll {
+  padding: 0.75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.analytics-panel-slide-enter-active,
+.analytics-panel-slide-leave-active {
+  transition: all 0.22s ease;
+}
+
+.analytics-panel-slide-enter-from,
+.analytics-panel-slide-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
+}
 
 /* ═══════════════════════════════════════════════
    DETAIL PANEL — household click popup
@@ -1424,18 +1604,28 @@ watch(selectedTaluka, async () => {
 .slide-enter-from, .slide-leave-to { opacity: 0; transform: translateX(20px); }
 
 @media (max-width: 1100px) {
-  .analytics-grid {
-    grid-template-columns: 1fr;
+  .analytics-panel {
+    width: 320px;
+    max-width: 48vw;
   }
 
   .chart-layout {
     grid-template-columns: 96px 1fr;
   }
+
+  .map-controls {
+    gap: 0.9rem;
+  }
+
+  .map-floating-controls {
+    top: 16px;
+    left: 16px;
+    gap: 0.45rem;
+  }
 }
 
 @media (max-width: 760px) {
   .map-header,
-  .analytics-grid,
   .map-shell {
     padding-left: 1rem;
     padding-right: 1rem;
@@ -1461,6 +1651,21 @@ watch(selectedTaluka, async () => {
 
   .detail-panel {
     width: calc(100% - 2rem);
+  }
+
+  .analytics-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(88vw, 340px);
+    max-width: none;
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 26px var(--shadow);
+  }
+
+  .custom-select {
+    min-width: 96px;
   }
 }
 </style>

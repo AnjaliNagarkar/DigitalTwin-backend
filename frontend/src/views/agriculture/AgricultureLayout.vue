@@ -14,67 +14,53 @@
       <rect width="100%" height="100%" fill="url(#topo)"/>
     </svg>
 
-    <nav class="sidebar">
-      <div class="sidebar-brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="14" width="6" height="16" rx="1" fill="var(--amber)"/>
-            <rect x="10" y="8" width="6" height="22" rx="1" fill="var(--teal)"/>
-            <rect x="18" y="4" width="6" height="26" rx="1" fill="var(--amber)" opacity="0.7"/>
-            <rect x="26" y="10" width="4" height="20" rx="1" fill="var(--teal)" opacity="0.6"/>
-            <line x1="0" y1="30" x2="32" y2="30" stroke="var(--slate-400)" stroke-width="1"/>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <span class="brand-name">AgriTwin</span>
-          <span class="brand-sub">Digital Twin Platform</span>
-        </div>
-      </div>
-
-      <div class="nav-section-label">Navigation</div>
-      <router-link to="/agriculture/dashboard" class="nav-item" :class="{ active: $route.path === '/agriculture/dashboard' }">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
-        <span>Dashboard</span>
-      </router-link>
-      <router-link to="/agriculture/farmers" class="nav-item" :class="{ active: $route.path === '/agriculture/farmers' }">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-        <span>Farmers</span>
-      </router-link>
-      <router-link to="/agriculture/map" class="nav-item" :class="{ active: $route.path === '/agriculture/map' }">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12 1.586l-4 4v12.828l4-4V1.586zM3.707 3.293A1 1 0 002 4v10a1 1 0 00.293.707L6 18.414V5.586L3.707 3.293zM14 5.586v12.828l2.293-2.293A1 1 0 0017 16V6a1 1 0 00-.293-.707L14 2.586v3z" clip-rule="evenodd"/></svg>
-        <span>2D Map</span>
-      </router-link>
-      <router-link to="/agriculture/twin" class="nav-item" :class="{ active: $route.path === '/agriculture/twin' }">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838l-3.14 1.346 2.352 1.005a1 1 0 00.788 0l7-3a1 1 0 000-1.838l-7-3.001z"/><path d="M3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
-        <span>3D Twin</span>
-      </router-link>
-
-      <div class="nav-spacer"></div>
-
-      <div class="nav-section-label">System</div>
-
-      <!-- Theme Toggle -->
-      <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
-        <div class="theme-track" :class="{ light: theme === 'light' }">
-          <div class="theme-thumb">
-            <!-- Sun icon (light) -->
-            <svg v-if="theme === 'light'" viewBox="0 0 20 20" fill="currentColor" class="theme-icon sun">
-              <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
-            </svg>
-            <!-- Moon icon (dark) -->
-            <svg v-else viewBox="0 0 20 20" fill="currentColor" class="theme-icon moon">
-              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+    <header class="top-nav">
+      <div class="nav-left">
+        <router-link to="/agriculture/dashboard" class="brand-link">
+          <div class="brand-icon">
+            <svg viewBox="0 0 32 32" fill="none">
+              <rect x="2" y="14" width="6" height="16" rx="1" fill="var(--amber)"/>
+              <rect x="10" y="8" width="6" height="22" rx="1" fill="var(--teal)"/>
+              <rect x="18" y="4" width="6" height="26" rx="1" fill="var(--amber)" opacity="0.7"/>
+              <rect x="26" y="10" width="4" height="20" rx="1" fill="var(--teal)" opacity="0.6"/>
+              <line x1="0" y1="30" x2="32" y2="30" stroke="var(--slate-400)" stroke-width="1"/>
             </svg>
           </div>
-        </div>
-        <span class="theme-label">{{ theme === 'dark' ? 'Dark Mode' : 'Light Mode' }}</span>
-      </button>
-
-      <div class="nav-item system-info">
-        <div class="system-dot" :class="apiStatus"></div>
-        <span>API: {{ apiStatus === 'online' ? 'Connected' : 'Offline' }}</span>
+          <div class="brand-text">
+            <span class="brand-name">AgriTwin</span>
+            <span class="brand-sub">Digital Twin Platform</span>
+          </div>
+        </router-link>
       </div>
-    </nav>
+
+      <nav class="nav-center" aria-label="Primary navigation">
+        <router-link to="/agriculture/dashboard" class="nav-link" :class="{ active: $route.path === '/agriculture/dashboard' }">Dashboard</router-link>
+        <router-link to="/agriculture/citizens" class="nav-link" :class="{ active: $route.path === '/agriculture/citizens' }">Citizens</router-link>
+        <router-link to="/agriculture/map" class="nav-link" :class="{ active: $route.path === '/agriculture/map' }">2D Map</router-link>
+        <router-link to="/agriculture/twin" class="nav-link" :class="{ active: $route.path === '/agriculture/twin' }">3D Twin</router-link>
+      </nav>
+
+      <div class="nav-right">
+        <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+          <div class="theme-track" :class="{ light: theme === 'light' }">
+            <div class="theme-thumb">
+              <svg v-if="theme === 'light'" viewBox="0 0 20 20" fill="currentColor" class="theme-icon sun">
+                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+              </svg>
+              <svg v-else viewBox="0 0 20 20" fill="currentColor" class="theme-icon moon">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+              </svg>
+            </div>
+          </div>
+          <span class="theme-label">{{ theme === 'dark' ? 'Dark Mode' : 'Light Mode' }}</span>
+        </button>
+
+        <div class="api-pill" role="status" aria-live="polite">
+          <div class="system-dot" :class="apiStatus"></div>
+          <span>API {{ apiStatus === 'online' ? 'Connected' : 'Offline' }}</span>
+        </div>
+      </div>
+    </header>
 
     <main class="main-content">
       <router-view v-slot="{ Component }">
@@ -169,7 +155,7 @@ onMounted(async () => {
   --slate-500: var(--text-dim);
   --font-display: 'Instrument Serif', Georgia, serif;
   --font-body: 'Outfit', system-ui, sans-serif;
-  --sidebar-w: 240px;
+  --top-nav-h: 78px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -187,9 +173,8 @@ html, body {
 #app { height: 100%; }
 
 .app-shell {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-x: hidden;
   position: relative;
 }
 
@@ -205,38 +190,55 @@ html, body {
 
 [data-theme="light"] .topo-bg { opacity: 0.4; }
 
-/* ── Sidebar ── */
-.sidebar {
-  width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+/* ── Top Nav ── */
+.top-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--top-nav-h);
   background: var(--bg-primary);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem 0.75rem;
-  z-index: 10;
-  position: relative;
-  transition: background 0.3s ease, border-color 0.3s ease;
-}
-
-[data-theme="light"] .sidebar {
-  box-shadow: 2px 0 12px var(--shadow);
-}
-
-.sidebar::after {
-  content: '';
-  position: absolute;
-  right: 0; top: 0; bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, var(--amber-dim), transparent 30%, transparent 70%, var(--teal-dim));
-}
-
-.sidebar-brand {
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.6rem;
+  z-index: 40;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+[data-theme="light"] .top-nav {
+  box-shadow: 0 2px 14px var(--shadow);
+}
+
+.top-nav::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-dim) 30%, var(--teal-dim) 70%, transparent);
+}
+
+.nav-left,
+.nav-right {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.nav-right {
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.brand-link {
+  display: inline-flex;
+  align-items: center;
   gap: 0.75rem;
-  padding: 0 0.5rem;
-  margin-bottom: 2rem;
+  text-decoration: none;
 }
 
 .brand-icon { width: 36px; height: 36px; flex-shrink: 0; }
@@ -259,52 +261,30 @@ html, body {
   font-weight: 500;
 }
 
-.nav-section-label {
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--text-dim);
-  padding: 0 0.75rem;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-}
-
-.nav-spacer { flex: 1; }
-
-.nav-item {
+.nav-center {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 8px;
+  justify-content: center;
+  gap: 0.25rem;
+  flex: 1.5;
+}
+
+.nav-link {
+  padding: 0.65rem 0.9rem;
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 400;
-  transition: all 0.2s ease;
-  margin-bottom: 2px;
-  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
   position: relative;
 }
 
-.nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.6; transition: opacity 0.2s; }
-.nav-item:hover { background: var(--bg-surface); color: var(--text-body); }
-.nav-item:hover svg { opacity: 0.9; }
+.nav-link:hover { color: var(--text-body); }
 
-.nav-item.active {
-  background: var(--amber-dim);
+.nav-link.active {
   color: var(--amber);
-  font-weight: 500;
-}
-.nav-item.active svg { opacity: 1; color: var(--amber); }
-.nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 60%;
-  background: var(--amber);
-  border-radius: 0 3px 3px 0;
+  border-bottom-color: var(--amber);
 }
 
 /* ── Theme Toggle ── */
@@ -312,7 +292,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.45rem 0.6rem;
   border-radius: 8px;
   background: none;
   border: none;
@@ -320,9 +300,7 @@ html, body {
   font-family: var(--font-body);
   font-size: 0.82rem;
   color: var(--text-muted);
-  width: 100%;
-  text-align: left;
-  margin-bottom: 4px;
+  white-space: nowrap;
   transition: background 0.2s, color 0.2s;
 }
 
@@ -371,7 +349,17 @@ html, body {
 .theme-label { font-size: 0.82rem; }
 
 /* ── System info ── */
-.system-info { cursor: default; font-size: 0.75rem; }
+.api-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
 
 .system-dot {
   width: 7px; height: 7px;
@@ -386,13 +374,66 @@ html, body {
 
 /* ── Main Content ── */
 .main-content {
-  flex: 1;
+  width: 100%;
+  min-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-top: var(--top-nav-h);
   z-index: 1;
   position: relative;
   background: var(--bg-deep);
   transition: background 0.3s ease;
+}
+
+@media (max-width: 1100px) {
+  :root, [data-theme="dark"], [data-theme="light"] {
+    --top-nav-h: 118px;
+  }
+
+  .top-nav {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+
+  .nav-left,
+  .nav-right {
+    flex: unset;
+  }
+
+  .nav-center {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-center::-webkit-scrollbar {
+    display: none;
+  }
+
+  .theme-label {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-nav {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+    gap: 0.5rem;
+  }
+
+  .brand-sub {
+    display: none;
+  }
+
+  .api-pill {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+  }
 }
 
 /* ── Page transitions ── */

@@ -31,9 +31,13 @@ const routes = [
         component: () => import('../views/agriculture/Dashboard.vue'),
       },
       {
-        path: 'farmers',
-        name: 'AgricultureFarmers',
+        path: 'citizens',
+        name: 'AgricultureCitizens',
         component: () => import('../views/agriculture/Farmers.vue'),
+      },
+      {
+        path: 'farmers',
+        redirect: '/agriculture/citizens',
       },
       {
         path: 'map',
