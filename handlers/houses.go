@@ -28,6 +28,7 @@ type HouseRecord struct {
 	Latrine        string  `json:"latrine"`
 	Lighting       string  `json:"lighting"`
 	RationCard     string  `json:"rationCard"`
+	Occupation     string  `json:"occupation"`
 	HeadName       string  `json:"headName"`
 }
 
@@ -121,12 +122,24 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
+			COALESCE(occ.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), '')
 		FROM FAMILY f
+		LEFT JOIN (
+			SELECT
+				fm.EXTERNAL_FAMILY_ID,
+				COALESCE(
+					MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), '')),
+					MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), '')),
+					''
+				) AS primary_occupation
+			FROM FAMILY_MEMBER fm
+			GROUP BY fm.EXTERNAL_FAMILY_ID
+		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -160,6 +173,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 			&house.WaterSource, &house.Kharif, &house.Rabi,
 			&house.Latrine, &house.Lighting, &house.RationCard,
+			&house.Occupation,
 			&house.HeadName,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan house record", "detail": err.Error()})
@@ -217,6 +231,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
+			COALESCE(occ.primary_occupation, ''),
 			COALESCE(
 				TRIM(CONCAT(
 					COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
@@ -224,6 +239,17 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 					COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 				)), '')
 		FROM FAMILY f
+		LEFT JOIN (
+			SELECT
+				fm.EXTERNAL_FAMILY_ID,
+				COALESCE(
+					MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), '')),
+					MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), '')),
+					''
+				) AS primary_occupation
+			FROM FAMILY_MEMBER fm
+			GROUP BY fm.EXTERNAL_FAMILY_ID
+		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -243,6 +269,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
 		&house.Latrine, &house.Lighting, &house.RationCard,
+		&house.Occupation,
 		&house.HeadName,
 	)
 	if err != nil {
