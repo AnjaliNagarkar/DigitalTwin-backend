@@ -307,8 +307,16 @@ const buildingIds = new Set()
 const pointIds = new Set()
 const clusterIds = new Set()
 const clusterMap = new Map()
+const clusterEntityGroups = []
+const clusterIconCache = new Map()
+const houseClusterMap = new Map()
+const clusterEntities = []
+const houseEntities = []
+const clusterLabels = []
 
 const THRESHOLD_BUILDINGS = 3500
+const MIN_PIXEL_DISTANCE = 40
+const SHOW_HOUSES_ZOOM = 14
 
 const COLOR_MODE_LABELS = {
   population_density: 'Population Density',
@@ -597,6 +605,59 @@ function buildingHeight(house) {
   return Math.max(Number(house.total_members || 0) * 2, 4)
 }
 
+function getHouseId(house) {
+  return house.house_id || house.household_id || house.id || house.house_no || `${house.lat},${house.lng}`
+}
+
+function getHouseKey(house) {
+  const lat = Number(house.lat)
+  const lng = Number(house.lng)
+  return `${getHouseId(house)}|${lat.toFixed(6)}|${lng.toFixed(6)}`
+}
+
+function normalizeClusterSelection(cluster) {
+  if (!cluster) return null
+
+  const issues = cluster.issues || {
+    bpl: Number(cluster.problems?.find((item) => item.key === 'bplFamilies')?.count || 0),
+    illiterate: Number(cluster.problems?.find((item) => item.key === 'illiterateMembers')?.count || 0),
+    unemployed: Number(cluster.problems?.find((item) => item.key === 'unemployedMembers')?.count || 0),
+    divyang: Number(cluster.problems?.find((item) => item.key === 'divyangMembers')?.count || 0),
+  }
+
+  return {
+    ...cluster,
+    household_count: Number(cluster.household_count ?? cluster.count ?? 0),
+    count: Number(cluster.count ?? cluster.household_count ?? 0),
+    issues,
+    problems: cluster.problems || analyzeCluster(cluster.households || []),
+    households: cluster.households || [],
+    lat: Number(cluster.lat),
+    lng: Number(cluster.lng),
+  }
+}
+
+function getClusterCenter(cluster) {
+  const points = Array.isArray(cluster?.households) ? cluster.households : []
+  if (!points.length) {
+    return {
+      lat: Number(cluster?.lat || 0),
+      lng: Number(cluster?.lng || 0),
+    }
+  }
+
+  const sums = points.reduce((acc, house) => {
+    acc.lat += Number(house.lat || 0)
+    acc.lng += Number(house.lng || 0)
+    return acc
+  }, { lat: 0, lng: 0 })
+
+  return {
+    lat: sums.lat / points.length,
+    lng: sums.lng / points.length,
+  }
+}
+
 function updateZoomVisibility() {
   if (!viewer || viewer.isDestroyed()) return
   const pos = viewer.camera.positionCartographic
@@ -604,13 +665,199 @@ function updateZoomVisibility() {
   const h = pos.height
   cameraHeight.value = Math.round(h)
 
+  const zoom = getZoomLevel(h)
+  const hasClusterOverlay = activeProblemFilters.value.length > 0 && clusterEntities.length > 0
+  const showClusters = hasClusterOverlay && zoom < SHOW_HOUSES_ZOOM
+  const showHouses = !hasClusterOverlay || zoom >= SHOW_HOUSES_ZOOM
   const showBuildings = h < THRESHOLD_BUILDINGS
 
-  viewer.entities.values.forEach((entity) => {
+  houseEntities.forEach((entity) => {
+    if (!entity) return
     if (buildingIds.has(entity.id)) {
-      entity.show = showBuildings
+      entity.show = showHouses && showBuildings
     } else if (pointIds.has(entity.id)) {
-      entity.show = !showBuildings
+      entity.show = showHouses && !showBuildings
+    } else {
+      entity.show = showHouses
+    }
+  })
+
+  clusterEntities.forEach((entity) => {
+    if (!entity) return
+    entity.show = showClusters
+  })
+
+  clusterLabels.forEach((entity) => {
+    if (!entity) return
+    entity.show = hasClusterOverlay && showHouses
+  })
+
+  applyClusterVisualization(h)
+}
+
+function getClusterRadius(count) {
+  if (count > 40) return 30
+  if (count > 20) return 22
+  if (count > 10) return 16
+  return 10
+}
+
+function getClusterColor(count) {
+  if (count > 30) return '#dc2626'
+  if (count > 10) return '#f97316'
+  return '#eab308'
+}
+
+function getClusterText(count, showText) {
+  if (!showText) return ''
+  if (count > 99) return '100+'
+  return String(count)
+}
+
+function generateClusterIcon(count, showText) {
+  const color = getClusterColor(count)
+  const text = getClusterText(count, showText)
+  const cacheKey = `${color}:${text || 'dot'}`
+  const cached = clusterIconCache.get(cacheKey)
+  if (cached) return cached
+
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+
+  const cx = size / 2
+  const cy = size / 2
+  const r = 24
+
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)'
+  ctx.shadowBlur = 8
+  ctx.shadowOffsetY = 2
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fillStyle = color
+  ctx.fill()
+  ctx.lineWidth = 4
+  ctx.strokeStyle = '#ffffff'
+  ctx.stroke()
+  ctx.restore()
+
+  if (text) {
+    ctx.fillStyle = '#ffffff'
+    ctx.font = text.length > 2 ? '700 17px system-ui, sans-serif' : '700 22px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, cx, cy)
+  }
+
+  const dataUrl = canvas.toDataURL('image/png')
+  clusterIconCache.set(cacheKey, dataUrl)
+  return dataUrl
+}
+
+function getClusterZoomStage(height) {
+  if (height < THRESHOLD_BUILDINGS) return 'very-high'
+  if (height < 25000) return 'high'
+  if (height < 120000) return 'medium'
+  return 'out'
+}
+
+function getZoomLevel(height = cameraHeight.value) {
+  if (height > 2000000) return 7
+  if (height > 1000000) return 9
+  if (height > 600000) return 11
+  if (height > 300000) return 13
+  return 15
+}
+
+function getClusterScale(count, zoom) {
+  let scale = 0.7
+
+  if (zoom < 12) scale = 0.55
+  if (zoom < 10) scale = 0.45
+  if (zoom < 8) scale = 0.35
+
+  if (count <= 5) scale *= 0.85
+
+  return scale
+}
+
+function offsetCartesianPosition(position, eastMeters, northMeters) {
+  const cartographic = Cesium.Cartographic.fromCartesian(position)
+  if (!cartographic) return position
+
+  const lat = cartographic.latitude
+  const metersPerDegLat = 111320
+  const metersPerDegLng = Math.max(Math.cos(lat) * 111320, 1)
+
+  const latDeg = Cesium.Math.toDegrees(lat) + (northMeters / metersPerDegLat)
+  const lngDeg = Cesium.Math.toDegrees(cartographic.longitude) + (eastMeters / metersPerDegLng)
+
+  return Cesium.Cartesian3.fromDegrees(lngDeg, latDeg, cartographic.height || 0)
+}
+
+function adjustClusterPosition(position, existingPositions) {
+  if (!viewer || viewer.isDestroyed()) return position
+
+  let adjusted = position
+  const shiftPattern = [
+    [8, 8],
+    [-8, 8],
+    [8, -8],
+    [-8, -8],
+    [14, 0],
+    [0, 14],
+  ]
+
+  for (let i = 0; i < shiftPattern.length; i += 1) {
+    const screen1 = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, adjusted)
+    if (!screen1) break
+
+    const tooClose = existingPositions.some((existingPosition) => {
+      const screen2 = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, existingPosition)
+      if (!screen2) return false
+      const dx = screen1.x - screen2.x
+      const dy = screen1.y - screen2.y
+      const distance = Math.sqrt((dx * dx) + (dy * dy))
+      return distance < MIN_PIXEL_DISTANCE
+    })
+
+    if (!tooClose) return adjusted
+
+    const [east, north] = shiftPattern[i]
+    adjusted = offsetCartesianPosition(adjusted, east, north)
+  }
+
+  return adjusted
+}
+
+function applyClusterVisualization(height = cameraHeight.value) {
+  if (!viewer || viewer.isDestroyed() || !clusterEntityGroups.length) return
+
+  const zoom = getZoomLevel(height)
+  const hasClusterOverlay = activeProblemFilters.value.length > 0 && clusterEntities.length > 0
+  const showClusters = hasClusterOverlay && zoom < SHOW_HOUSES_ZOOM
+  const showCount = zoom >= 9
+  const renderedPositions = []
+
+  clusterEntityGroups.forEach((group) => {
+    const count = Number(group.count || 0)
+    const scale = getClusterScale(count, zoom)
+
+    const shouldShow = showClusters
+
+    if (group.icon?.billboard) {
+      group.icon.show = shouldShow
+      if (shouldShow && group.basePosition) {
+        const adjusted = adjustClusterPosition(group.basePosition, renderedPositions)
+        group.icon.position = adjusted
+        renderedPositions.push(adjusted)
+      }
+      group.icon.billboard.image = generateClusterIcon(count, showCount)
+      group.icon.billboard.scale = scale
     }
   })
 }
@@ -642,6 +889,41 @@ function flyToHouse(house) {
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
     duration: 1.2,
   })
+}
+
+function zoomToCluster(cluster) {
+  if (!viewer || !cluster) return
+
+  const points = (cluster.households || [])
+    .map((h) => ({ lat: Number(h.lat), lng: Number(h.lng) }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    .map((p) => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0))
+
+  if (points.length > 1) {
+    const sphere = Cesium.BoundingSphere.fromPoints(points)
+    const range = Math.max(sphere.radius * 3.2, 1500)
+    viewer.camera.flyToBoundingSphere(sphere, {
+      duration: 1.3,
+      offset: new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(0),
+        Cesium.Math.toRadians(-55),
+        range,
+      ),
+    })
+    return
+  }
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(Number(cluster.lng), Number(cluster.lat), 1500),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-58), roll: 0 },
+    duration: 1.2,
+  })
+}
+
+function openIssuePanel(house) {
+  selectedHouse.value = house
+  const clusterForHouse = houseClusterMap.get(getHouseKey(house))
+  selectedCluster.value = normalizeClusterSelection(clusterForHouse)
 }
 
 function computeJitteredPositions(list) {
@@ -730,52 +1012,86 @@ function computeProblemClusters(houseList) {
 
 function addClusterEntities(problemHouses) {
   clusterMap.clear()
+  houseClusterMap.clear()
+  clusterEntityGroups.length = 0
+  clusterEntities.length = 0
+  clusterLabels.length = 0
   const clusters = computeProblemClusters(problemHouses)
 
   clusters.forEach(({ lat, lng, count, houses: clusterHouses }) => {
-    const pos = Cesium.Cartesian3.fromDegrees(Number(lng), Number(lat), 0)
+    const basePosition = Cesium.Cartesian3.fromDegrees(Number(lng), Number(lat), 0)
     const problems = analyzeCluster(clusterHouses)
-    const clusterData = { count, lat, lng, problems }
+    const clusterData = {
+      household_count: count,
+      count,
+      lat,
+      lng,
+      problems,
+      issues: {
+        bpl: Number(problems.find((item) => item.key === 'bplFamilies')?.count || 0),
+        illiterate: Number(problems.find((item) => item.key === 'illiterateMembers')?.count || 0),
+        unemployed: Number(problems.find((item) => item.key === 'unemployedMembers')?.count || 0),
+        divyang: Number(problems.find((item) => item.key === 'divyangMembers')?.count || 0),
+      },
+      households: clusterHouses.map((h) => ({
+        houseId: getHouseId(h),
+        lat: Number(h.lat),
+        lng: Number(h.lng),
+      })),
+    }
 
-    const circleEnt = viewer.entities.add({
-      position: pos,
+    const iconEnt = viewer.entities.add({
+      position: basePosition,
       show: true,
-      ellipse: {
-        semiMajorAxis: 130,
-        semiMinorAxis: 130,
-        material: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.15),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.75),
-        outlineWidth: 2,
+      billboard: {
+        image: generateClusterIcon(count, true),
+        scale: 0.8,
+        verticalOrigin: Cesium.VerticalOrigin.CENTER,
+        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
     })
+    iconEnt.clusterData = clusterData
 
+    const center = getClusterCenter(clusterData)
     const labelEnt = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(Number(lng), Number(lat), 35),
-      show: true,
+      position: Cesium.Cartesian3.fromDegrees(Number(center.lng), Number(center.lat), 20),
+      show: false,
       label: {
-        text: `⚠ High Need Area\n${count} households`,
-        font: '600 12px system-ui, sans-serif',
+        text: `High Need Area\n${Number(clusterData.household_count || 0)} households`,
+        font: 'bold 14px sans-serif',
         fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.fromCssColorString('#7f1d1d'),
-        outlineWidth: 2,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-        pixelOffset: new Cesium.Cartesian2(0, -6),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        outlineColor: Cesium.Color.RED,
+        outlineWidth: 3,
         showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.88),
-        backgroundPadding: new Cesium.Cartesian2(8, 5),
+        backgroundColor: Cesium.Color.RED.withAlpha(0.85),
+        pixelOffset: new Cesium.Cartesian2(0, -25),
+        scale: 0.7,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
+    labelEnt.clusterData = clusterData
 
-    clusterIds.add(circleEnt.id)
+    clusterIds.add(iconEnt.id)
     clusterIds.add(labelEnt.id)
-    clusterMap.set(circleEnt.id, clusterData)
+    clusterEntities.push(iconEnt)
+    clusterLabels.push(labelEnt)
+    clusterMap.set(iconEnt.id, clusterData)
     clusterMap.set(labelEnt.id, clusterData)
+    clusterHouses.forEach((house) => {
+      houseClusterMap.set(getHouseKey(house), clusterData)
+    })
+    clusterEntityGroups.push({
+      count,
+      lat: Number(lat),
+      lng: Number(lng),
+      basePosition,
+      icon: iconEnt,
+    })
   })
+
+  applyClusterVisualization(viewer.camera.positionCartographic?.height ?? cameraHeight.value)
 }
 
 function buildEntities() {
@@ -786,6 +1102,11 @@ function buildEntities() {
   pointIds.clear()
   clusterIds.clear()
   clusterMap.clear()
+  houseClusterMap.clear()
+  clusterEntityGroups.length = 0
+  clusterEntities.length = 0
+  clusterLabels.length = 0
+  houseEntities.length = 0
   selectedCluster.value = null
 
   const selectedNo = selectedHouse.value?.house_no
@@ -838,6 +1159,8 @@ function buildEntities() {
         outlineWidth: isSelected ? 2 : 1.5,
       },
     })
+    baseEnt.houseData = house
+    houseEntities.push(baseEnt)
 
     const roofEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH + roofH / 2),
@@ -852,6 +1175,8 @@ function buildEntities() {
         outlineWidth: isSelected ? 2 : 1.5,
       },
     })
+    roofEnt.houseData = house
+    houseEntities.push(roofEnt)
 
     const ptEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
@@ -868,6 +1193,8 @@ function buildEntities() {
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
     })
+    ptEnt.houseData = house
+    houseEntities.push(ptEnt)
 
     buildingIds.add(baseEnt.id)
     buildingIds.add(roofEnt.id)
@@ -881,6 +1208,8 @@ function buildEntities() {
   if (hasProblemFilter && problemHouses.length) {
     addClusterEntities(problemHouses)
   }
+
+  updateZoomVisibility()
 }
 
 function buildQueryParams() {
@@ -1130,17 +1459,18 @@ onMounted(async () => {
   viewer.screenSpaceEventHandler.setInputAction((event) => {
     const picked = viewer.scene.pick(event.position)
     if (!picked?.id) return
-    const entityId = picked.id.id || picked.id
-    const cluster = clusterMap.get(entityId)
+    const pickedEntity = picked.id
+    const entityId = pickedEntity.id || pickedEntity
+    const cluster = pickedEntity.clusterData || clusterMap.get(entityId)
     if (cluster) {
-      selectedCluster.value = cluster
+      zoomToCluster(cluster)
       selectedHouse.value = null
+      selectedCluster.value = normalizeClusterSelection(cluster)
       return
     }
-    const house = entityMap.get(entityId)
+    const house = pickedEntity.houseData || entityMap.get(entityId)
     if (house) {
-      selectedHouse.value = house
-      selectedCluster.value = null
+      openIssuePanel(house)
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 

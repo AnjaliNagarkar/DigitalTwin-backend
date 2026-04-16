@@ -63,6 +63,11 @@
           </select>
         </div>
 
+        <label class="gps-toggle" v-if="viewMode === 'points'">
+          <input type="checkbox" v-model="showLocationIssues" />
+          <span>Show GPS Issues</span>
+        </label>
+
         <div class="map-legend">
           <template v-if="viewMode === 'villages'">
             <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>High coverage</div>
@@ -115,7 +120,7 @@
 
         <transition name="slide">
           <aside v-if="selectedMarker && viewMode === 'points'" class="detail-panel">
-            <button class="panel-close" @click="selectedMarker = null">×</button>
+            <button class="panel-close" @click="closeSelectedMarker">×</button>
             <h3 class="panel-title">Head: {{ selectedMarker.head_name || 'N/A' }}</h3>
             <div class="panel-subtitle">House No: {{ selectedMarker.house_no || 'N/A' }}</div>
             <div class="panel-id">
@@ -125,6 +130,58 @@
               <div class="panel-stat" v-for="item in detailStats" :key="item.label">
                 <div class="panel-stat-label">{{ item.label }}</div>
                 <div class="panel-stat-value" :style="item.style || {}">{{ item.value }}</div>
+              </div>
+            </div>
+
+            <div v-if="showLocationIssues" class="gps-detail-card">
+              <div class="gps-detail-title">Location Quality</div>
+              <div class="gps-detail-row">
+                <span class="gps-detail-icon" :style="{ color: getLocationColor(selectedMarker.location_quality) }">
+                  {{ getLocationIcon(selectedMarker.location_quality) }}
+                </span>
+                <div class="gps-detail-body">
+                  <div class="gps-detail-label" :style="{ color: getLocationColor(selectedMarker.location_quality) }">
+                    {{ getLocationLabel(selectedMarker.location_quality) }}
+                  </div>
+                  <div class="gps-detail-reason">Reason: {{ selectedMarker.location_reason || 'N/A' }}</div>
+                  <div class="gps-detail-coords">
+                    Coordinates: {{ Number(selectedMarker.lat || 0).toFixed(5) }}, {{ Number(selectedMarker.lng || 0).toFixed(5) }}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="Number(selectedMarker.duplicate_count || 0) >= 6 && getDuplicateHousePreview(selectedMarker).length"
+                class="gps-dup-card"
+              >
+                <div class="gps-dup-title">
+                  Same Coordinates: {{ Number(selectedMarker.duplicate_count || 0) }} houses
+                </div>
+
+                <div v-if="!isExpanded(selectedMarker)">
+                  <div v-for="houseNo in getDuplicateHousePreview(selectedMarker)" :key="houseNo" class="gps-dup-item">
+                    House No: {{ houseNo }}
+                  </div>
+
+                  <button
+                    v-if="getRemainingDuplicateHouseCount(selectedMarker) > 0"
+                    type="button"
+                    class="gps-dup-toggle"
+                    @click="toggleDuplicateListForMarker(selectedMarker)"
+                  >
+                    +{{ getRemainingDuplicateHouseCount(selectedMarker) }} more houses
+                  </button>
+                </div>
+
+                <div v-else class="duplicate-list-scroll">
+                  <div v-for="houseNo in getDuplicateHouseList(selectedMarker)" :key="houseNo" class="gps-dup-item">
+                    House No: {{ houseNo }}
+                  </div>
+
+                  <button type="button" class="gps-dup-toggle" @click="toggleDuplicateListForMarker(selectedMarker)">
+                    Show less
+                  </button>
+                </div>
               </div>
             </div>
           </aside>
@@ -203,6 +260,8 @@ const selectedMarker = ref(null)
 const selectedCluster = ref(null)
 const viewMode = ref('points')
 const colorMode = ref('population_density')
+const showLocationIssues = ref(false)
+const expandedDuplicates = ref({})
 
 let map = null
 let markerLayer = null
@@ -234,6 +293,66 @@ function escapeHtml(value) {
 
 function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+function getLocationLabel(q) {
+  const quality = normalizeText(q)
+  if (quality === 'valid') return 'Valid GPS location'
+  if (quality === 'approximate') return 'Approximate GPS'
+  if (quality === 'suspicious') return 'Suspicious location'
+  if (quality === 'missing') return 'Missing GPS'
+  return 'Unknown'
+}
+
+function getLocationColor(q) {
+  const quality = normalizeText(q)
+  if (quality === 'valid') return '#22c55e'
+  if (quality === 'approximate') return '#f59e0b'
+  if (quality === 'suspicious') return '#ef4444'
+  if (quality === 'missing') return '#6b7280'
+  return '#3b82f6'
+}
+
+function getLocationIcon(q) {
+  const quality = normalizeText(q)
+  if (quality === 'valid') return '🟢'
+  if (quality === 'approximate') return '🟡'
+  if (quality === 'suspicious') return '🔴'
+  if (quality === 'missing') return '⚫'
+  return '📍'
+}
+
+function getDuplicateHousePreview(marker) {
+  const list = Array.isArray(marker?.duplicate_houses) ? marker.duplicate_houses : []
+  return list.slice(0, 5)
+}
+
+function getDuplicateHouseList(marker) {
+  const list = Array.isArray(marker?.duplicate_houses) ? marker.duplicate_houses : []
+  return isExpanded(marker) ? list : list.slice(0, 5)
+}
+
+function getRemainingDuplicateHouseCount(marker) {
+  const list = Array.isArray(marker?.duplicate_houses) ? marker.duplicate_houses : []
+  if (isExpanded(marker)) return 0
+  return Math.max(list.length - 5, 0)
+}
+
+function getMarkerKey(marker) {
+  return `${marker?.lat}_${marker?.lng}`
+}
+
+function isExpanded(marker) {
+  return Boolean(expandedDuplicates.value[getMarkerKey(marker)])
+}
+
+function toggleDuplicateListForMarker(marker) {
+  const key = getMarkerKey(marker)
+  expandedDuplicates.value[key] = !expandedDuplicates.value[key]
+}
+
+function closeSelectedMarker() {
+  selectedMarker.value = null
 }
 
 function parseIncomeValue(value) {
@@ -303,6 +422,15 @@ function getEmploymentColor(house) {
 }
 
 function getMarkerColor(house) {
+  if (showLocationIssues.value) {
+    const quality = normalizeText(house.location_quality)
+    if (quality === 'valid') return '#22c55e'
+    if (quality === 'approximate') return '#f59e0b'
+    if (quality === 'suspicious') return '#ef4444'
+    if (quality === 'missing') return '#6b7280'
+    return '#6b7280'
+  }
+
   if (colorMode.value === 'bpl_status') return getBplColor(house)
   if (colorMode.value === 'divyang_presence') return getDivyangColor(house)
   if (colorMode.value === 'employment') return getEmploymentColor(house)
@@ -686,6 +814,15 @@ const detailStats = computed(() => {
 })
 
 const headerLegend = computed(() => {
+  if (showLocationIssues.value) {
+    return [
+      { color: '#22c55e', label: 'Valid location' },
+      { color: '#f59e0b', label: 'Approximate GPS' },
+      { color: '#ef4444', label: 'Suspicious location' },
+      { color: '#6b7280', label: 'Missing GPS' },
+    ]
+  }
+
   if (colorMode.value === 'population_density') {
     return [
       { color: '#2c7a7b', label: 'Population households' },
@@ -772,6 +909,13 @@ watch(selectedTaluka, async () => {
 })
 
 watch(colorMode, () => {
+  if (!map) return
+  if (viewMode.value === 'points' && !showLocationIssues.value) {
+    renderMarkers({ fitBounds: false })
+  }
+})
+
+watch(showLocationIssues, () => {
   if (!map) return
   if (viewMode.value === 'points') {
     renderMarkers({ fitBounds: false })
@@ -882,6 +1026,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.gps-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.gps-toggle input {
+  margin: 0;
+  accent-color: #14b8a6;
 }
 
 .control-label {
@@ -1337,6 +1495,102 @@ onUnmounted(() => {
   color: #718176;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.gps-detail-card {
+  margin-top: 0.95rem;
+  padding: 0.75rem;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+
+.gps-detail-title {
+  color: #374151;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  margin-bottom: 0.45rem;
+}
+
+.gps-detail-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+}
+
+.gps-detail-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  margin-top: 0.08rem;
+  flex-shrink: 0;
+}
+
+.gps-detail-body {
+  min-width: 0;
+}
+
+.gps-detail-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.gps-detail-reason,
+.gps-detail-coords {
+  margin-top: 0.2rem;
+  color: #4b5563;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.gps-dup-card {
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.gps-dup-title {
+  font-size: 0.7rem;
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.gps-dup-item {
+  margin-top: 0.35rem;
+  color: #4b5563;
+  font-size: 0.71rem;
+}
+
+.duplicate-list-scroll {
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.duplicate-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.duplicate-list-scroll::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.gps-dup-toggle {
+  margin-top: 0.35rem;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.gps-dup-toggle:hover {
+  text-decoration: underline;
 }
 
 .slide-enter-active { transition: all 0.25s ease-out; }

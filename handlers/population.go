@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 
@@ -62,6 +63,10 @@ type PopulationMapMarker struct {
 	FamilyBelongBPLCategory string   `json:"FAMILY_BELONG_BPL_CATEGORY"`
 	RationCardType          string   `json:"RATION_CARD_TYPE"`
 	AnnualIncome            string   `json:"ANNUAL_INCOME"`
+	LocationQuality         string   `json:"location_quality"`
+	LocationReason          string   `json:"location_reason"`
+	DuplicateCount          int      `json:"duplicate_count,omitempty"`
+	DuplicateHouses         []string `json:"duplicate_houses,omitempty"`
 }
 
 type PopulationMapInsightsResponse struct {
@@ -653,7 +658,152 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 		markers = []PopulationMapMarker{}
 	}
 
+	h.annotatePopulationLocationQuality(markers)
+
 	c.JSON(http.StatusOK, markers)
+}
+
+type populationVillageGeoStats struct {
+	sumLat      float64
+	sumLng      float64
+	validCount  int
+	coordCount  map[string]int
+	coordHouses map[string][]string
+}
+
+// annotatePopulationLocationQuality adds location quality flags in O(n) by
+// analysing each village independently with two linear passes.
+func (h *PopulationHandler) annotatePopulationLocationQuality(markers []PopulationMapMarker) {
+	if len(markers) == 0 {
+		return
+	}
+
+	villageGroups := make(map[string][]int, len(markers))
+	villageStats := make(map[string]*populationVillageGeoStats, len(markers))
+
+	for i := range markers {
+		villageID := strings.TrimSpace(markers[i].VillageID)
+		if villageID == "" {
+			villageID = "__unknown_village__"
+		}
+
+		villageGroups[villageID] = append(villageGroups[villageID], i)
+
+		stats := villageStats[villageID]
+		if stats == nil {
+			stats = &populationVillageGeoStats{coordCount: map[string]int{}, coordHouses: map[string][]string{}}
+			villageStats[villageID] = stats
+		}
+
+		lat, lng := markers[i].Lat, markers[i].Lng
+		if isMissingPopulationCoordinate(lat, lng) || !isPopulationCoordinateRangeValid(lat, lng) {
+			continue
+		}
+
+		coordKey := roundedPopulationCoordKey(lat, lng)
+		stats.coordCount[coordKey]++
+		houseNo := strings.TrimSpace(markers[i].HouseNo)
+		if houseNo != "" {
+			stats.coordHouses[coordKey] = append(stats.coordHouses[coordKey], houseNo)
+		}
+		stats.sumLat += lat
+		stats.sumLng += lng
+		stats.validCount++
+	}
+
+	for villageID, indices := range villageGroups {
+		stats := villageStats[villageID]
+		avgLat, avgLng := 0.0, 0.0
+		if stats != nil && stats.validCount > 0 {
+			avgLat = stats.sumLat / float64(stats.validCount)
+			avgLng = stats.sumLng / float64(stats.validCount)
+		}
+
+		for _, idx := range indices {
+			lat, lng := markers[idx].Lat, markers[idx].Lng
+
+			if isMissingPopulationCoordinate(lat, lng) {
+				markers[idx].LocationQuality = "missing"
+				markers[idx].LocationReason = "GPS missing"
+				continue
+			}
+
+			if !isPopulationCoordinateRangeValid(lat, lng) {
+				markers[idx].LocationQuality = "suspicious"
+				markers[idx].LocationReason = "Invalid coordinate range"
+				continue
+			}
+
+			if looksLikePopulationSwappedCoordinate(lat, lng) {
+				markers[idx].LocationQuality = "suspicious"
+				markers[idx].LocationReason = "Latitude and longitude appear swapped"
+				continue
+			}
+
+			coordKey := roundedPopulationCoordKey(lat, lng)
+			duplicates := 0
+			var duplicateHouses []string
+			if stats != nil {
+				duplicates = stats.coordCount[coordKey]
+				duplicateHouses = stats.coordHouses[coordKey]
+			}
+
+			if duplicates >= 6 {
+				markers[idx].DuplicateCount = duplicates
+				markers[idx].DuplicateHouses = duplicateHouses
+			}
+
+			if duplicates >= 8 {
+				markers[idx].LocationQuality = "suspicious"
+				markers[idx].LocationReason = "Too many houses share same coordinates"
+				continue
+			}
+
+			if stats != nil && stats.validCount > 0 {
+				dLat := lat - avgLat
+				dLng := lng - avgLng
+				dist := math.Sqrt(dLat*dLat + dLng*dLng)
+
+				if dist > 0.05 {
+					markers[idx].LocationQuality = "suspicious"
+					markers[idx].LocationReason = "Far outside village boundary"
+					continue
+				}
+
+				if dist > 0.022 {
+					markers[idx].LocationQuality = "approximate"
+					markers[idx].LocationReason = "Outside main settlement area"
+					continue
+				}
+			}
+
+			if duplicates >= 6 {
+				markers[idx].LocationQuality = "approximate"
+				markers[idx].LocationReason = "Coordinates shared by many nearby households"
+				continue
+			}
+
+			markers[idx].LocationQuality = "valid"
+			markers[idx].LocationReason = "Within village cluster"
+		}
+	}
+}
+
+func isMissingPopulationCoordinate(lat, lng float64) bool {
+	return lat == 0 || lng == 0 || math.IsNaN(lat) || math.IsNaN(lng)
+}
+
+func isPopulationCoordinateRangeValid(lat, lng float64) bool {
+	return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+}
+
+func roundedPopulationCoordKey(lat, lng float64) string {
+	return fmt.Sprintf("%.5f,%.5f", lat, lng)
+}
+
+func looksLikePopulationSwappedCoordinate(lat, lng float64) bool {
+	// India-focused heuristic: swapped values often look like lat ~ 70-98 and lng ~ 6-38.
+	return lat >= 68 && lat <= 98 && lng >= 6 && lng <= 38
 }
 
 // GetPopulationMapSummary handles GET /population/map-summary.
