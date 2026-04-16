@@ -48,6 +48,10 @@ export function getFarmers() {
   return fetchJSON('/farmers')
 }
 
+export function getCitizens() {
+  return fetchJSON('/citizens')
+}
+
 export function getCrops() {
   return fetchJSON('/crops')
 }

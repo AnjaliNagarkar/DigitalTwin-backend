@@ -217,7 +217,8 @@ function rationColor(label) {
 <style scoped>
 .dashboard {
   padding: 1.5rem 2rem;
-  max-width: 1220px;
+  max-width: none;
+  width: 100%;
 }
 
 .page-header {
