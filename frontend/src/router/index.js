@@ -33,7 +33,12 @@ const routes = [
       {
         path: 'citizens',
         name: 'AgricultureCitizens',
-        component: () => import('../views/agriculture/Farmers.vue'),
+        component: () => import('../components/UnifiedRegistry.vue'),
+      },
+      {
+        path: 'registry',
+        name: 'AgricultureRegistry',
+        component: () => import('../components/UnifiedRegistry.vue'),
       },
       {
         path: 'farmers',
@@ -67,7 +72,7 @@ const routes = [
       {
         path: 'registry',
         name: 'PopulationRegistry',
-        component: () => import('../views/population/PopulationRegistry.vue'),
+        component: () => import('../components/UnifiedRegistry.vue'),
       },
       {
         path: 'map',

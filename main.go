@@ -34,6 +34,7 @@ func main() {
 	locationHandler := &handlers.LocationHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
+	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -107,6 +108,7 @@ func main() {
 	r.GET("/irrigation", irrigationHandler.GetIrrigation)
 	r.GET("/citizens", farmerHandler.GetFarmers)
 	r.GET("/farmers", farmerHandler.GetFarmers)
+	r.GET("/unified-registry", unifiedRegistryHandler.GetUnifiedRegistry)
 
 	// ── Static/in-memory modules ──────────────────────────────────────────────
 	r.GET("/soil", handlers.GetSoil)
@@ -124,8 +126,9 @@ func main() {
 	log.Println("  GET /crops            — kharif/rabi cultivation data")
 	log.Println("  GET /land             — land area records")
 	log.Println("  GET /irrigation       — water source records")
-	log.Println("  GET /citizens         — citizen registry")
-	log.Println("  GET /farmers          — farmer registry")
+	log.Println("  GET /citizens         — citizen registry (legacy)")
+	log.Println("  GET /farmers          — farmer registry (legacy)")
+	log.Println("  GET /unified-registry — unified master registry (merged population + agri)")
 	log.Println("  GET /soil /schemes /market  — static reference data")
 	log.Println("  POST /pdf/report            — generate PDF report (DB read-only)")
 	log.Println("  POST /pdf/population-report — generate population PDF report (DB read-only)")

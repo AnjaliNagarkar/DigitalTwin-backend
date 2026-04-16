@@ -52,6 +52,10 @@ export function getCitizens() {
   return fetchJSON('/citizens')
 }
 
+export function getUnifiedRegistry() {
+  return fetchJSON('/unified-registry', TIMEOUT_DATA)
+}
+
 export function getCrops() {
   return fetchJSON('/crops')
 }
