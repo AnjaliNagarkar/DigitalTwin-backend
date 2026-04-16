@@ -2,7 +2,7 @@
   <div class="map-page">
     <header class="map-header">
       <div class="map-title-area">
-        <h1 class="page-title">Population Geo-Intelligence Map</h1>
+        <h1 class="page-title">Geo-Intelligence Map</h1>
         <p class="page-subtitle">
           {{ summary.total_households.toLocaleString() }} households plotted from survey database
         </p>
@@ -20,32 +20,76 @@
 
         <div class="map-control-group">
           <label class="control-label">District</label>
-          <select v-model="selectedDistrict" class="control-select">
-            <option value="">All</option>
-            <option v-for="district in districtOptions" :key="district.id" :value="district.id">
-              {{ district.name }}
-            </option>
-          </select>
+          <div class="custom-select" :class="{ open: openDropdown === 'district' }" @click.stop="toggleDropdown('district')">
+            <button class="cs-trigger" type="button">
+              <span class="cs-value">{{ selectedDistrictLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedDistrict }" @click="selectDistrict('')">All</div>
+              <div
+                class="cs-option"
+                v-for="district in districtOptions"
+                :key="district.id"
+                :class="{ selected: String(selectedDistrict) === String(district.id) }"
+                @click="selectDistrict(district.id)"
+              >
+                {{ district.name }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="map-control-group">
           <label class="control-label">Taluka</label>
-          <select v-model="selectedTaluka" class="control-select" :disabled="!talukaOptions.length">
-            <option value="">All</option>
-            <option v-for="taluka in talukaOptions" :key="taluka.id" :value="taluka.id">
-              {{ taluka.name }}
-            </option>
-          </select>
+          <div
+            class="custom-select"
+            :class="{ open: openDropdown === 'taluka', disabled: !talukaOptions.length }"
+            @click.stop="talukaOptions.length && toggleDropdown('taluka')"
+          >
+            <button class="cs-trigger" type="button" :disabled="!talukaOptions.length">
+              <span class="cs-value">{{ selectedTalukaLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">All</div>
+              <div
+                class="cs-option"
+                v-for="taluka in talukaOptions"
+                :key="taluka.id"
+                :class="{ selected: String(selectedTaluka) === String(taluka.id) }"
+                @click="selectTaluka(taluka.id)"
+              >
+                {{ taluka.name }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="map-control-group">
           <label class="control-label">Village</label>
-          <select v-model="selectedVillage" class="control-select village-select" :disabled="!villageOptions.length">
-            <option value="">All</option>
-            <option v-for="village in villageOptions" :key="village.id" :value="village.id">
-              {{ village.name }}
-            </option>
-          </select>
+          <div
+            class="custom-select"
+            :class="{ open: openDropdown === 'village', disabled: !villageOptions.length }"
+            @click.stop="villageOptions.length && toggleDropdown('village')"
+          >
+            <button class="cs-trigger" type="button" :disabled="!villageOptions.length">
+              <span class="cs-value">{{ selectedVillageLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
+              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">All</div>
+              <div
+                class="cs-option"
+                v-for="village in villageOptions"
+                :key="village.id"
+                :class="{ selected: String(selectedVillage) === String(village.id) }"
+                @click="selectVillage(village.id)"
+              >
+                {{ village.name }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="map-control-group">
@@ -55,12 +99,18 @@
 
         <div class="map-control-group" v-if="viewMode === 'points'">
           <label class="control-label">Color by</label>
-          <select v-model="colorMode" class="control-select">
-            <option value="population_density">Population Density</option>
-            <option value="bpl_status">BPL Status</option>
-            <option value="divyang_presence">Divyang Presence</option>
-            <option value="employment">Employment Status</option>
-          </select>
+          <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }" @click.stop="toggleDropdown('colorMode')">
+            <button class="cs-trigger" type="button">
+              <span class="cs-value">{{ selectedColorModeLabel }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
+              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }" @click="selectColorMode('bpl_status')">BPL Status</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }" @click="selectColorMode('divyang_presence')">Divyang Presence</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'employment' }" @click="selectColorMode('employment')">Employment Status</div>
+            </div>
+          </div>
         </div>
 
         <label class="gps-toggle" v-if="viewMode === 'points'">
@@ -80,43 +130,37 @@
             </div>
           </template>
         </div>
+
       </div>
     </header>
-
-    <section class="analytics-grid" v-if="analyticsCards.length">
-      <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
-        <div class="analytics-card-head">
-          <div>
-            <h2 class="analytics-title">{{ card.title }}</h2>
-            <p class="analytics-subtitle">{{ card.subtitle }}</p>
-          </div>
-          <div class="analytics-total">{{ card.totalLabel }}</div>
-        </div>
-        <div class="chart-layout">
-          <div class="donut" :style="pieStyle(card.segments)">
-            <div class="donut-hole">
-              <div class="donut-label">{{ card.centerLabel }}</div>
-              <div class="donut-value">{{ card.centerValue }}</div>
-            </div>
-          </div>
-          <div class="legend-list">
-            <div class="legend-row" v-for="segment in card.segments" :key="segment.label">
-              <span class="legend-dot" :style="{ background: segment.color }"></span>
-              <span class="legend-name">{{ segment.label }}</span>
-              <span class="legend-value">{{ segment.value.toLocaleString() }}</span>
-            </div>
-          </div>
-        </div>
-      </article>
-    </section>
 
     <section class="map-shell">
       <div v-if="!loading && !markers.length" class="empty-state">
         No live population map data returned from the database API.
       </div>
 
-      <div class="map-content">
-        <div class="map-container" ref="mapContainer"></div>
+      <div class="map-content" ref="mapContentRef">
+        <div class="map-stage">
+          <div class="map-container" ref="mapContainer"></div>
+
+          <div class="map-floating-controls">
+            <button
+              class="analytics-toggle"
+              type="button"
+              @click="analyticsPanelOpen = !analyticsPanelOpen"
+              :aria-expanded="analyticsPanelOpen"
+            >
+              {{ analyticsPanelOpen ? 'Hide Analytics' : 'View Analytics' }}
+            </button>
+            <button
+              class="fullscreen-toggle"
+              type="button"
+              @click="toggleFullscreen"
+              :aria-pressed="isFullscreen"
+            >
+              {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+            </button>
+          </div>
 
         <transition name="slide">
           <aside v-if="selectedMarker && viewMode === 'points'" class="detail-panel">
@@ -228,6 +272,43 @@
             </div>
           </aside>
         </transition>
+        </div>
+
+        <transition name="analytics-panel-slide">
+          <aside v-if="analyticsPanelOpen" class="analytics-panel" aria-label="Map analytics">
+            <div class="analytics-panel-head">
+              <h2 class="analytics-panel-title">Map Analytics</h2>
+              <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
+            </div>
+
+            <div class="analytics-scroll" v-if="analyticsCards.length">
+              <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
+                <div class="analytics-card-head">
+                  <div>
+                    <h3 class="analytics-title">{{ card.title }}</h3>
+                    <p class="analytics-subtitle">{{ card.subtitle }}</p>
+                  </div>
+                  <div class="analytics-total">{{ card.totalLabel }}</div>
+                </div>
+                <div class="chart-layout">
+                  <div class="donut" :style="pieStyle(card.segments)">
+                    <div class="donut-hole">
+                      <div class="donut-label">{{ card.centerLabel }}</div>
+                      <div class="donut-value">{{ card.centerValue }}</div>
+                    </div>
+                  </div>
+                  <div class="legend-list">
+                    <div class="legend-row" v-for="segment in card.segments" :key="segment.label">
+                      <span class="legend-dot" :style="{ background: segment.color }"></span>
+                      <span class="legend-name">{{ segment.label }}</span>
+                      <span class="legend-value">{{ segment.value.toLocaleString() }}</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </aside>
+        </transition>
       </div>
     </section>
   </div>
@@ -240,6 +321,7 @@ import { getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData, getPopulationMapInsights, getPopulationMapSummary } from './api.js'
 
 const mapContainer = ref(null)
+const mapContentRef = ref(null)
 const loading = ref(true)
 const markers = ref([])
 const summary = ref({ total_households: 0 })
@@ -262,11 +344,92 @@ const viewMode = ref('points')
 const colorMode = ref('population_density')
 const showLocationIssues = ref(false)
 const expandedDuplicates = ref({})
+const analyticsPanelOpen = ref(false)
+const isFullscreen = ref(false)
+const openDropdown = ref(null)
 
 let map = null
 let markerLayer = null
 let clusterLayer = null
 let requestToken = 0
+
+const COLOR_MODE_LABELS = {
+  population_density: 'Population Density',
+  bpl_status: 'BPL Status',
+  divyang_presence: 'Divyang Presence',
+  employment: 'Employment Status',
+}
+
+const selectedDistrictLabel = computed(() => {
+  if (!selectedDistrict.value) return 'All'
+  return districtOptions.value.find((item) => String(item.id) === String(selectedDistrict.value))?.name || 'All'
+})
+
+const selectedTalukaLabel = computed(() => {
+  if (!selectedTaluka.value) return 'All'
+  return talukaOptions.value.find((item) => String(item.id) === String(selectedTaluka.value))?.name || 'All'
+})
+
+const selectedVillageLabel = computed(() => {
+  if (!selectedVillage.value) return 'All'
+  return villageOptions.value.find((item) => String(item.id) === String(selectedVillage.value))?.name || 'All'
+})
+
+const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Population Density')
+
+function toggleDropdown(name) {
+  openDropdown.value = openDropdown.value === name ? null : name
+}
+
+function closeDropdowns() {
+  openDropdown.value = null
+}
+
+function selectDistrict(id) {
+  selectedDistrict.value = id
+  closeDropdowns()
+}
+
+function selectTaluka(id) {
+  selectedTaluka.value = id
+  closeDropdowns()
+}
+
+function selectVillage(id) {
+  selectedVillage.value = id
+  closeDropdowns()
+}
+
+function selectColorMode(mode) {
+  colorMode.value = mode
+  closeDropdowns()
+}
+
+function handleMapResize() {
+  if (map) {
+    map.invalidateSize()
+  }
+}
+
+function handleFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
+  handleMapResize()
+}
+
+async function toggleFullscreen() {
+  const target = mapContentRef.value
+  if (!target) return
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+    await target.requestFullscreen()
+  } catch (error) {
+    console.warn('Fullscreen unavailable:', error?.message || error)
+  }
+}
 
 function pieStyle(segments) {
   const total = segments.reduce((sum, segment) => sum + segment.value, 0)
@@ -630,14 +793,19 @@ function renderClusters() {
   clusters.forEach((cluster) => {
     const color = cluster.count >= 100 ? '#10b981' : cluster.count >= 30 ? '#f59e0b' : '#ef4444'
     const radius = Math.max(4000, Math.min(18000, 4000 + (Math.log(cluster.count + 1) / Math.log(maxCount + 1)) * 14000))
+    const baseStyle = {
+      fillOpacity: 0.18,
+      weight: 1.5,
+      opacity: 0.55,
+    }
 
     const circle = L.circle([cluster.latitude, cluster.longitude], {
       radius,
       fillColor: color,
-      fillOpacity: 0.18,
+      fillOpacity: baseStyle.fillOpacity,
       color,
-      weight: 1.5,
-      opacity: 0.55,
+      weight: baseStyle.weight,
+      opacity: baseStyle.opacity,
     }).addTo(clusterLayer)
 
     const dot = L.circleMarker([cluster.latitude, cluster.longitude], {
@@ -666,6 +834,13 @@ function renderClusters() {
 
     circle.on('click', selectCluster)
     dot.on('click', selectCluster)
+    circle.on('mouseover', () => {
+      circle.setStyle({ fillOpacity: 0.30, weight: 2.5 })
+      circle.bringToFront()
+    })
+    circle.on('mouseout', () => {
+      circle.setStyle({ fillOpacity: baseStyle.fillOpacity, weight: baseStyle.weight, opacity: baseStyle.opacity })
+    })
     circle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { sticky: true })
   })
 
@@ -868,9 +1043,75 @@ function setViewMode(mode) {
   }
 }
 
-function handleResize() {
-  if (map) {
-    map.invalidateSize()
+// Distinct palette — 36 colours covering all Maharashtra districts
+const DISTRICT_PALETTE = [
+  '#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4',
+  '#f43f5e','#84cc16','#fb923c','#14b8a6','#eab308',
+  '#6366f1','#22d3ee','#4ade80','#fb7185','#facc15',
+  '#818cf8','#34d399','#f97316','#c084fc','#2dd4bf',
+  '#fbbf24','#f87171','#60a5fa','#a78bfa','#e879f9',
+  '#38bdf8','#86efac','#fde68a','#fca5a5','#93c5fd',
+  '#d8b4fe','#6ee7b7','#fcd34d','#fdba74','#bef264',
+  '#67e8f9',
+]
+
+async function addDistrictBorders(mapInstance) {
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson')
+    const data = await res.json()
+
+    // Filter to Maharashtra only — geohacker uses ST_NM property
+    const mhDistricts = data.features.filter((f) => {
+      const props = f.properties || {}
+      return (
+        String(props.ST_NM || '').toUpperCase().includes('MAHARASHTRA') ||
+        String(props.state || '').toUpperCase().includes('MAHARASHTRA') ||
+        String(props.STATE || '').toUpperCase().includes('MAHARASHTRA') ||
+        String(props.NAME_1 || '').toUpperCase().includes('MAHARASHTRA')
+      )
+    })
+
+    mhDistricts.forEach((feature, i) => {
+      const color = DISTRICT_PALETTE[i % DISTRICT_PALETTE.length]
+      const props = feature.properties || {}
+      const districtName = props.DISTRICT || props.dtname || props.NAME_2 || props.district || 'District'
+      const baseStyle = {
+        color,
+        weight: 1.8,
+        opacity: 0.75,
+        fillColor: color,
+        fillOpacity: 0.10,
+        dashArray: null,
+      }
+
+      const layer = L.geoJSON(feature, {
+        renderer: L.svg(),
+        style: baseStyle,
+        onEachFeature: (_f, districtLayer) => {
+          districtLayer.on('mouseover', (e) => {
+            const target = e.target
+            target.setStyle({ fillOpacity: 0.30, weight: 2.5 })
+            target.bindTooltip(
+              `<div style="font-weight:700;font-size:0.78rem;color:#1e293b;">${districtName}</div>`,
+              { sticky: true, className: 'map-tooltip district-tooltip', direction: 'top' },
+            ).openTooltip(e.latlng)
+          })
+
+          districtLayer.on('mousemove', (e) => {
+            e.target.getTooltip()?.setLatLng(e.latlng)
+          })
+
+          districtLayer.on('mouseout', (e) => {
+            e.target.setStyle(baseStyle)
+            e.target.closeTooltip()
+          })
+        },
+      }).addTo(mapInstance).bringToBack()
+
+      layer.bringToBack()
+    })
+  } catch (e) {
+    console.warn('District boundaries unavailable:', e.message)
   }
 }
 
@@ -882,9 +1123,48 @@ async function addMaharashtraHighlight(mapInstance) {
       Object.values(f.properties || {}).some((v) => String(v).toUpperCase().includes('MAHARASHTRA')),
     )
     if (mh) {
+      // Outer world ring + Maharashtra hole to darken non-Maharashtra regions.
+      const worldRing = [[-90, -180], [90, -180], [90, 180], [-90, 180], [-90, -180]]
+
+      const holeRings = []
+      if (mh.geometry.type === 'Polygon') {
+        mh.geometry.coordinates.forEach((ring) => holeRings.push(ring))
+      } else if (mh.geometry.type === 'MultiPolygon') {
+        mh.geometry.coordinates.forEach((poly) =>
+          poly.forEach((ring) => holeRings.push(ring)),
+        )
+      }
+
+      const maskFeature = {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [worldRing, ...holeRings],
+        },
+        properties: {},
+      }
+
+      L.geoJSON(maskFeature, {
+        style: {
+          fillColor: '#000000',
+          fillOpacity: 0.55,
+          color: 'transparent',
+          weight: 0,
+        },
+        interactive: false,
+      }).addTo(mapInstance)
+
       L.geoJSON(mh, {
-        style: { color: '#f59e0b', weight: 2.5, opacity: 0.9, fillColor: '#f59e0b', fillOpacity: 0.05, dashArray: '8,5' },
-      }).addTo(mapInstance).bringToBack()
+        style: {
+          color: '#f59e0b',
+          weight: 2.5,
+          opacity: 0.9,
+          fillColor: 'transparent',
+          fillOpacity: 0,
+          dashArray: '8,5',
+        },
+        interactive: false,
+      }).addTo(mapInstance)
 
       const center = L.geoJSON(mh).getBounds().getCenter()
       L.marker(center, {
@@ -922,6 +1202,11 @@ watch(showLocationIssues, () => {
   }
 })
 
+watch(analyticsPanelOpen, async () => {
+  await nextTick()
+  handleMapResize()
+})
+
 onMounted(async () => {
   await loadLocationOptions()
 
@@ -934,18 +1219,23 @@ onMounted(async () => {
     attribution: '&copy; OpenStreetMap contributors',
   }).addTo(map)
 
+  addDistrictBorders(map)
   await addMaharashtraHighlight(map)
 
   markerLayer = L.layerGroup().addTo(map)
   clusterLayer = L.layerGroup().addTo(map)
 
   await fetchMapData()
-  window.addEventListener('resize', handleResize)
+  window.addEventListener('resize', handleMapResize)
+  window.addEventListener('click', closeDropdowns)
+  document.addEventListener('fullscreenchange', handleFullscreenChange)
 })
 
 onUnmounted(() => {
   requestToken += 1
-  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('resize', handleMapResize)
+  window.removeEventListener('click', closeDropdowns)
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
   if (map) {
     map.remove()
     map = null
@@ -965,11 +1255,12 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
+  padding: 0.85rem 2rem;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
   z-index: 20;
   flex-shrink: 0;
+  gap: 1.5rem;
 }
 
 .page-title {
@@ -991,7 +1282,7 @@ onUnmounted(() => {
 .map-controls {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.9rem;
   flex-wrap: wrap;
 }
 
@@ -1026,6 +1317,107 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.custom-select {
+  position: relative;
+  min-width: 90px;
+}
+
+.cs-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #334155;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+  white-space: nowrap;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.cs-trigger:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f9fafb;
+}
+
+.custom-select.open .cs-trigger {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.18);
+}
+
+.custom-select.disabled .cs-trigger,
+.cs-trigger:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+}
+
+.cs-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cs-arrow {
+  font-size: 0.58rem;
+  color: #64748b;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+
+.custom-select.open .cs-arrow {
+  transform: rotate(180deg);
+}
+
+.cs-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 3px 8px rgba(0,0,0,0.10);
+  z-index: 9999;
+}
+
+.cs-dropdown-right {
+  left: auto;
+  right: 0;
+}
+
+.cs-option {
+  padding: 0.42rem 0.75rem;
+  font-size: 0.76rem;
+  color: #1e293b;
+  background: #ffffff;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+
+.cs-option:hover {
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.cs-option.selected {
+  background: #ccfbf1;
+  color: #0f766e;
+  font-weight: 600;
 }
 
 .gps-toggle {
@@ -1118,19 +1510,16 @@ onUnmounted(() => {
   color: #334155;
 }
 
-.map-legend {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  flex-basis: 100%;
-}
-
 .legend-item {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.7rem;
+  font-size: 0.67rem;
   color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem 0.18rem 0.3rem;
 }
 
 .legend-dot {
@@ -1138,13 +1527,16 @@ onUnmounted(() => {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
 }
 
-.analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  padding: 1rem 2rem 0.75rem;
+.map-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  margin-top: 0.2rem;
 }
 
 .analytics-card {
@@ -1279,20 +1671,133 @@ onUnmounted(() => {
 }
 
 .map-shell {
-  padding: 0 2rem 1.5rem;
+  padding: 1rem 2rem 1.5rem;
   flex: 1;
   min-height: 0;
 }
 
 .map-content {
   position: relative;
+  display: flex;
   height: 100%;
   min-height: 520px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 12px 32px var(--shadow);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.map-floating-controls {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 450;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.analytics-toggle {
+  border: 1px solid rgba(20,184,166,0.4);
+  background: rgba(255,255,255,0.92);
+  color: var(--teal);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.36rem 0.8rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.14s ease;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.analytics-toggle:hover {
+  background: var(--teal);
+  color: #ffffff;
+  border-color: var(--teal);
+}
+
+.fullscreen-toggle {
+  border: 1px solid rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.92);
+  color: #475569;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.36rem 0.8rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.14s ease;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.fullscreen-toggle:hover {
+  border-color: rgba(20,184,166,0.4);
+  color: var(--teal);
+}
+
+.analytics-panel {
+  width: 360px;
+  max-width: 42vw;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+
+.analytics-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-panel-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--text-primary);
+}
+
+.analytics-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.analytics-scroll {
+  padding: 0.75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.analytics-panel-slide-enter-active,
+.analytics-panel-slide-leave-active {
+  transition: all 0.22s ease;
+}
+
+.analytics-panel-slide-enter-from,
+.analytics-panel-slide-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
 }
 
 .map-container {
@@ -1598,32 +2103,24 @@ onUnmounted(() => {
 .slide-enter-from, .slide-leave-to { opacity: 0; transform: translateX(20px); }
 
 @media (max-width: 1100px) {
-  .analytics-grid {
-    grid-template-columns: 1fr;
-  }
-
   .chart-layout {
     grid-template-columns: 96px 1fr;
+  }
+
+  .analytics-panel {
+    width: 320px;
+    max-width: 48vw;
   }
 }
 
 @media (max-width: 760px) {
   .map-header,
-  .analytics-grid,
   .map-shell {
     padding-left: 1rem;
     padding-right: 1rem;
   }
 
-  .map-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .map-legend {
-    flex-wrap: wrap;
-  }
+  .map-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
 
   .chart-layout {
     grid-template-columns: 1fr;
@@ -1636,6 +2133,18 @@ onUnmounted(() => {
   .detail-panel {
     width: calc(100% - 2rem);
   }
+
+  .analytics-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(88vw, 340px);
+    max-width: none;
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 26px var(--shadow);
+  }
+
 }
 </style>
 

@@ -1,6 +1,16 @@
 <template>
   <div class="twin-page">
-    <div class="cesium-wrap" ref="cesiumContainer"></div>
+    <div class="cesium-wrap" ref="cesiumContainer">
+      <button
+        class="map-fs-btn"
+        :class="{ shifted: selectedHouse || selectedCluster }"
+        @click="toggleTwinFullscreen"
+        :title="isTwinFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+        aria-label="Toggle fullscreen"
+      >
+        {{ isTwinFullscreen ? '⤡' : '⤢' }}
+      </button>
+    </div>
 
     <div class="topbar">
       <div class="topbar-brand">
@@ -283,6 +293,7 @@ const mouseY = ref(0)
 const pdfLoading = ref(false)
 const tileStyle = ref('street')
 const sidebarCollapsed = ref(false)
+const isTwinFullscreen = ref(false)
 const cameraHeight = ref(120000)
 const selectedColorBy = ref('population_density')
 const colorMode = selectedColorBy
@@ -313,6 +324,10 @@ const houseClusterMap = new Map()
 const clusterEntities = []
 const houseEntities = []
 const clusterLabels = []
+
+function handleTwinFullscreenChange() {
+  isTwinFullscreen.value = !!document.fullscreenElement
+}
 
 const THRESHOLD_BUILDINGS = 3500
 const MIN_PIXEL_DISTANCE = 40
@@ -557,6 +572,21 @@ function toggleTile() {
   if (!viewer) return
   viewer.imageryLayers.removeAll()
   viewer.imageryLayers.addImageryProvider(buildImageryProvider())
+}
+
+async function toggleTwinFullscreen() {
+  const el = cesiumContainer.value
+  if (!el) return
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+    await el.requestFullscreen()
+  } catch (e) {
+    console.warn('Fullscreen unavailable:', e?.message || e)
+  }
 }
 
 function normalizeText(value) {
@@ -1438,6 +1468,9 @@ watch(selectedHouse, () => {
 })
 
 onMounted(async () => {
+  isTwinFullscreen.value = !!document.fullscreenElement
+  document.addEventListener('fullscreenchange', handleTwinFullscreenChange)
+
   viewer = new Cesium.Viewer(cesiumContainer.value, {
     animation: false,
     timeline: false,
@@ -1499,6 +1532,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', handleTwinFullscreenChange)
+
   if (viewer && !viewer.isDestroyed()) {
     viewer.destroy()
     viewer = null
@@ -1576,6 +1611,35 @@ onUnmounted(() => {
   background: var(--c-surface);
   border-bottom: 1px solid var(--c-border);
   box-shadow: var(--c-shadow);
+}
+
+.map-fs-btn {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  z-index: 210;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.map-fs-btn.shifted {
+  right: 340px;
+}
+.map-fs-btn:hover {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #f0fdf4;
 }
 
 /* Brand */
@@ -2375,5 +2439,6 @@ onUnmounted(() => {
   .detail-panel  { width: calc(100vw - 1.5rem); right: 0.75rem; }
   .topbar        { gap: 0.5rem; }
   .brand-sub     { display: none; }
+  .map-fs-btn.shifted { right: 12px; }
 }
 </style>

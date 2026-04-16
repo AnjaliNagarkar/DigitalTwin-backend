@@ -62,21 +62,25 @@ const routes = [
       {
         path: 'dashboard',
         name: 'PopulationDashboard',
+        alias: ['/population/dashboard'],
         component: () => import('../views/population/PopulationDashboard.vue'),
       },
       {
         path: 'registry',
         name: 'PopulationRegistry',
+        alias: ['/population-registry'],
         component: () => import('../views/population/PopulationRegistry.vue'),
       },
       {
         path: 'map',
         name: 'PopulationMap',
+        alias: ['/population/2d-map'],
         component: () => import('../views/population/PopulationMap.vue'),
       },
       {
         path: 'twin',
         name: 'PopulationTwin',
+        alias: ['/population/3d-twin'],
         component: () => import('../views/population/PopulationTwin.vue'),
       },
     ],
