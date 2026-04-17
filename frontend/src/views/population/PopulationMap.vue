@@ -163,69 +163,37 @@
           </div>
 
         <transition name="slide">
-          <aside v-if="selectedMarker && viewMode === 'points'" class="detail-panel">
-            <button class="panel-close" @click="closeSelectedMarker">×</button>
-            <h3 class="panel-title">Head: {{ selectedMarker.head_name || 'N/A' }}</h3>
-            <div class="panel-subtitle">House No: {{ selectedMarker.house_no || 'N/A' }}</div>
-            <div class="panel-id">
-              Members: {{ Number(selectedMarker.total_members || 0).toLocaleString() }}
-            </div>
-            <div class="panel-grid">
-              <div class="panel-stat" v-for="item in detailStats" :key="item.label">
-                <div class="panel-stat-label">{{ item.label }}</div>
-                <div class="panel-stat-value" :style="item.style || {}">{{ item.value }}</div>
+          <aside
+            v-if="selectedMarker"
+            class="detail-panel house-detail-panel"
+          >
+            <div class="detail-header">
+              <div>
+                <div
+                  class="detail-badge"
+                  :style="{
+                    background: getMarkerColor(selectedMarker) + '18',
+                    borderColor: getMarkerColor(selectedMarker) + '60',
+                    color: getMarkerColor(selectedMarker),
+                  }"
+                >
+                  {{ selectedColorModeLabel }}
+                </div>
+                <div class="detail-name">
+                  {{ selectedMarker.head_name || 'Unknown Head' }}
+                </div>
+                <div class="detail-sub">House {{ selectedMarker.house_no || 'N/A' }}</div>
               </div>
+              <button class="detail-close" @click="closeSelectedMarker">×</button>
             </div>
 
-            <div v-if="showLocationIssues" class="gps-detail-card">
-              <div class="gps-detail-title">Location Quality</div>
-              <div class="gps-detail-row">
-                <span class="gps-detail-icon" :style="{ color: getLocationColor(selectedMarker.location_quality) }">
-                  {{ getLocationIcon(selectedMarker.location_quality) }}
-                </span>
-                <div class="gps-detail-body">
-                  <div class="gps-detail-label" :style="{ color: getLocationColor(selectedMarker.location_quality) }">
-                    {{ getLocationLabel(selectedMarker.location_quality) }}
-                  </div>
-                  <div class="gps-detail-reason">Reason: {{ selectedMarker.location_reason || 'N/A' }}</div>
-                  <div class="gps-detail-coords">
-                    Coordinates: {{ Number(selectedMarker.lat || 0).toFixed(5) }}, {{ Number(selectedMarker.lng || 0).toFixed(5) }}
-                  </div>
-                </div>
-              </div>
+            <button class="focus-btn" @click="zoomToSelectedMarker">📍 Zoom to House</button>
 
-              <div
-                v-if="Number(selectedMarker.duplicate_count || 0) >= 6 && getDuplicateHousePreview(selectedMarker).length"
-                class="gps-dup-card"
-              >
-                <div class="gps-dup-title">
-                  Same Coordinates: {{ Number(selectedMarker.duplicate_count || 0) }} houses
-                </div>
-
-                <div v-if="!isExpanded(selectedMarker)">
-                  <div v-for="houseNo in getDuplicateHousePreview(selectedMarker)" :key="houseNo" class="gps-dup-item">
-                    House No: {{ houseNo }}
-                  </div>
-
-                  <button
-                    v-if="getRemainingDuplicateHouseCount(selectedMarker) > 0"
-                    type="button"
-                    class="gps-dup-toggle"
-                    @click="toggleDuplicateListForMarker(selectedMarker)"
-                  >
-                    +{{ getRemainingDuplicateHouseCount(selectedMarker) }} more houses
-                  </button>
-                </div>
-
-                <div v-else class="duplicate-list-scroll">
-                  <div v-for="houseNo in getDuplicateHouseList(selectedMarker)" :key="houseNo" class="gps-dup-item">
-                    House No: {{ houseNo }}
-                  </div>
-
-                  <button type="button" class="gps-dup-toggle" @click="toggleDuplicateListForMarker(selectedMarker)">
-                    Show less
-                  </button>
-                </div>
+            <div class="detail-section">{{ popupSection.title }}</div>
+            <div class="kv-grid">
+              <div class="kv" :class="{ 'kv-full': item.full }" v-for="item in popupSection.fields" :key="item.label">
+                <span class="kv-k">{{ item.label }}</span>
+                <span class="kv-v">{{ item.value }}</span>
               </div>
             </div>
           </aside>
@@ -375,6 +343,7 @@ const selectedVillageLabel = computed(() => {
   return villageOptions.value.find((item) => String(item.id) === String(selectedVillage.value))?.name || 'All'
 })
 
+const selectedColorMode = computed(() => colorMode.value)
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Population Density')
 
 function toggleDropdown(name) {
@@ -516,6 +485,15 @@ function toggleDuplicateListForMarker(marker) {
 
 function closeSelectedMarker() {
   selectedMarker.value = null
+}
+
+function zoomToSelectedMarker() {
+  if (!map || !selectedMarker.value) return
+  const lat = Number(selectedMarker.value.lat)
+  const lng = Number(selectedMarker.value.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+  const nextZoom = Math.max(map.getZoom(), 15)
+  map.flyTo([lat, lng], nextZoom, { duration: 0.8 })
 }
 
 function parseIncomeValue(value) {
@@ -744,6 +722,7 @@ function renderMarkers(options = {}) {
     const markerColor = getMarkerColor(marker)
 
     const circle = L.circleMarker([marker.lat, marker.lng], {
+      pane: 'householdMarkers',
       radius: 8,
       fillColor: markerColor,
       color: '#ffffff',
@@ -760,7 +739,30 @@ function renderMarkers(options = {}) {
     })
 
     circle.on('click', () => {
-      selectedMarker.value = marker
+      const firstName = String(marker.first_name_household_head || marker.FIRST_NAME_HOUSEHOLD_HEAD || '').trim()
+      const lastName = String(marker.last_name_household_head || marker.LAST_NAME_HOUSEHOLD_HEAD || '').trim()
+      const totalMembers = marker.total_members ?? marker.member_count ?? marker.totalMembers ?? 0
+      const maleCount = marker.male_count ?? marker.male_members ?? marker.male ?? 0
+      const femaleCount = marker.female_count ?? marker.female_members ?? marker.female ?? 0
+      const workingMembers = marker.working_members ?? 0
+      const nonWorkingMembers = marker.non_working_members ?? Math.max(Number(totalMembers || 0) - Number(workingMembers || 0), 0)
+
+      const markerData = {
+        ...marker,
+        FAMILY_ID: marker.FAMILY_ID || marker.family_id || marker.external_family_id || marker.EXTERNAL_FAMILY_ID || null,
+        FIRST_NAME_HOUSEHOLD_HEAD: firstName,
+        LAST_NAME_HOUSEHOLD_HEAD: lastName,
+        HOUSE_NO: marker.HOUSE_NO || marker.house_no || '-',
+        total_members: totalMembers,
+        male_members: maleCount,
+        female_members: femaleCount,
+        male_count: maleCount,
+        female_count: femaleCount,
+        working_members: workingMembers,
+        non_working_members: nonWorkingMembers,
+      }
+
+      selectedMarker.value = markerData
       selectedCluster.value = null
     })
 
@@ -955,37 +957,55 @@ const analyticsCards = computed(() => {
   ]
 })
 
-const detailStats = computed(() => {
+const popupSection = computed(() => {
   const marker = selectedMarker.value
-  if (!marker) return []
+  if (!marker) {
+    return { title: 'Population', fields: [] }
+  }
 
-  if (colorMode.value === 'employment') {
-    const totalMembers = Number(marker.total_members || 0)
-    const workingMembers = getWorkingMembers(marker)
-    const nonWorkingMembers = Math.max(totalMembers - workingMembers, 0)
-    const occupations = getOccupationList(marker)
-
-    return [
-      { label: 'Working Members', value: workingMembers.toLocaleString(), style: { color: getEmploymentColor(marker) } },
-      { label: 'Non-working Members', value: nonWorkingMembers.toLocaleString() },
-      { label: 'Occupations', value: occupations.length ? occupations.join(', ') : 'N/A' },
-    ]
+  if (colorMode.value === 'bpl_status') {
+    return {
+      title: 'Economic Status',
+      fields: [
+        { label: 'BPL Category', value: marker.FAMILY_BELONG_BPL_CATEGORY || 'N/A' },
+        { label: 'Ration Card', value: marker.RATION_CARD_TYPE || 'N/A' },
+        { label: 'Annual Income', value: marker.ANNUAL_INCOME || 'N/A' },
+      ],
+    }
   }
 
   if (colorMode.value === 'divyang_presence') {
-    return [
-      { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
-      { label: 'Female', value: Number(marker.female_members || 0).toLocaleString() },
-      { label: 'Disability', value: getDivyangStatusLabel(marker), style: { color: getDivyangColor(marker) } },
-    ]
+    return {
+      title: 'Divyang Status',
+      fields: [
+        { label: 'Divyang Members', value: Number(marker.divyang_members || 0).toLocaleString() },
+        { label: 'Disability Present', value: Number(marker.has_disability || 0) === 1 ? 'Yes' : 'No' },
+      ],
+    }
   }
 
-  return [
-    { label: 'Category', value: getBplStatusLabel(marker), style: { color: getBplColor(marker) } },
-    { label: 'Members', value: Number(marker.total_members || 0).toLocaleString() },
-    { label: 'Male', value: Number(marker.male_members || 0).toLocaleString() },
-    { label: 'Female', value: Number(marker.female_members || 0).toLocaleString() },
-  ]
+  if (colorMode.value === 'employment' || colorMode.value === 'employment_status') {
+    const totalMembers = Number(marker.total_members || 0)
+    const workingMembers = Number(marker.working_members || 0)
+    const nonWorking = marker.non_working_members ?? Math.max(totalMembers - workingMembers, 0)
+    return {
+      title: 'Employment',
+      fields: [
+        { label: 'Working Members', value: workingMembers.toLocaleString() },
+        { label: 'Non Working Members', value: Number(nonWorking || 0).toLocaleString() },
+        { label: 'Occupation', value: marker.working_occupations || marker.occupation_list || 'N/A', full: true },
+      ],
+    }
+  }
+
+  return {
+    title: 'Population',
+    fields: [
+      { label: 'Members', value: Number(marker.total_members || 0).toLocaleString() },
+      { label: 'Male', value: Number((marker.male_members ?? marker.male_count) || 0).toLocaleString() },
+      { label: 'Female', value: Number((marker.female_members ?? marker.female_count) || 0).toLocaleString() },
+    ],
+  }
 })
 
 const headerLegend = computed(() => {
@@ -1214,6 +1234,9 @@ onMounted(async () => {
     zoomControl: true,
     preferCanvas: true,
   }).setView([19.7515, 75.7139], 6)
+
+  map.createPane('householdMarkers')
+  map.getPane('householdMarkers').style.zIndex = '650'
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
@@ -1856,6 +1879,15 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.panel-section-title {
+  margin-top: 0.85rem;
+  color: #64748b;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 800;
+}
+
 .panel-id {
   margin-top: 0.25rem;
   color: #637567;
@@ -1895,6 +1927,146 @@ onUnmounted(() => {
   margin-top: 0.95rem;
   color: #718176;
   font-size: 0.84rem;
+  word-break: break-word;
+}
+
+.house-detail-panel {
+  right: 0.75rem;
+  top: 60px;
+  width: 288px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 3px 8px rgba(0, 0, 0, 0.07);
+}
+
+.house-detail-panel .detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.9rem 0.9rem 0.65rem;
+  border-bottom: 1.5px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 12px 12px 0 0;
+}
+
+.house-detail-panel .detail-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  border: 1.5px solid;
+  font-size: 0.66rem;
+  font-weight: 700;
+  margin-bottom: 0.32rem;
+}
+
+.house-detail-panel .detail-name {
+  font-size: 0.97rem;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.house-detail-panel .detail-sub {
+  font-size: 0.66rem;
+  color: #6b7280;
+  margin-top: 0.22rem;
+  font-weight: 500;
+}
+
+.house-detail-panel .detail-close {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  color: #6b7280;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.house-detail-panel .detail-close:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+
+.house-detail-panel .focus-btn {
+  display: block;
+  width: calc(100% - 1.8rem);
+  margin: 0.65rem 0.9rem 0;
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 8px;
+  color: #15803d;
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 0.38rem 0.6rem;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.15);
+}
+
+.house-detail-panel .focus-btn:hover {
+  background: #16a34a;
+  border-color: #15803d;
+  color: #fff;
+}
+
+.house-detail-panel .detail-section {
+  font-size: 0.59rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #374151;
+  font-weight: 800;
+  padding: 0.75rem 0.9rem 0.32rem;
+  border-top: 1px solid #f3f4f6;
+}
+
+.house-detail-panel .kv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.38rem;
+  padding: 0 0.9rem 0.9rem;
+}
+
+.house-detail-panel .kv {
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.38rem 0.52rem;
+}
+
+.house-detail-panel .kv-full {
+  grid-column: 1 / -1;
+}
+
+.house-detail-panel .kv-k {
+  font-size: 0.57rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  display: block;
+  font-weight: 600;
+}
+
+.house-detail-panel .kv-v {
+  font-size: 0.76rem;
+  color: #111827;
+  font-weight: 600;
+  margin-top: 0.1rem;
+  display: block;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
