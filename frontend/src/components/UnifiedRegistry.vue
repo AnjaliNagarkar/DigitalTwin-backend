@@ -167,7 +167,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getUnifiedRegistry } from '../api/index.js'
+import { getUnifiedRegistry, getCitizens } from '../api/index.js'
 
 // ── Props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -428,15 +428,79 @@ const sortDir     = ref('asc')
 const currentPage = ref(1)
 const pageSize    = computed(() => props.maxRows > 0 ? props.maxRows : 50)
 
+function mapLegacyCitizenToUnified(row) {
+  const first = String(row?.firstName || '').trim()
+  const last = String(row?.lastName || '').trim()
+  const fullName = [first, last].filter(Boolean).join(' ').trim()
+  const occupation = String(row?.workDetails || row?.occupation || '').trim() || 'Not Working'
+  const annualIncome = String(row?.annualIncome || '').trim()
+  const totalLand = String(row?.totalLand || '').trim()
+  const irrigationType = String(row?.waterSource || '').toLowerCase().includes('rain') ? 'Rain-fed' : 'Irrigated'
+  return {
+    fullName,
+    firstName: first,
+    lastName: last,
+    age: 0,
+    gender: '',
+    education: 'Not Available',
+    familyId: 0,
+    totalLand,
+    irrigationType,
+    waterSource: String(row?.waterSource || '').trim(),
+    kharifCrop: '',
+    rabiCrop: '',
+    annualIncome,
+    occupation,
+    childrenCount: Number(row?.childrenCount || 0),
+    sanitationStatus: 'Not Available',
+    isFarmer: totalLand !== '' && totalLand !== '0',
+    isStudent: false,
+    isDivyang: false,
+    isHousewife: occupation.toLowerCase().includes('housewife') || occupation.toLowerCase().includes('homemaker'),
+    isSenior: false,
+    schoolName: '',
+    gradeStandard: '',
+    educationLevel: 'Not Available',
+    scholarship: 'No',
+    disabilityType: '',
+    disabilityPercent: '',
+    pensionStatus: 'Not Eligible',
+    caretakerName: 'Not Available',
+    govtPensionAmount: 'N/A',
+    sourceOfIncome: 'None',
+  }
+}
+
+async function loadRegistryData() {
+  try {
+    const data = await getUnifiedRegistry()
+    records.value = Array.isArray(data) ? data : []
+    return
+  } catch (e) {
+    const isAbort = e?.name === 'AbortError'
+    console.warn('Unified registry endpoint slow/unavailable, trying fallback:', isAbort ? 'timeout' : (e?.message || e))
+  }
+
+  try {
+    const legacy = await getCitizens()
+    records.value = (Array.isArray(legacy) ? legacy : []).map(mapLegacyCitizenToUnified)
+  } catch (e2) {
+    console.error('Citizen registry load failed:', e2)
+    records.value = []
+  }
+}
+
 // ── Derived config ─────────────────────────────────────────────────────────
 const activeCategoryConfig = computed(() => CATEGORY_CONFIG[category.value] || CATEGORY_CONFIG[''])
 const activeSubFilters     = computed(() => activeCategoryConfig.value.subFilters || [])
 
 // ── Data loading ───────────────────────────────────────────────────────────
 onMounted(async () => {
-  try { records.value = await getUnifiedRegistry() }
-  catch (e) { console.error('Citizen registry load failed:', e) }
-  finally { loading.value = false }
+  try {
+    await loadRegistryData()
+  } finally {
+    loading.value = false
+  }
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────

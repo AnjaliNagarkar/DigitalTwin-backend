@@ -364,6 +364,12 @@
       <div class="loading-text">Loading village data…</div>
     </div>
 
+    <!-- CENTERING MAP — shown while the initial fit-bounds fly animation runs -->
+    <div class="loading-overlay centering-overlay" v-if="centeringMap">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Centering map…</div>
+    </div>
+
     <!-- NO DATA STATE (API responded but database is empty) -->
     <div class="loading-overlay" v-if="!loadingLiveData && houses.length === 0">
       <div class="loading-text" style="font-size:15px;max-width:320px;text-align:center;line-height:1.6">
@@ -863,6 +869,7 @@ const tileStyle           = ref('satellite')   // default satellite view
 const cesiumContainer     = ref(null)
 const agricultureInsights = ref(null)
 const loadingLiveData     = ref(true)
+const centeringMap        = ref(false)   // true while the initial fit-bounds fly is in progress
 const sidebarCollapsed    = ref(false)
 const cameraHeight        = ref(120000)
 // Persisted pitch (radians) — updated on every camera move, used by all fly functions
@@ -963,8 +970,9 @@ function onTalukaChange() {
   pendingVillage.value = ''
 }
 
-// Apply: copy pending → applied; watcher on filteredHouses rebuilds map + flies
+// Apply: copy pending → applied; always fly to the result regardless of viewport.
 function applyFilters() {
+  _forceNextFly = true
   filterDistrict.value = pendingDistrict.value
   filterTaluka.value   = pendingTaluka.value
   filterVillage.value  = pendingVillage.value
@@ -1388,13 +1396,21 @@ function analyzeCluster(houseList) {
     .map(p => ({ ...p, pct: Math.round((p.count / total) * 100) }))
 }
 
-// When location filter changes, rebuild entities and fly to filtered data.
-// If the filtered households are already visible in the current viewport,
-// skip the auto-fly so the user's zoom/tilt is preserved.
-watch(filteredHouses, (newHouses) => {
+// When location filter changes (district/taluka/village applied), rebuild
+// entities and fly to the filtered set — always fly when the user pressed Apply
+// (forcefly flag), otherwise only fly if houses are not already in view.
+let _forceNextFly = false   // set by applyFilters, consumed once by the watcher
+
+watch(filteredHouses, (newHouses, oldHouses) => {
   if (!viewer || loadingLiveData.value) return
   buildEntities()
-  if (newHouses.length && !housesInView(newHouses)) {
+  if (!newHouses.length) return
+  const force = _forceNextFly
+  _forceNextFly = false
+  // Skip the watcher-driven fly on initial data load (oldHouses was empty) —
+  // loadData() already schedules its own fly with better timing.
+  const isInitialLoad = !oldHouses || oldHouses.length === 0
+  if (!isInitialLoad && (force || !housesInView(newHouses))) {
     setTimeout(() => flyToPoints(newHouses), 150)
   }
 }, { flush: 'post' })
@@ -2025,30 +2041,37 @@ function flyToPoints(list) {
   const valid = list.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
   if (!valid.length) return
 
-  // Compute bounding box centre and an altitude that fits all points.
-  const lats = valid.map(h => h.latitude)
-  const lngs = valid.map(h => h.longitude)
-  const cLat  = (Math.min(...lats) + Math.max(...lats)) / 2
-  const cLng  = (Math.min(...lngs) + Math.max(...lngs)) / 2
+  const lats    = valid.map(h => h.latitude)
+  const lngs    = valid.map(h => h.longitude)
+  const cLat    = (Math.min(...lats) + Math.max(...lats)) / 2
+  const cLng    = (Math.min(...lngs) + Math.max(...lngs)) / 2
   const spanLat = Math.max(...lats) - Math.min(...lats)
   const spanLng = Math.max(...lngs) - Math.min(...lngs)
   const spanDeg = Math.max(spanLat, spanLng, 0.002)
-  // ~111 km per degree; multiply by 2.8 for comfortable view at -48° pitch
-  const altitude = Math.max(spanDeg * 111000 * 2.8, 400)
 
-  // Use persisted pitch so the user's tilt is never reset.
-  // Clamp so we can't accidentally go overhead.
-  const pitch = Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD)
+  // Convert span to meters and use as bounding sphere radius.
+  // Add generous padding so houses don't crowd the edges.
+  const radiusM = Math.max(spanDeg * 111000 * 0.65, 800)
 
-  viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, altitude),
-    orientation: {
-      heading: viewer.camera.heading,   // preserve current bearing
-      pitch,
-      roll: 0,
-    },
-    duration: 1.8,
-    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+  // Clamp the range (eye-to-sphere-centre distance) so we land between
+  // THRESHOLD_BUILDINGS (3 500 m) and taluka level (40 000 m).
+  // This ensures individual dot markers are always visible on arrival.
+  const range = Math.max(Math.min(radiusM * 3.5, 38000), 5000)
+
+  const centre = Cesium.Cartesian3.fromDegrees(cLng, cLat, 0)
+  const sphere = new Cesium.BoundingSphere(centre, radiusM)
+
+  // flyToBoundingSphere with an explicit HeadingPitchRange is the most
+  // reliable Cesium API for landing at a specific pitch — it does NOT
+  // re-derive orientation from the terrain, unlike flyTo({destination, orientation}).
+  const pitch   = Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD)
+  viewer.camera.flyToBoundingSphere(sphere, {
+    duration: 2.0,
+    offset: new Cesium.HeadingPitchRange(
+      viewer.camera.heading,   // preserve current bearing
+      pitch,                   // persisted user tilt (never resets to 0)
+      range,
+    ),
   })
 }
 
@@ -2794,30 +2817,104 @@ async function fetchAllHouses() {
   return all
 }
 
+async function fetchHousePage(page, limit) {
+  const res = await getHouses({ page, limit })
+  return {
+    rows: Array.isArray(res?.data) ? res.data : [],
+    total: typeof res?.total === 'number' ? res.total : null,
+  }
+}
+
+async function fetchRemainingHousePages(seq, seedRows, firstTotal, limit) {
+  const all = [...seedRows]
+  let total = firstTotal
+  let page = 2
+
+  while (page <= 20) {
+    if (seq !== twinLoadSeq) return
+    const { rows, total: pageTotal } = await fetchHousePage(page, limit)
+    if (pageTotal !== null) total = pageTotal
+    if (!rows.length) break
+
+    all.push(...rows)
+    page += 1
+    if (rows.length < limit) break
+    if (total !== null && all.length >= total) break
+  }
+
+  if (seq !== twinLoadSeq) return
+  if (all.length > houses.value.length) {
+    houses.value = all
+    if (viewer) buildEntities()
+  }
+}
+
 async function loadData(attempt = 0) {
   const seq     = ++twinLoadSeq
-  const results = await Promise.allSettled([fetchAllHouses(), getAgricultureInsights()])
+  const pageLimit = 2000
+  const results = await Promise.allSettled([fetchHousePage(1, pageLimit), getAgricultureInsights()])
   if (seq !== twinLoadSeq) return
 
+  // Mark loading done first so the filteredHouses watcher is no longer blocked
+  loadingLiveData.value = false
+
+  if (results[1].status === 'fulfilled') agricultureInsights.value = results[1].value
+
   if (results[0].status === 'fulfilled') {
-    const real = results[0].value || []
+    const first = results[0].value || { rows: [], total: null }
+    const real = first.rows || []
     if (real.length > 0) {
       clearRetryTimer()
-      houses.value = real
+      houses.value = real          // triggers filteredHouses → watcher
       if (viewer) {
         buildEntities()
-        // Intro: fly from state level → village data
-        setTimeout(() => flyToPoints(real), 300)
+        centeringMap.value = true
+        // Fire the fly on the very first rendered frame after buildEntities().
+        // postRender guarantees Cesium has processed all entity positions and the
+        // camera API is fully ready — no setTimeout guessing needed.
+        const snapToData = () => {
+          viewer.scene.postRender.removeEventListener(snapToData)
+          if (!viewer || viewer.isDestroyed()) { centeringMap.value = false; return }
+          // Compute bounding box directly from raw coordinates (not entity collection —
+          // cluster ellipses inflate the entity bounding sphere to district level).
+          const valid = real.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
+          if (!valid.length) { centeringMap.value = false; return }
+          const lats   = valid.map(h => h.latitude)
+          const lngs   = valid.map(h => h.longitude)
+          const cLat   = (Math.min(...lats) + Math.max(...lats)) / 2
+          const cLng   = (Math.min(...lngs) + Math.max(...lngs)) / 2
+          const spanDeg = Math.max(
+            Math.max(...lats) - Math.min(...lats),
+            Math.max(...lngs) - Math.min(...lngs),
+            0.002,
+          )
+          const radiusM = Math.max(spanDeg * 111000 * 0.7, 800)
+          const range   = Math.max(Math.min(radiusM * 3.5, 38000), 5000)
+          const centre  = Cesium.Cartesian3.fromDegrees(cLng, cLat, 0)
+          const sphere  = new Cesium.BoundingSphere(centre, radiusM)
+          // Pitch −45° → 3D oblique view as specified; matches the user's fitBounds pitch requirement.
+          const pitch45 = Cesium.Math.toRadians(-45)
+          currentMapPitch = pitch45   // sync persisted pitch so subsequent interactions inherit it
+          viewer.camera.flyToBoundingSphere(sphere, {
+            duration: 2.0,
+            offset: new Cesium.HeadingPitchRange(0, pitch45, range),
+            complete: () => { centeringMap.value = false },
+            cancel:   () => { centeringMap.value = false },
+          })
+        }
+        viewer.scene.postRender.addEventListener(snapToData)
       }
+
+      // Fetch remaining pages in background so map appears immediately.
+      fetchRemainingHousePages(seq, real, first.total, pageLimit).catch(err => {
+        console.warn('Background house page fetch failed:', err?.message || err)
+      })
     } else if (attempt < 10) {
       retryTimer = setTimeout(() => { if (seq === twinLoadSeq) loadData(attempt + 1) }, 3000)
     }
   } else if (attempt < 10) {
     retryTimer = setTimeout(() => { if (seq === twinLoadSeq) loadData(attempt + 1) }, 3000)
   }
-
-  if (results[1].status === 'fulfilled') agricultureInsights.value = results[1].value
-  loadingLiveData.value = false
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -2864,10 +2961,11 @@ onMounted(async () => {
     ctrl.minimumZoomDistance = 500
     // Allow generous tilt via mouse but guard the extremes in updateZoomVisibility
 
-    // Start at Maharashtra state level — no globe view
+    // Start at a neutral holding position — loadData() will immediately fly
+    // to the actual household bounding box as soon as data arrives.
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 120000),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-42), roll: 0 },
+      destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 80000),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
     })
 
     // Click → select house | drill-down cluster | open problem panel | clear
@@ -3382,6 +3480,32 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
   gap: 0.8rem;
+}
+/* Centering overlay: anchored to bottom-centre, non-blocking — map is visible behind it */
+.loading-overlay.centering-overlay {
+  inset: auto;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  padding: 8px 20px;
+  border-radius: 20px;
+  background: rgba(12, 26, 46, 0.82);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.12);
+  flex-direction: row;
+  gap: 10px;
+}
+.loading-overlay.centering-overlay .loading-spinner {
+  width: 16px; height: 16px;
+  border-width: 2px;
+  border-color: rgba(255,255,255,0.25);
+  border-top-color: #4ade80;
+}
+.loading-overlay.centering-overlay .loading-text {
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 .loading-spinner {
   width: 36px; height: 36px; border-radius: 50%;

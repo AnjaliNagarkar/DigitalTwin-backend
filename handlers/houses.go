@@ -106,8 +106,8 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 		SELECT fm.EXTERNAL_FAMILY_ID,
 			%s AS primary_occupation,
 			COUNT(*) AS total_members,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.GENDER,'')))='M' THEN 1 ELSE 0 END) AS male_members,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.GENDER,'')))='F' THEN 1 ELSE 0 END) AS female_members,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m') THEN 1 ELSE 0 END) AS male_members,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('female','f') THEN 1 ELSE 0 END) AS female_members,
 			%s AS working_members,
 			%s AS illiterate_members,
 			%s AS divyang_members,
@@ -123,7 +123,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
-	if limit < 1 || limit > 2000 {
+	if limit < 1 || limit > 5000 {
 		limit = 500
 	}
 	offset := (page - 1) * limit

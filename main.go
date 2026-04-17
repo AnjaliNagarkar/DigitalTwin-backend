@@ -34,7 +34,7 @@ func main() {
 	locationHandler := &handlers.LocationHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
-	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
+	unifiedRegistryHandler := handlers.NewUnifiedRegistryHandler(conn)
 	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
 	advisoryHandler        := handlers.NewAdvisoryHandler(conn)
 	clusterAdvisoryHandler := handlers.NewClusterAdvisoryHandler(conn)

@@ -1,16 +1,34 @@
 const BASE = '/api'
-const TIMEOUT_DEFAULT = 5000
-const TIMEOUT_DATA    = 30000  // large dataset queries can take longer
+const TIMEOUT_DEFAULT = 8000
+const TIMEOUT_DATA    = 120000  // large dataset queries can take longer on cold DBs
 
-async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(`${BASE}${url}`, { signal: controller.signal })
-    if (!res.ok) throw new Error(`API error: ${res.status}`)
-    return res.json()
-  } finally {
-    clearTimeout(timer)
+function shouldRetry(status) {
+  return status === 429 || status === 502 || status === 503 || status === 504
+}
+
+async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT, retries = 1) {
+  let attempt = 0
+  while (attempt <= retries) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(`${BASE}${url}`, { signal: controller.signal })
+      if (!res.ok) {
+        const err = new Error(`API error: ${res.status}`)
+        err.status = res.status
+        throw err
+      }
+      return res.json()
+    } catch (error) {
+      const status = Number(error?.status || 0)
+      const timedOut = error?.name === 'AbortError'
+      const retryable = timedOut || shouldRetry(status)
+      if (attempt >= retries || !retryable) throw error
+      await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)))
+      attempt += 1
+    } finally {
+      clearTimeout(timer)
+    }
   }
 }
 
@@ -25,7 +43,7 @@ function toQueryString(params = {}) {
 
 export function getHouses(params = {}) {
   const qs = toQueryString(params)
-  return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA)
+  return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA, 1)
 }
 
 export function getHouseById(id) {
@@ -53,7 +71,7 @@ export function getCitizens() {
 }
 
 export function getUnifiedRegistry() {
-  return fetchJSON('/unified-registry', TIMEOUT_DATA)
+  return fetchJSON('/unified-registry', 180000, 1)
 }
 
 export function getCrops() {
