@@ -573,13 +573,8 @@ function renderCell(r, col) {
   const v = r[col.key]
 
   switch (col.key) {
-    case 'fullName': {
-      const gClass = genderClass(r.gender)
-      const tag = r.gender
-        ? `<span class="gender-tag ${gClass}">${esc(r.gender)}</span>`
-        : ''
-      return `<span class="name-text">${esc(r.fullName)}</span>${tag}`
-    }
+    case 'fullName':
+      return `<span class="name-text">${esc(r.fullName)}</span>`
 
     case 'totalLand': {
       const ac = parseLand(v)

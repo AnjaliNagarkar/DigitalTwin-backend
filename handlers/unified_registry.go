@@ -98,30 +98,39 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 		dobExpr = "fm." + dobCol
 	}
 
-	ageExpr := fmt.Sprintf(`CASE
-		WHEN STR_TO_DATE(%[1]s,'%%%%Y-%%%%m-%%%%d') IS NOT NULL
-			THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s,'%%%%Y-%%%%m-%%%%d'), CURDATE())
-		WHEN STR_TO_DATE(%[1]s,'%%%%d-%%%%m-%%%%Y') IS NOT NULL
-			THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s,'%%%%d-%%%%m-%%%%Y'), CURDATE())
-		ELSE NULL END`, dobExpr)
+	// ageExpr: single fmt.Sprintf — %%Y becomes %Y in the output, which is
+	// what MySQL's STR_TO_DATE expects.  dobExpr is already a safe SQL identifier.
+	ageExpr := "NULL"
+	if dobCol != "" {
+		ageExpr = fmt.Sprintf(`CASE
+			WHEN STR_TO_DATE(%[1]s, '%%Y-%%m-%%d') IS NOT NULL
+				THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%Y-%%m-%%d'), CURDATE())
+			WHEN STR_TO_DATE(%[1]s, '%%d-%%m-%%Y') IS NOT NULL
+				THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%d-%%m-%%Y'), CURDATE())
+			ELSE NULL END`, dobExpr)
+	}
 
-	workExpr := `COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'' ),'Not Working')`
+	workExpr := `COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working')`
 	if h.colExists("FAMILY_MEMBER", "NATURE_WAGE_WORK") {
 		workExpr = `COALESCE(
-			NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')), ''),
-			NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),       ''),
+			NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), ''),
+			NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')),       ''),
 			'Not Working')`
 	}
 
 	educExpr := `COALESCE(
-		NULLIF(TRIM(COALESCE(fm.QUALIFICATION,'')), ''),
-		NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS,'')), ''),
+		NULLIF(TRIM(COALESCE(fm.QUALIFICATION, '')), ''),
+		NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS, '')), ''),
 		'Not Available')`
 
-	sanitExpr := `COALESCE(
-		NULLIF(TRIM(COALESCE(f.SANITATION_TOILET_FACILITY,'')), ''),
-		NULLIF(TRIM(COALESCE(f.TYPE_OF_LATRINE,'')), ''),
-		'Not Available')`
+	// sanitExpr: detect which column actually exists to avoid "Unknown column" SQL errors.
+	sanitExpr := "'Not Available'"
+	switch {
+	case h.colExists("FAMILY", "SANITATION_TOILET_FACILITY"):
+		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.SANITATION_TOILET_FACILITY, '')), ''), 'Not Available')`
+	case h.colExists("FAMILY", "TYPE_OF_LATRINE"):
+		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.TYPE_OF_LATRINE, '')), ''), 'Not Available')`
+	}
 
 	// Optional student columns
 	pursueExpr := "''"
@@ -158,10 +167,10 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 		childrenSQL = fmt.Sprintf(`
 			SELECT cm.EXTERNAL_FAMILY_ID,
 				SUM(CASE
-					WHEN STR_TO_DATE(cm.%[1]s,'%%%%Y-%%%%m-%%%%d') IS NOT NULL
-						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%%%Y-%%%%m-%%%%d'), CURDATE()) < 18 THEN 1
-					WHEN STR_TO_DATE(cm.%[1]s,'%%%%d-%%%%m-%%%%Y') IS NOT NULL
-						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%%%d-%%%%m-%%%%Y'), CURDATE()) < 18 THEN 1
+					WHEN STR_TO_DATE(cm.%[1]s,'%%Y-%%m-%%d') IS NOT NULL
+						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%Y-%%m-%%d'), CURDATE()) < 18 THEN 1
+					WHEN STR_TO_DATE(cm.%[1]s,'%%d-%%m-%%Y') IS NOT NULL
+						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%d-%%m-%%Y'), CURDATE()) < 18 THEN 1
 					ELSE 0
 				END) AS children_count
 			FROM FAMILY_MEMBER cm
