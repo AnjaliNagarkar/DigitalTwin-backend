@@ -249,24 +249,24 @@
               <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
             </div>
 
-            <div class="analytics-scroll" v-if="analyticsCards.length">
-              <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
+            <div class="analytics-scroll" v-if="analyticsChart">
+              <article class="analytics-card">
                 <div class="analytics-card-head">
                   <div>
-                    <h3 class="analytics-title">{{ card.title }}</h3>
-                    <p class="analytics-subtitle">{{ card.subtitle }}</p>
+                    <h3 class="analytics-title">{{ analyticsChart.title }}</h3>
+                    <p class="analytics-subtitle">{{ analyticsChart.subtitle }}</p>
                   </div>
-                  <div class="analytics-total">{{ card.totalLabel }}</div>
+                  <div class="analytics-total">{{ analyticsChart.totalLabel }}</div>
                 </div>
                 <div class="chart-layout">
-                  <div class="donut" :style="pieStyle(card.segments)">
+                  <div class="donut" :style="pieStyle(analyticsChart.segments)">
                     <div class="donut-hole">
-                      <div class="donut-label">{{ card.centerLabel }}</div>
-                      <div class="donut-value">{{ card.centerValue }}</div>
+                      <div class="donut-label">{{ analyticsChart.centerLabel }}</div>
+                      <div class="donut-value">{{ analyticsChart.centerValue }}</div>
                     </div>
                   </div>
                   <div class="legend-list">
-                    <div class="legend-row" v-for="segment in card.segments" :key="segment.label">
+                    <div class="legend-row" v-for="segment in analyticsChart.segments" :key="segment.label">
                       <span class="legend-dot" :style="{ background: segment.color }"></span>
                       <span class="legend-name">{{ segment.label }}</span>
                       <span class="legend-value">{{ segment.value.toLocaleString() }}</span>
@@ -902,59 +902,75 @@ async function resetFilters() {
   await fetchMapData()
 }
 
-function markerStatsForCard() {
-  const total = markers.value.length || 1
-  const bpl = insights.value.bpl_distribution || { bpl: 0, non_bpl: 0, total_households: 0 }
-  const education = insights.value.education_status || { literate: 0, illiterate: 0, students: 0, dropouts: 0 }
-  const working = insights.value.working_vs_dependent || { working: 0, dependent: 0, total_population: 0 }
+const analyticsChart = computed(() => {
+  const rows = Array.isArray(markers.value) ? markers.value : []
+  if (!rows.length) return null
 
-  return {
-    bpl,
-    education,
-    working,
-    total,
-  }
-}
-
-const analyticsCards = computed(() => {
-  const stats = markerStatsForCard()
-  return [
-    {
+  if (colorMode.value === 'bpl_status') {
+    const bpl = rows.filter((house) => normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'yes').length
+    const nonBpl = rows.filter((house) => normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'no').length
+    const total = bpl + nonBpl
+    return {
       title: 'BPL Distribution',
       subtitle: 'Household economic category',
-      totalLabel: `${stats.bpl.total_households.toLocaleString()} households`,
+      totalLabel: `${total.toLocaleString()} households`,
       centerLabel: 'Households',
-      centerValue: stats.bpl.total_households.toLocaleString(),
+      centerValue: total.toLocaleString(),
       segments: [
-        { label: 'BPL households', value: stats.bpl.bpl, color: '#ef4444' },
-        { label: 'Non-BPL households', value: stats.bpl.non_bpl, color: '#0f766e' },
+        { label: 'BPL', value: bpl, color: '#ef4444' },
+        { label: 'Non-BPL', value: nonBpl, color: '#0f766e' },
       ],
-    },
-    {
-      title: 'Education Status',
-      subtitle: 'Literacy and school participation',
-      totalLabel: `${(stats.education.literate + stats.education.illiterate).toLocaleString()} people`,
-      centerLabel: 'People',
-      centerValue: (stats.education.literate + stats.education.illiterate).toLocaleString(),
+    }
+  }
+
+  if (colorMode.value === 'divyang_presence') {
+    const divyang = rows.filter((house) => Number(house.divyang_members || 0) > 0).length
+    const nonDivyang = rows.filter((house) => Number(house.divyang_members || 0) === 0).length
+    const total = divyang + nonDivyang
+    return {
+      title: 'Divyang Distribution',
+      subtitle: 'Household disability presence',
+      totalLabel: `${total.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: total.toLocaleString(),
       segments: [
-        { label: 'Literate', value: stats.education.literate, color: '#0f766e' },
-        { label: 'Illiterate', value: stats.education.illiterate, color: '#f59e0b' },
-        { label: 'Students', value: stats.education.students, color: '#2563eb' },
-        { label: 'Dropouts', value: stats.education.dropouts, color: '#ef4444' },
+        { label: 'Divyang', value: divyang, color: '#7b1fa2' },
+        { label: 'Non-Divyang', value: nonDivyang, color: '#16a34a' },
       ],
-    },
-    {
-      title: 'Working vs Dependent',
-      subtitle: 'Population activity profile',
-      totalLabel: `${stats.working.total_population.toLocaleString()} people`,
-      centerLabel: 'People',
-      centerValue: stats.working.total_population.toLocaleString(),
+    }
+  }
+
+  if (colorMode.value === 'employment' || colorMode.value === 'employment_status') {
+    const working = rows.filter((house) => Number(house.working_members || 0) > 0).length
+    const nonWorking = rows.filter((house) => Number(house.non_working_members || 0) > 0).length
+    const total = working + nonWorking
+    return {
+      title: 'Employment Distribution',
+      subtitle: 'Household employment status',
+      totalLabel: `${total.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: total.toLocaleString(),
       segments: [
-        { label: 'Working population', value: stats.working.working, color: '#16a34a' },
-        { label: 'Dependent population', value: stats.working.dependent, color: '#f59e0b' },
+        { label: 'Working', value: working, color: '#16a34a' },
+        { label: 'Non-working', value: nonWorking, color: '#f59e0b' },
       ],
-    },
-  ]
+    }
+  }
+
+  const male = rows.reduce((sum, house) => sum + Number(house.male_members || house.male_count || 0), 0)
+  const female = rows.reduce((sum, house) => sum + Number(house.female_members || house.female_count || 0), 0)
+  const total = male + female
+  return {
+    title: 'Gender Distribution',
+    subtitle: 'Population gender split',
+    totalLabel: `${total.toLocaleString()} members`,
+    centerLabel: 'Population',
+    centerValue: total.toLocaleString(),
+    segments: [
+      { label: 'Male', value: male, color: '#2563eb' },
+      { label: 'Female', value: female, color: '#ec4899' },
+    ],
+  }
 })
 
 const popupSection = computed(() => {
@@ -1769,6 +1785,10 @@ onUnmounted(() => {
 .analytics-panel {
   width: 360px;
   max-width: 42vw;
+  height: fit-content;
+  min-height: 0;
+  flex: 0 0 auto;
+  align-self: flex-start;
   border-left: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-card) 88%, transparent);
   backdrop-filter: blur(6px);
@@ -1806,10 +1826,11 @@ onUnmounted(() => {
 
 .analytics-scroll {
   padding: 0.75rem;
-  overflow-y: auto;
+  overflow-y: visible;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  flex: 0 0 auto;
+  gap: 1rem;
 }
 
 .analytics-panel-slide-enter-active,
@@ -2310,8 +2331,10 @@ onUnmounted(() => {
     position: absolute;
     top: 0;
     right: 0;
-    bottom: 0;
+    bottom: auto;
     width: min(88vw, 340px);
+    max-height: calc(100% - 0.5rem);
+    overflow-y: auto;
     max-width: none;
     border-left: 1px solid var(--border);
     box-shadow: -8px 0 26px var(--shadow);

@@ -104,7 +104,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }" @click="selectColorMode('sanitation')">Sanitation</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'irrigation' }" @click="selectColorMode('irrigation')">Irrigation</div>
               <div class="cs-option" :class="{ selected: colorMode === 'crops' }"      @click="selectColorMode('crops')">Crops / Season</div>
               <div class="cs-option" :class="{ selected: colorMode === 'land' }"       @click="selectColorMode('land')">Land Holdings</div>
             </div>
@@ -113,9 +113,8 @@
 
         <div class="map-legend">
           <template v-if="viewMode === 'villages'">
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>High coverage</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span>Medium</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>Low coverage</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#16a34a;"></span>Irrigation available</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>No irrigation</div>
           </template>
           <template v-else>
             <div class="legend-item" v-for="leg in headerLegend" :key="leg.label">
@@ -345,24 +344,24 @@
               <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
             </div>
 
-            <div class="analytics-scroll" v-if="analyticsCards.length">
-              <article class="analytics-card" v-for="card in analyticsCards" :key="card.title">
+            <div class="analytics-scroll" v-if="analyticsChart">
+              <article class="analytics-card">
                 <div class="analytics-card-head">
                   <div>
-                    <h3 class="analytics-title">{{ card.title }}</h3>
-                    <p class="analytics-subtitle">{{ card.subtitle }}</p>
+                    <h3 class="analytics-title">{{ analyticsChart.title }}</h3>
+                    <p class="analytics-subtitle">{{ analyticsChart.subtitle }}</p>
                   </div>
-                  <div class="analytics-total">{{ card.totalLabel }}</div>
+                  <div class="analytics-total">{{ analyticsChart.totalLabel }}</div>
                 </div>
                 <div class="chart-layout">
-                  <div class="donut" :style="pieStyle(card.segments)">
+                  <div class="donut" :style="pieStyle(analyticsChart.segments)">
                     <div class="donut-hole">
-                      <div class="donut-label">{{ card.centerLabel }}</div>
-                      <div class="donut-value">{{ card.centerValue }}</div>
+                      <div class="donut-label">{{ analyticsChart.centerLabel }}</div>
+                      <div class="donut-value">{{ analyticsChart.centerValue }}</div>
                     </div>
                   </div>
                   <div class="legend-list">
-                    <div class="legend-row" v-for="item in card.segments" :key="item.label">
+                    <div class="legend-row" v-for="item in analyticsChart.segments" :key="item.label">
                       <span class="legend-dot" :style="{ background: item.color }"></span>
                       <span class="legend-name">{{ item.label }}</span>
                       <span class="legend-value">{{ item.value.toLocaleString() }}</span>
@@ -454,7 +453,7 @@ const selectedHouse  = ref(null)
 const selectedCluster = ref(null)
 const mapContainer  = ref(null)
 const mapContentRef = ref(null)
-const colorMode     = ref('sanitation')
+const colorMode     = ref('irrigation')
 const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
 const isFullscreen = ref(false)
@@ -498,7 +497,7 @@ function selectVillage(id) {
 }
 
 const COLOR_MODE_LABELS_MAP = {
-  sanitation: 'Sanitation',
+  irrigation: 'Irrigation',
   crops:      'Crops / Season',
   land:       'Land Holdings',
 }
@@ -521,7 +520,7 @@ const selectedVillageLabel = computed(() => {
   if (!selectedVillage.value) return 'All'
   return villageOptions.value.find(v => String(v.id) === String(selectedVillage.value))?.name || 'All'
 })
-const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Sanitation')
+const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Irrigation')
 
 const MAHARASHTRA_BOUNDS = L.latLngBounds(
   [15.6, 72.5],
@@ -687,8 +686,9 @@ const stats = computed(() => {
   return { total, farmers, noIrrigation, kharif, rabi }
 })
 
-const analyticsCards = computed(() => {
-  if (!stats.value) return []
+const analyticsChart = computed(() => {
+  if (!stats.value) return null
+
   const total = stats.value.total || 1
   const landless = houses.value.filter(h => (parseFloat(h.totalLand) || 0) <= 1).length
   const small = houses.value.filter(h => {
@@ -697,19 +697,10 @@ const analyticsCards = computed(() => {
   }).length
   const mediumLarge = Math.max(stats.value.farmers - landless - small, 0)
 
-  return [
-    {
-      title: 'Irrigation Coverage',
-      totalLabel: `${stats.value.total.toLocaleString()} HH`,
-      centerLabel: 'Irrigated',
-      centerValue: `${Math.max(total - stats.value.noIrrigation, 0).toLocaleString()}`,
-      segments: [
-        { label: 'Irrigated', value: Math.max(total - stats.value.noIrrigation, 0), color: '#22c55e' },
-        { label: 'No Irrigation', value: stats.value.noIrrigation, color: '#ef4444' },
-      ],
-    },
-    {
-      title: 'Crop Seasons',
+  const mode = colorMode.value
+  if (mode === 'crop_type' || mode === 'crops') {
+    return {
+      title: 'Crop Distribution',
       subtitle: 'Kharif and rabi participation',
       totalLabel: `${stats.value.farmers.toLocaleString()} farmers`,
       centerLabel: 'Active',
@@ -718,9 +709,27 @@ const analyticsCards = computed(() => {
         { label: 'Kharif', value: stats.value.kharif, color: '#f59e0b' },
         { label: 'Rabi', value: stats.value.rabi, color: '#38bdf8' },
       ],
-    },
-    {
-      title: 'Land Holding Mix',
+    }
+  }
+
+  if (mode === 'irrigation') {
+    const irrigated = Math.max(total - stats.value.noIrrigation, 0)
+    return {
+      title: 'Irrigation Distribution',
+      subtitle: 'Household irrigation coverage',
+      totalLabel: `${stats.value.total.toLocaleString()} HH`,
+      centerLabel: 'Irrigated',
+      centerValue: `${irrigated.toLocaleString()}`,
+      segments: [
+        { label: 'Irrigated', value: irrigated, color: '#22c55e' },
+        { label: 'No Irrigation', value: stats.value.noIrrigation, color: '#ef4444' },
+      ],
+    }
+  }
+
+  if (mode === 'land_holding' || mode === 'land') {
+    return {
+      title: 'Land Holding Distribution',
       subtitle: 'Agriculture footprint by holding size',
       totalLabel: `${stats.value.farmers.toLocaleString()} farmers`,
       centerLabel: 'Holding',
@@ -730,8 +739,10 @@ const analyticsCards = computed(() => {
         { label: 'Small', value: small, color: '#eab308' },
         { label: 'Medium/Large', value: mediumLarge, color: '#14b8a6' },
       ],
-    },
-  ]
+    }
+  }
+
+  return null
 })
 
 function pieStyle(segments) {
@@ -784,7 +795,13 @@ function getMarkerColor(house) {
     if (acres <= 5)    return '#22c55e'
     return '#10b981'
   }
-  // sanitation (default)
+  if (colorMode.value === 'irrigation') {
+    const irrigation = String(house.SOURCE_WATER_IRRIGATION || house.waterSource || '').trim()
+    if (irrigation && irrigation !== 'No') return '#16a34a'
+    return '#ef4444'
+  }
+
+  // sanitation fallback for other legacy modes
   const lat   = (house.latrine  || '').toLowerCase()
   const light = (house.lighting || '').toLowerCase()
   const hasToilet = lat   && lat   !== 'no latrine' && lat   !== 'none'
@@ -809,6 +826,11 @@ const headerLegend = computed(() => {
       { color: '#22c55e', label: 'Medium 2.5-5ac' },
       { color: '#f59e0b', label: 'Small 1-2.5ac' },
       { color: '#ef4444', label: 'Marginal ≤1ac' },
+    ]
+  } else if (colorMode.value === 'irrigation') {
+    entries = [
+      { color: '#16a34a', label: 'Irrigation available' },
+      { color: '#ef4444', label: 'No irrigation' },
     ]
   } else {
     entries = [
