@@ -76,3 +76,26 @@ export function getLocationOptions(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/location-options?${qs}` : '/location-options', TIMEOUT_DATA)
 }
+
+/**
+ * Fetch farm advisory for a household's identified problems.
+ * @param {string[]} problems  - array of problem keys e.g. ['noIrrigation','singleSeason']
+ * @param {object}   profile   - { crop, land_size, bpl, family_id }
+ */
+export function getAdvisory(problems, profile = {}) {
+  if (!problems || !problems.length) return Promise.resolve({ issues: [] })
+  const params = { problems: problems.join(','), ...profile }
+  const qs = toQueryString(params)
+  return fetchJSON(`/advisory?${qs}`)
+}
+
+/**
+ * Fetch scheme recommendations for a given problem key + optional citizen profile.
+ * @param {string} problemKey  - e.g. 'noIrrigation', 'bplFamilies'
+ * @param {object} profile     - { land_size, occupation, bpl }
+ */
+export function getSchemesForProblem(problemKey, profile = {}) {
+  const params = { problem: problemKey, ...profile }
+  const qs = toQueryString(params)
+  return fetchJSON(`/schemes/recommend?${qs}`)
+}

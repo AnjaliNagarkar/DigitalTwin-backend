@@ -30,6 +30,16 @@ type HouseRecord struct {
 	RationCard     string  `json:"rationCard"`
 	Occupation     string  `json:"occupation"`
 	HeadName       string  `json:"headName"`
+	// Population aggregate fields (from FAMILY_MEMBER join)
+	TotalMembers      int    `json:"totalMembers"`
+	MaleMembers       int    `json:"maleMembers"`
+	FemaleMembers     int    `json:"femaleMembers"`
+	WorkingMembers    int    `json:"workingMembers"`
+	IlliterateMembers int    `json:"illiterateMembers"`
+	DivyangMembers    int    `json:"divyangMembers"`
+	UnemployedMembers int    `json:"unemployedMembers"`
+	BplCategory       string `json:"bplCategory"`
+	AnnualIncome      string `json:"annualIncome"`
 }
 
 type HouseDetail struct {
@@ -45,6 +55,66 @@ type MemberRecord struct {
 type HouseHandler struct {
 	DB *sql.DB
 	CC *ColumnChecker
+}
+
+func (h *HouseHandler) memberColExists(col string) bool {
+	var n int
+	_ = h.DB.QueryRow(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='FAMILY_MEMBER' AND COLUMN_NAME=?`, col).Scan(&n)
+	return n > 0
+}
+
+// buildPopStatsSQL returns a SQL subquery that aggregates per-family member stats.
+// It detects optional FAMILY_MEMBER columns (DIVYANG, DISABILITY, EVER_ATTENDED_SCHOOL)
+// and falls back to 0 when they are absent, so the main query never errors.
+func (h *HouseHandler) buildPopStatsSQL() string {
+	illiterateExpr := "0"
+	if h.memberColExists("EVER_ATTENDED_SCHOOL") {
+		illiterateExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL,'')))='NO' THEN 1 ELSE 0 END)"
+	}
+
+	divyangExpr := "0"
+	if h.memberColExists("DIVYANG") {
+		if h.memberColExists("DISABILITY") {
+			divyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' OR UPPER(TRIM(COALESCE(fm.DISABILITY,'')))='YES' THEN 1 ELSE 0 END)"
+		} else {
+			divyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' THEN 1 ELSE 0 END)"
+		}
+	}
+
+	// Use NATURE_WAGE_WORK first, fall back to OCCUPATION
+	workExprBase := "COALESCE(fm.NATURE_WAGE_WORK, fm.OCCUPATION, '')"
+	if !h.memberColExists("NATURE_WAGE_WORK") {
+		workExprBase = "COALESCE(fm.OCCUPATION, '')"
+	}
+
+	workingExpr := fmt.Sprintf(
+		"SUM(CASE WHEN UPPER(TRIM(%s)) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER') THEN 1 ELSE 0 END)",
+		workExprBase)
+	unemployedExpr := fmt.Sprintf(
+		"SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)",
+		workExprBase)
+
+	var occExpr string
+	if h.memberColExists("NATURE_WAGE_WORK") {
+		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
+	} else {
+		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
+	}
+
+	return fmt.Sprintf(`
+		SELECT fm.EXTERNAL_FAMILY_ID,
+			%s AS primary_occupation,
+			COUNT(*) AS total_members,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.GENDER,'')))='M' THEN 1 ELSE 0 END) AS male_members,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.GENDER,'')))='F' THEN 1 ELSE 0 END) AS female_members,
+			%s AS working_members,
+			%s AS illiterate_members,
+			%s AS divyang_members,
+			%s AS unemployed_members
+		FROM FAMILY_MEMBER fm
+		GROUP BY fm.EXTERNAL_FAMILY_ID`,
+		occExpr, workingExpr, illiterateExpr, divyangExpr, unemployedExpr)
 }
 
 func (h *HouseHandler) GetHouses(c *gin.Context) {
@@ -101,6 +171,13 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		args = append(args, villageID)
 	}
 
+	// Build population stats subquery (detects optional FAMILY_MEMBER columns at runtime)
+	popStatsSQL := h.buildPopStatsSQL()
+
+	// FAMILY-level optional columns for population context
+	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
+	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+
 	// Use the actual columns present in the FAMILY table.
 	query := fmt.Sprintf(`
 		SELECT
@@ -122,24 +199,23 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
-			COALESCE(occ.primary_occupation, ''),
+			COALESCE(fm_agg.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
-			)), '')
+			)), ''),
+			COALESCE(fm_agg.total_members, 0),
+			COALESCE(fm_agg.male_members, 0),
+			COALESCE(fm_agg.female_members, 0),
+			COALESCE(fm_agg.working_members, 0),
+			COALESCE(fm_agg.illiterate_members, 0),
+			COALESCE(fm_agg.divyang_members, 0),
+			COALESCE(fm_agg.unemployed_members, 0),
+			%s,
+			%s
 		FROM FAMILY f
-		LEFT JOIN (
-			SELECT
-				fm.EXTERNAL_FAMILY_ID,
-				COALESCE(
-					MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), '')),
-					MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), '')),
-					''
-				) AS primary_occupation
-			FROM FAMILY_MEMBER fm
-			GROUP BY fm.EXTERNAL_FAMILY_ID
-		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		LEFT JOIN (%s) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -149,6 +225,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	`,
 		latCol,
 		lngCol,
+		bplExpr,
+		incomeExpr,
+		popStatsSQL,
 		where,
 		limit,
 		offset,
@@ -173,8 +252,11 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 			&house.WaterSource, &house.Kharif, &house.Rabi,
 			&house.Latrine, &house.Lighting, &house.RationCard,
-			&house.Occupation,
-			&house.HeadName,
+			&house.Occupation, &house.HeadName,
+			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
+			&house.WorkingMembers, &house.IlliterateMembers,
+			&house.DivyangMembers, &house.UnemployedMembers,
+			&house.BplCategory, &house.AnnualIncome,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan house record", "detail": err.Error()})
 			return

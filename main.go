@@ -35,6 +35,8 @@ func main() {
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
 	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
+	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
+	advisoryHandler        := handlers.NewAdvisoryHandler(conn)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -113,6 +115,8 @@ func main() {
 	// ── Static/in-memory modules ──────────────────────────────────────────────
 	r.GET("/soil", handlers.GetSoil)
 	r.GET("/schemes", handlers.GetSchemes)
+	r.GET("/schemes/recommend", schemeRecommendHandler.GetRecommendations)
+	r.GET("/advisory", advisoryHandler.GetAdvisory)
 	r.GET("/market", handlers.GetMarket)
 
 	log.Println("[STARTUP] Routes registered:")
