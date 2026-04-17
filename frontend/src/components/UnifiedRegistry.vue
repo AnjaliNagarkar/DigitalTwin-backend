@@ -230,6 +230,7 @@ const CATEGORY_CONFIG = {
     columns: [
       { key: 'fullName',       label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
       { key: 'totalLand',      label: 'Land (Acre)',    tdClass: 'td-num' },
+      { key: 'crops',          label: 'Crops' },
       { key: 'irrigationType', label: 'Irrigation' },
       { key: 'waterSource',    label: 'Water Source' },
       { key: 'annualIncome',   label: 'Annual Income',  tdClass: 'td-num' },
@@ -613,6 +614,16 @@ function renderCell(r, col) {
       const ac = parseLand(v)
       if (ac === 0) return `<span class="badge badge-muted">No Land</span>`
       return `<span class="badge badge-green">${esc(v)} ac</span>`
+    }
+
+    case 'crops': {
+      const kharif = r.kharifCrop && r.kharifCrop !== 'N/A' ? r.kharifCrop : null
+      const rabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A' ? r.rabiCrop   : null
+      if (!kharif && !rabi) return `<span class="text-dim-sm">—</span>`
+      const parts = []
+      if (kharif) parts.push(`<span class="badge badge-kharif" title="Kharif">☀ ${esc(kharif)}</span>`)
+      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="Rabi">❄ ${esc(rabi)}</span>`)
+      return parts.join(' ')
     }
 
     case 'irrigationType': {
@@ -1020,6 +1031,8 @@ function esc(s) {
 :deep(.badge-orange)   { background: #ffedd5; color: #c2410c; }
 :deep(.badge-irrigated){ background: #dcfce7; color: #15803d; }
 :deep(.badge-rainfed)  { background: #fee2e2; color: #b91c1c; }
+:deep(.badge-kharif)   { background: #fef9c3; color: #854d0e; }
+:deep(.badge-rabi)     { background: #e0f2fe; color: #075985; }
 :deep(.badge-muted)    { background: var(--bg-surface); color: var(--text-dim); }
 
 :deep(.text-body-sm)   { font-size: 0.82rem; color: var(--text-body); }

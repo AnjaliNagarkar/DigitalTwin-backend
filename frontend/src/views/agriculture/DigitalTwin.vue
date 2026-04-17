@@ -865,6 +865,9 @@ const agricultureInsights = ref(null)
 const loadingLiveData     = ref(true)
 const sidebarCollapsed    = ref(false)
 const cameraHeight        = ref(120000)
+// Persisted pitch (radians) — updated on every camera move, used by all fly functions
+// so filter changes and house clicks never reset the user's tilt.
+let currentMapPitch = Cesium.Math.toRadians(-48)  // default oblique; updated live
 const isTwinFullscreen    = ref(false)
 
 // Location filters — applied state (drives filteredHouses + map)
@@ -1274,10 +1277,16 @@ function drillIntoCluster(cluster) {
     viewer.entities.removeById(clusterBoundaryId)
     clusterBoundaryId = null
   }
-  // Fly to the cluster location at village-level altitude
+  // Fly to the cluster location at village-level altitude, preserving pitch
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(cluster.lng, cluster.lat, 1800),
+    orientation: {
+      heading: viewer.camera.heading,
+      pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
+      roll: 0,
+    },
     duration: 1.5,
+    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
   })
 }
 
@@ -1987,8 +1996,9 @@ function flyToMaharashtra() {
   if (!viewer) return
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 150000),
-    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-40), roll: 0 },
+    orientation: { heading: viewer.camera.heading, pitch: Cesium.Math.toRadians(-48), roll: 0 },
     duration: 1.8,
+    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
   })
 }
 
@@ -2010,34 +2020,35 @@ function housesInView(list) {
   return inCount / valid.length >= 0.60
 }
 
-function flyToPoints(list, { preservePitch = false } = {}) {
+function flyToPoints(list) {
   if (!viewer || !list.length) return
-  const pts = list
-    .filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
-    .map(h => Cesium.Cartesian3.fromDegrees(h.longitude, h.latitude, 0))
-  if (!pts.length) return
+  const valid = list.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
+  if (!valid.length) return
 
-  // Preserve the current heading so the map doesn't snap orientation.
-  // Clamp pitch: keep the user's current tilt if it's already oblique enough,
-  // otherwise enforce a minimum 45° tilt so 3D buildings stay visible.
-  const currentHeading = viewer.camera.heading  // radians
-  const currentPitch   = viewer.camera.pitch    // radians (negative = looking down)
-  const MIN_PITCH_RAD  = Cesium.Math.toRadians(-60)  // never flatter than -60°
-  const DEFAULT_PITCH  = Cesium.Math.toRadians(-48)  // default oblique angle
-  const targetPitch    = preservePitch
-    ? Math.min(currentPitch, MIN_PITCH_RAD)  // keep user tilt, enforce floor
-    : DEFAULT_PITCH
+  // Compute bounding box centre and an altitude that fits all points.
+  const lats = valid.map(h => h.latitude)
+  const lngs = valid.map(h => h.longitude)
+  const cLat  = (Math.min(...lats) + Math.max(...lats)) / 2
+  const cLng  = (Math.min(...lngs) + Math.max(...lngs)) / 2
+  const spanLat = Math.max(...lats) - Math.min(...lats)
+  const spanLng = Math.max(...lngs) - Math.min(...lngs)
+  const spanDeg = Math.max(spanLat, spanLng, 0.002)
+  // ~111 km per degree; multiply by 2.8 for comfortable view at -48° pitch
+  const altitude = Math.max(spanDeg * 111000 * 2.8, 400)
 
-  const sphere = Cesium.BoundingSphere.fromPoints(pts)
-  const range  = Math.max(sphere.radius * 2.6, 300)
+  // Use persisted pitch so the user's tilt is never reset.
+  // Clamp so we can't accidentally go overhead.
+  const pitch = Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD)
 
-  viewer.camera.flyToBoundingSphere(sphere, {
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(cLng, cLat, altitude),
+    orientation: {
+      heading: viewer.camera.heading,   // preserve current bearing
+      pitch,
+      roll: 0,
+    },
     duration: 1.8,
-    offset: new Cesium.HeadingPitchRange(
-      currentHeading,
-      targetPitch,
-      range,
-    ),
+    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
   })
 }
 
@@ -2045,10 +2056,12 @@ function flyToVillage() { flyToPoints(filteredHouses.value) }
 
 function flyToHouse(house) {
   if (!viewer || !house) return
+  const pitch = Math.max(Math.min(currentMapPitch, Cesium.Math.toRadians(-30)), Cesium.Math.toRadians(-70))
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(house.longitude, house.latitude, 200),
-    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
+    orientation: { heading: viewer.camera.heading, pitch, roll: 0 },
     duration: 1.5,
+    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
   })
 }
 
@@ -2058,12 +2071,39 @@ function flyToHouse(house) {
 //   3500–15000 m (THRESHOLD_DOTS)   : individual point beacons + high-need glow rings
 //   15000–80000 m (THRESHOLD_MACRO) : mini grid cluster circles (taluka density)
 //   > 80000 m  (THRESHOLD_MACRO)    : macro grid cluster circles (district/state density)
+// Minimum pitch: user can't tilt the camera flatter than this (in radians).
+// Cesium pitch is negative (−90° = straight down, 0° = horizon).
+const MIN_PITCH_RAD = Cesium.Math.toRadians(-80)   // 80° down — keeps buildings visible
+const MAX_PITCH_RAD = Cesium.Math.toRadians(-15)   // 15° down — can't go near-horizontal
+
 function updateZoomVisibility() {
   if (!viewer || viewer.isDestroyed()) return
   const pos = viewer.camera.positionCartographic
   if (!pos) return
   const h = pos.height
   cameraHeight.value = Math.round(h)
+
+  // ── Pitch guard: capture current pitch, enforce 3D floor ─────────────────
+  const pitch = viewer.camera.pitch   // radians, negative = tilted down
+  // Store every user-driven pitch for reuse by fly functions
+  if (pitch >= MIN_PITCH_RAD && pitch <= MAX_PITCH_RAD) {
+    currentMapPitch = pitch
+  }
+  // If the camera has drifted to near-overhead (pitch > MAX_PITCH_RAD, i.e. less negative),
+  // smoothly push it back to the persisted oblique angle — but only when zoomed in.
+  if (pitch > MAX_PITCH_RAD && h < 50000) {
+    viewer.camera.flyTo({
+      destination: viewer.camera.position,
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch:   currentMapPitch,
+        roll:    0,
+      },
+      duration: 0.6,
+      easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
+    })
+    return   // skip entity visibility update during the correction flight
+  }
 
   const showBuildings = h < THRESHOLD_BUILDINGS
   const showDots      = h >= THRESHOLD_BUILDINGS && h < THRESHOLD_DOTS
@@ -2816,6 +2856,14 @@ onMounted(async () => {
     // Restrict zoom: prevent users from getting closer than 500 m above the surface
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 500
 
+    // ── Pitch constraints — keep 3D perspective locked ────────────────────────
+    // Cesium uses enableCollisionDetection-style tilt limits via minimumZoomDistance
+    // but pitch min/max must be enforced through the camera-changed guard above.
+    // Set the controller's tilt range so mouse drag can't go fully overhead.
+    const ctrl = viewer.scene.screenSpaceCameraController
+    ctrl.minimumZoomDistance = 500
+    // Allow generous tilt via mouse but guard the extremes in updateZoomVisibility
+
     // Start at Maharashtra state level — no globe view
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 120000),
@@ -2889,7 +2937,13 @@ onMounted(async () => {
               const east  = Math.max(...lngs) + 0.0005
               viewer.camera.flyTo({
                 destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
+                orientation: {
+                  heading: viewer.camera.heading,
+                  pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
+                  roll: 0,
+                },
                 duration: 1.2,
+                easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
               })
             }
           }
