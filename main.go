@@ -37,6 +37,7 @@ func main() {
 	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
 	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
 	advisoryHandler        := handlers.NewAdvisoryHandler(conn)
+	clusterAdvisoryHandler := handlers.NewClusterAdvisoryHandler(conn)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -117,6 +118,7 @@ func main() {
 	r.GET("/schemes", handlers.GetSchemes)
 	r.GET("/schemes/recommend", schemeRecommendHandler.GetRecommendations)
 	r.GET("/advisory", advisoryHandler.GetAdvisory)
+	r.GET("/advisory/cluster", clusterAdvisoryHandler.GetClusterAdvisory)
 	r.GET("/market", handlers.GetMarket)
 
 	log.Println("[STARTUP] Routes registered:")

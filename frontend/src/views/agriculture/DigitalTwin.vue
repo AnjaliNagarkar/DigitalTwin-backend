@@ -674,40 +674,96 @@
     <!-- CLUSTER SOLUTION PANEL -->
     <transition name="slide">
       <div v-if="selectedCluster" class="cluster-panel">
-        <button class="detail-close cluster-close" @click="selectedCluster = null">×</button>
+        <button class="detail-close cluster-close" @click="selectedCluster = null; clusterAdvisory = null; highlightClusterBoundary(null)">×</button>
 
-        <!-- Header -->
+        <!-- ── Header ── -->
         <div class="cluster-header">
-          <div class="cluster-badge">⚠ High Need Area</div>
+          <div class="cluster-priority-badge"
+               :class="clusterAdvisory && !clusterAdvisory.loading && clusterAdvisory.priorityLabel?.includes('High') ? 'badge-high' : 'badge-moderate'">
+            {{ clusterAdvisory && !clusterAdvisory.loading ? clusterAdvisory.priorityLabel : '⚠ Analysing Cluster…' }}
+          </div>
           <div class="cluster-count">
             <strong>{{ selectedCluster.count }}</strong> households in this zone
           </div>
+          <div class="cluster-location-pill" v-if="selectedCluster.lat">
+            📍 {{ selectedCluster.lat.toFixed(4) }}°, {{ selectedCluster.lng.toFixed(4) }}°
+          </div>
         </div>
 
-        <!-- Problems -->
-        <div class="cluster-section-title" v-if="selectedCluster.problems.length">
-          🔍 Main Issues Detected
+        <!-- ── Loading state ── -->
+        <div v-if="!clusterAdvisory || clusterAdvisory.loading" class="cluster-loading">
+          <span class="advisory-spinner"></span> Loading group advisory…
         </div>
 
-        <div class="cp-card" v-for="p in selectedCluster.problems" :key="p.key">
-          <div class="cp-top">
-            <span class="cp-emoji">{{ p.emoji }}</span>
-            <div class="cp-info">
-              <span class="cp-label">{{ p.label }}</span>
-              <span class="cp-stat">{{ p.count }} of {{ selectedCluster.count }} families ({{ p.pct }}%)</span>
+        <template v-else>
+          <!-- ── Group Action Cards ── -->
+          <div class="cluster-section-title" v-if="clusterAdvisory.actions.length">
+            🔍 Group Issues &amp; Community Actions
+          </div>
+
+          <div class="cp-group-card"
+               v-for="action in clusterAdvisory.actions"
+               :key="action.problemKey"
+               :class="{ 'cp-mass': action.isMassIssue }">
+
+            <!-- Mass Issue heading -->
+            <div v-if="action.isMassIssue" class="cp-mass-heading">
+              🚨 {{ action.massHeading }}
+            </div>
+
+            <!-- Problem bar -->
+            <div class="cp-top">
+              <span class="cp-emoji">{{ selectedCluster.problems.find(p=>p.key===action.problemKey)?.emoji || '⚠' }}</span>
+              <div class="cp-info">
+                <span class="cp-label">{{ action.problemLabel }}</span>
+                <span class="cp-stat">{{ action.count }} of {{ action.total }} families ({{ action.affectedPct }}%)</span>
+              </div>
+              <span class="cp-pct-badge" :class="action.isMassIssue ? 'pct-red' : 'pct-amber'">{{ action.affectedPct }}%</span>
+            </div>
+            <div class="cp-bar-track">
+              <div class="cp-bar-fill" :class="action.isMassIssue ? 'fill-red' : 'fill-amber'"
+                   :style="{ width: action.affectedPct + '%' }"></div>
+            </div>
+
+            <!-- Cause -->
+            <div class="cp-cause-row">
+              <span class="cp-tag cp-tag-cause">Cause</span>
+              <span class="cp-cause-text">{{ action.cause }}</span>
+            </div>
+
+            <!-- Group Action (Recommended) -->
+            <div class="cp-action-row">
+              <span class="cp-tag cp-tag-action">Recommended Action</span>
+              <span class="cp-action-text">{{ action.groupAction }}</span>
+            </div>
+
+            <!-- Scheme footer -->
+            <div class="cp-scheme-footer">
+              <span class="cp-scheme-pill"
+                    :class="action.schemeType === 'community_scheme' ? 'pill-community' : 'pill-gov'">
+                {{ action.schemeType === 'community_scheme' ? '🤝' : '🏛' }}
+                {{ action.schemeName }}
+              </span>
+              <span v-if="action.schemeBenefit" class="cp-benefit-pill">💰 {{ action.schemeBenefit }}</span>
+              <span class="cp-source-tag"
+                    :class="action.source === 'scheme_criteria' ? 'src-db' : 'src-curated'">
+                {{ action.source === 'scheme_criteria' ? '● Scheme Database' : '● Agriculture Dept' }}
+              </span>
             </div>
           </div>
-          <div class="cp-bar-track">
-            <div class="cp-bar-fill" :style="{ width: p.pct + '%' }"></div>
-          </div>
-          <div class="cp-action">💡 {{ p.action }}</div>
-          <p class="cp-solution">{{ p.solution }}</p>
-          <div class="cp-scheme">📋 {{ p.scheme }}</div>
-        </div>
 
-        <div class="cluster-ok" v-if="!selectedCluster.problems.length">
-          ✅ No major issues detected in this cluster based on current filters.
-        </div>
+          <div v-if="!clusterAdvisory.actions.length" class="cluster-ok">
+            ✅ No major issues detected in this cluster based on current filters.
+          </div>
+
+          <!-- ── Drill-down button ── -->
+          <div class="cp-drill-row" v-if="selectedCluster.count > 0">
+            <button class="cp-drill-btn" @click="drillIntoCluster(selectedCluster)">
+              🔎 View Individual Households
+            </button>
+            <span class="cp-drill-hint">Zooms in to show individual household dots</span>
+          </div>
+        </template>
       </div>
     </transition>
   </div>
@@ -715,7 +771,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getAgricultureInsights, getSchemesForProblem, getAdvisory } from '../../api/index.js'
+import { getHouses, getAgricultureInsights, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
 import * as Cesium from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 
@@ -840,9 +896,12 @@ function handleTwinFullscreenChange() {
 }
 
 // Zoom thresholds (meters)
-const THRESHOLD_BUILDINGS = 3500   // below: show 3D boxes
-const THRESHOLD_DOTS      = 15000  // below: show individual point beacons (village level)
-const THRESHOLD_MACRO     = 80000  // above: show macro grid clusters (district/state)
+const THRESHOLD_BUILDINGS = 3500    // below: show 3D boxes
+const THRESHOLD_DOTS      = 15000   // below: show individual point beacons (village level)
+const THRESHOLD_MACRO     = 80000   // above: show macro grid clusters (district/state)
+// Cluster glow rings are shown from village level ALL THE WAY DOWN (incl. building view)
+// so the cluster boundary stays visible even when the user zooms into individual houses.
+const THRESHOLD_CLUSTER_HIDE = THRESHOLD_DOTS  // rings hidden only at taluka+ zoom
 
 // ── Location filter options (derived from loaded data) ────────────────────────
 const districtOptions = computed(() => {
@@ -1161,7 +1220,66 @@ const problemMatchCount = computed(() => {
 })
 
 // ── Cluster solution panel state ──────────────────────────────────────────────
-const selectedCluster = ref(null)  // { count, lat, lng, problems[] }
+const selectedCluster = ref(null)  // { count, lat, lng, problems[], houses[] }
+// Group advisory state for the selected cluster
+const clusterAdvisory = ref(null)  // null | { loading, priorityLabel, actions[] }
+// ID of the boundary-highlight entity for the active cluster
+let clusterBoundaryId = null
+
+async function loadClusterAdvisory(cluster) {
+  if (!cluster || !cluster.problems) return
+  clusterAdvisory.value = { loading: true, priorityLabel: '', actions: [] }
+  try {
+    const stats = cluster.problems.map(p => ({ key: p.key, count: p.count, total: cluster.count }))
+    const data  = await getClusterAdvisory(stats, cluster.count)
+    clusterAdvisory.value = { loading: false, ...data }
+  } catch {
+    clusterAdvisory.value = { loading: false, priorityLabel: 'Cluster Advisory Unavailable', actions: [] }
+  }
+}
+
+// Draw/remove a boundary ring around the active cluster on the map
+function highlightClusterBoundary(cluster) {
+  if (!viewer) return
+  // Remove previous boundary
+  if (clusterBoundaryId) {
+    viewer.entities.removeById(clusterBoundaryId)
+    clusterBoundaryId = null
+  }
+  if (!cluster) return
+  const pos = Cesium.Cartesian3.fromDegrees(cluster.lng, cluster.lat, 0)
+  const r   = Math.min(150 + cluster.count * 4, 700)
+  const ent = viewer.entities.add({
+    position: pos,
+    ellipse: {
+      semiMajorAxis:   r,
+      semiMinorAxis:   r,
+      material:        Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.08),
+      outline:         true,
+      outlineColor:    Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.7),
+      outlineWidth:    2,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    },
+  })
+  clusterBoundaryId = ent.id
+}
+
+// Zoom in on the cluster and switch to individual-household view
+function drillIntoCluster(cluster) {
+  if (!viewer || !cluster) return
+  selectedCluster.value = null
+  clusterAdvisory.value = null
+  // Remove boundary highlight
+  if (clusterBoundaryId) {
+    viewer.entities.removeById(clusterBoundaryId)
+    clusterBoundaryId = null
+  }
+  // Fly to the cluster location at village-level altitude
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(cluster.lng, cluster.lat, 1800),
+    duration: 1.5,
+  })
+}
 
 
 // Problem metadata used for cluster analysis (emoji + plain-language text)
@@ -1248,7 +1366,7 @@ const CLUSTER_PROBLEM_META = [
   },
 ]
 
-// Analyse the houses inside a cluster → top 2 problems with counts + solutions
+// Analyse the houses inside a cluster → all problems sorted by count, each with pct
 function analyzeCluster(houseList) {
   const total = houseList.length
   return CLUSTER_PROBLEM_META
@@ -1258,15 +1376,16 @@ function analyzeCluster(houseList) {
     }))
     .filter(p => p.count > 0)
     .sort((a, b) => b.count - a.count)
-    .slice(0, 2)
     .map(p => ({ ...p, pct: Math.round((p.count / total) * 100) }))
 }
 
-// When filter changes, rebuild entities and fly to filtered data
+// When location filter changes, rebuild entities and fly to filtered data.
+// If the filtered households are already visible in the current viewport,
+// skip the auto-fly so the user's zoom/tilt is preserved.
 watch(filteredHouses, (newHouses) => {
   if (!viewer || loadingLiveData.value) return
   buildEntities()
-  if (newHouses.length) {
+  if (newHouses.length && !housesInView(newHouses)) {
     setTimeout(() => flyToPoints(newHouses), 150)
   }
 }, { flush: 'post' })
@@ -1873,19 +1992,50 @@ function flyToMaharashtra() {
   })
 }
 
-function flyToPoints(list) {
+// Returns true if the majority of houses in `list` are already within the
+// camera's current view frustum, meaning no auto-fly is needed.
+function housesInView(list) {
+  if (!viewer) return false
+  const valid = list.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
+  if (!valid.length) return false
+  const canvas    = viewer.scene.canvas
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  let inCount = 0
+  for (const house of valid) {
+    const cart  = Cesium.Cartesian3.fromDegrees(house.longitude, house.latitude, 0)
+    const win   = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, cart)
+    if (win && win.x >= 0 && win.x <= w && win.y >= 0 && win.y <= h) inCount++
+  }
+  // Fly only if fewer than 60% of houses are currently on-screen
+  return inCount / valid.length >= 0.60
+}
+
+function flyToPoints(list, { preservePitch = false } = {}) {
   if (!viewer || !list.length) return
   const pts = list
     .filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
     .map(h => Cesium.Cartesian3.fromDegrees(h.longitude, h.latitude, 0))
   if (!pts.length) return
+
+  // Preserve the current heading so the map doesn't snap orientation.
+  // Clamp pitch: keep the user's current tilt if it's already oblique enough,
+  // otherwise enforce a minimum 45° tilt so 3D buildings stay visible.
+  const currentHeading = viewer.camera.heading  // radians
+  const currentPitch   = viewer.camera.pitch    // radians (negative = looking down)
+  const MIN_PITCH_RAD  = Cesium.Math.toRadians(-60)  // never flatter than -60°
+  const DEFAULT_PITCH  = Cesium.Math.toRadians(-48)  // default oblique angle
+  const targetPitch    = preservePitch
+    ? Math.min(currentPitch, MIN_PITCH_RAD)  // keep user tilt, enforce floor
+    : DEFAULT_PITCH
+
   const sphere = Cesium.BoundingSphere.fromPoints(pts)
   const range  = Math.max(sphere.radius * 2.6, 300)
+
   viewer.camera.flyToBoundingSphere(sphere, {
-    duration: 2,
+    duration: 1.8,
     offset: new Cesium.HeadingPitchRange(
-      Cesium.Math.toRadians(5),
-      Cesium.Math.toRadians(-42),
+      currentHeading,
+      targetPitch,
       range,
     ),
   })
@@ -1920,10 +2070,13 @@ function updateZoomVisibility() {
   const showMini      = h >= THRESHOLD_DOTS      && h < THRESHOLD_MACRO
   const showMacro     = h >= THRESHOLD_MACRO
 
+  // Cluster glow rings persist from taluka-edge all the way down to building view,
+  // so the boundary is still visible after zooming into individual houses.
+  const showClusters = h < THRESHOLD_CLUSTER_HIDE
   viewer.entities.values.forEach(entity => {
     if      (buildingIds.has(entity.id))  entity.show = showBuildings
     else if (pointIds.has(entity.id))     entity.show = showDots
-    else if (clusterIds.has(entity.id))   entity.show = showDots   // glow rings: village level only
+    else if (clusterIds.has(entity.id))   entity.show = showClusters
     else if (miniClusIds.has(entity.id))  entity.show = showMini
     else if (macroClusIds.has(entity.id)) entity.show = showMacro
   })
@@ -2147,10 +2300,22 @@ function addGridClusterMarkers(idSet, cellDeg, radiusM, initShow) {
     const matchCnt = hasPF ? houses.filter(matchesAllProblems).length : 0
     const pct      = hasPF && count > 0 ? matchCnt / count : 0
 
-    // Color: problem-density-weighted (red → orange → green) or neutral blue
+    // Color: problem-density-weighted (red → orange → green) or colorMode-derived neutral
+    const neutralColor = colorMode.value
+      ? (() => {
+          // Use dominant color from the cluster's houses under the current colorMode
+          const colorCounts = {}
+          houses.forEach(h => {
+            const c = getConditionColor(h)
+            colorCounts[c] = (colorCounts[c] || 0) + 1
+          })
+          const dominant = Object.entries(colorCounts).sort((a, b) => b[1] - a[1])[0]
+          return dominant ? dominant[0] : '#3b82f6'
+        })()
+      : '#3b82f6'
     const hue = hasPF
       ? (pct > 0.6 ? '#ef4444' : pct > 0.3 ? '#f97316' : '#16a34a')
-      : '#3b82f6'
+      : neutralColor
 
     const circEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
@@ -2201,23 +2366,23 @@ function addClusterEntities(problemHouses) {
   clusterMap.clear()
   const clusters = computeProblemClusters(problemHouses)
   const camH     = viewer.camera.positionCartographic?.height ?? cameraHeight.value
-  const initShow = camH >= THRESHOLD_BUILDINGS && camH < THRESHOLD_DOTS
+  // Rings visible whenever camera is below THRESHOLD_CLUSTER_HIDE (taluka zoom and closer)
+  const initShow = camH < THRESHOLD_CLUSTER_HIDE
 
   clusters.forEach(({ lat, lng, count, houses }) => {
     const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 0)
 
     const problems    = analyzeCluster(houses)
-    const clusterData = { count, lat, lng, problems }
+    const clusterData = { count, lat, lng, problems, houses }
 
-    // Ring radius: 120 m base + 3 m per house, capped at 500 m.
-    // Larger clusters visually occupy more area — feels proportional.
-    const baseR = Math.min(120 + count * 3, 500)
+    // Ring radius: 120 m base + 3 m per house, capped at 600 m.
+    const baseR = Math.min(120 + count * 3, 600)
 
     // Soft radial glow — 3 concentric rings, no hard outline
     const glowRings = [
       { scale: 1.6,  alpha: 0.04 },
       { scale: 1.15, alpha: 0.10 },
-      { scale: 0.75, alpha: 0.20 },
+      { scale: 0.75, alpha: 0.22 },
     ]
     glowRings.forEach(({ scale, alpha }) => {
       const r = baseR * scale
@@ -2236,9 +2401,8 @@ function addClusterEntities(problemHouses) {
       clusterMap.set(glowEnt.id, clusterData)
     })
 
-    // Compact badge label — only render when camera is within ~6 km of this cluster.
-    // This prevents all labels appearing simultaneously at a wide view.
-    const LABEL_MAX_DIST = 6000   // metres from camera to entity
+    // Badge label: visible up to 12 km (persists at building-level zoom too)
+    const LABEL_MAX_DIST = 12000
     const labelEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 5),
       show: initShow,
@@ -2256,10 +2420,8 @@ function addClusterEntities(problemHouses) {
         showBackground:   true,
         backgroundColor:  Cesium.Color.fromCssColorString('#ef4444').withAlpha(0.88),
         backgroundPadding: new Cesium.Cartesian2(6, 4),
-        // Only display label text when camera is close — prevents flood at wide zoom
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, LABEL_MAX_DIST),
-        // Smoothly scale down as user zooms out within the display range
-        scaleByDistance: new Cesium.NearFarScalar(500, 1.1, LABEL_MAX_DIST, 0.75),
+        scaleByDistance: new Cesium.NearFarScalar(300, 1.15, LABEL_MAX_DIST, 0.7),
       },
     })
 
@@ -2694,12 +2856,43 @@ onMounted(async () => {
           return
         }
 
-        // ── Problem-cluster entity → open solution panel ──────────────────────
+        // ── Problem-cluster entity → open Group Action Card ──────────────────
         const cluster = clusterMap.get(entityId)
         if (cluster) {
           clearSpiderfy()
-          selectedCluster.value = cluster
+          // If a problem filter is active, ensure cluster problems reflect it.
+          // The cluster's houses already matched the filter, so we synthesise
+          // problem entries directly from the active filter keys.
+          let resolvedCluster = cluster
+          if (activeProblemFilters.value.length > 0 && (!cluster.problems || cluster.problems.length === 0)) {
+            const syntheticProblems = activeProblemFilters.value.map(key => {
+              const meta = CLUSTER_PROBLEM_META.find(m => m.key === key) || { key, label: key }
+              const count = cluster.houses.filter(h => matchesProblemFilter(h, key)).length
+              const pct = cluster.count > 0 ? Math.round((count / cluster.count) * 100) : 0
+              return { ...meta, count, total: cluster.count, pct }
+            }).filter(p => p.count > 0)
+            resolvedCluster = { ...cluster, problems: syntheticProblems }
+          }
+          selectedCluster.value = resolvedCluster
           selectedHouse.value   = null
+          clusterAdvisory.value = null
+          highlightClusterBoundary(resolvedCluster)
+          loadClusterAdvisory(resolvedCluster)
+          // Fit-bounds zoom: fly to bounding rectangle of all houses in cluster
+          if (resolvedCluster.houses && resolvedCluster.houses.length > 0) {
+            const lats = resolvedCluster.houses.map(h => h.latitude).filter(Number.isFinite)
+            const lngs = resolvedCluster.houses.map(h => h.longitude).filter(Number.isFinite)
+            if (lats.length && lngs.length) {
+              const south = Math.min(...lats) - 0.0005
+              const north = Math.max(...lats) + 0.0005
+              const west  = Math.min(...lngs) - 0.0005
+              const east  = Math.max(...lngs) + 0.0005
+              viewer.camera.flyTo({
+                destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
+                duration: 1.2,
+              })
+            }
+          }
           return
         }
       }
@@ -3697,103 +3890,144 @@ onUnmounted(() => {
 }
 
 .cluster-header {
-  padding: 1rem 1rem 0.7rem;
+  padding: 1rem 1rem 0.8rem;
   background: linear-gradient(135deg, #fef2f2 0%, #fff7f7 100%);
   border-bottom: 1.5px solid #fecaca;
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
-.cluster-badge {
+/* Priority badge — replaces old .cluster-badge */
+.cluster-priority-badge {
   display: inline-block;
-  background: #ef4444;
-  color: #fff;
-  font-size: 0.67rem;
-  font-weight: 700;
-  padding: 0.2rem 0.6rem;
-  border-radius: 20px;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.42rem;
+  font-size: 0.67rem; font-weight: 700;
+  padding: 0.22rem 0.65rem; border-radius: 20px;
+  letter-spacing: 0.04em; margin-bottom: 0.42rem;
 }
+.badge-high     { background: #ef4444; color: #fff; }
+.badge-moderate { background: #f59e0b; color: #fff; }
 
 .cluster-count {
-  font-size: 0.82rem;
-  color: #374151;
-  line-height: 1.3;
+  font-size: 0.82rem; color: #374151; line-height: 1.3;
 }
 .cluster-count strong { color: #ef4444; font-size: 1.1rem; }
 
-.cluster-section-title {
-  font-size: 0.62rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #374151;
-  padding: 0.75rem 1rem 0.3rem;
+.cluster-location-pill {
+  font-size: 0.62rem; color: #6b7280; margin-top: 0.3rem;
 }
 
-/* Individual problem card */
-.cp-card {
+.cluster-loading {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.7rem; color: #6b7280; padding: 0.8rem 1rem;
+}
+
+.cluster-section-title {
+  font-size: 0.62rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: #374151; padding: 0.75rem 1rem 0.3rem;
+}
+
+/* Group problem card */
+.cp-group-card {
   margin: 0 0.75rem 0.65rem;
-  padding: 0.65rem 0.7rem;
+  padding: 0.65rem 0.75rem;
   background: #fafafa;
-  border: 1.5px solid #e5e7eb;
-  border-radius: var(--radius-sm);
+  border: 1px solid #e5e7eb;
   border-left: 3px solid #ef4444;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.cp-group-card.cp-mass {
+  background: #fff5f5;
+  border-color: #fca5a5;
+  border-left-color: #dc2626;
+  border-left-width: 4px;
+}
+
+.cp-mass-heading {
+  font-size: 0.72rem; font-weight: 800; color: #dc2626;
+  margin-bottom: 0.48rem; letter-spacing: 0.01em;
 }
 
 .cp-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin-bottom: 0.45rem;
+  display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.42rem;
 }
-.cp-emoji { font-size: 1.25rem; flex-shrink: 0; line-height: 1.2; }
+.cp-emoji { font-size: 1.2rem; flex-shrink: 0; line-height: 1.2; }
 .cp-info  { flex: 1; min-width: 0; }
-.cp-label { display: block; font-size: 0.8rem; font-weight: 700; color: #111827; }
-.cp-stat  { font-size: 0.66rem; color: #6b7280; margin-top: 0.1rem; display: block; }
+.cp-label { display: block; font-size: 0.78rem; font-weight: 700; color: #111827; }
+.cp-stat  { font-size: 0.64rem; color: #6b7280; margin-top: 0.08rem; display: block; }
+.cp-pct-badge {
+  font-size: 0.68rem; font-weight: 800;
+  padding: 0.08rem 0.38rem; border-radius: 4px; flex-shrink: 0;
+}
+.pct-red   { background: #fef2f2; color: #dc2626; }
+.pct-amber { background: #fffbeb; color: #d97706; }
 
 .cp-bar-track {
-  height: 5px;
-  background: #f3f4f6;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 0.52rem;
+  height: 5px; background: #f3f4f6; border-radius: 3px;
+  overflow: hidden; margin-bottom: 0.52rem;
 }
-.cp-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #ef4444, #f87171);
-  border-radius: 3px;
-  transition: width 0.5s ease;
+.cp-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.fill-red   { background: linear-gradient(90deg, #ef4444, #f87171); }
+.fill-amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+/* Cause / Action rows */
+.cp-cause-row, .cp-action-row {
+  display: flex; gap: 0.4rem; align-items: flex-start; margin-bottom: 0.38rem;
+}
+.cp-tag {
+  font-size: 0.56rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; padding: 0.12rem 0.35rem;
+  border-radius: 3px; flex-shrink: 0; margin-top: 0.04rem;
+}
+.cp-tag-cause  { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+.cp-tag-action { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+.cp-cause-text, .cp-action-text {
+  font-size: 0.7rem; color: #374151; line-height: 1.55;
 }
 
-.cp-action {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #dc2626;
-  margin-bottom: 0.3rem;
+/* Scheme footer */
+.cp-scheme-footer {
+  display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.42rem;
+  align-items: center;
 }
-.cp-solution {
-  font-size: 0.72rem;
-  color: #374151;
-  line-height: 1.55;
-  margin: 0 0 0.38rem;
+.cp-scheme-pill {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 0.62rem; font-weight: 700;
+  padding: 0.14rem 0.45rem; border-radius: 999px;
+  border: 1.5px solid; flex: 1; min-width: 0;
 }
-.cp-scheme {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #6b7280;
-  padding: 0.18rem 0.48rem;
-  border: 1.5px solid #d1d5db;
-  border-radius: 4px;
-  display: inline-block;
-  background: #ffffff;
+.pill-community { color: #0f766e; border-color: #99f6e4; background: #f0fdfa; }
+.pill-gov       { color: #1e40af; border-color: #bfdbfe; background: #eff6ff; }
+.cp-benefit-pill {
+  font-size: 0.6rem; font-weight: 600;
+  padding: 0.1rem 0.4rem; border-radius: 999px;
+  background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;
+}
+.cp-source-tag {
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.03em;
+  padding: 0.1rem 0.4rem; border-radius: 999px;
+}
+
+/* Drill-down button */
+.cp-drill-row {
+  margin: 0.5rem 0.75rem 0.85rem;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.cp-drill-btn {
+  background: #1e40af; color: #fff;
+  border: none; border-radius: var(--radius-sm);
+  font-size: 0.73rem; font-weight: 700;
+  padding: 0.5rem 0.9rem; cursor: pointer;
+  width: 100%; text-align: center;
+  transition: background 0.15s;
+}
+.cp-drill-btn:hover { background: #1d4ed8; }
+.cp-drill-hint {
+  font-size: 0.6rem; color: #9ca3af; text-align: center; font-style: italic;
 }
 
 .cluster-ok {
-  font-size: 0.73rem;
-  color: #15803d;
-  padding: 0.75rem 1rem 1rem;
-  font-weight: 500;
+  font-size: 0.73rem; color: #15803d;
+  padding: 0.75rem 1rem 1rem; font-weight: 500;
 }
 
 /* ═══════════════════════════════════════════════

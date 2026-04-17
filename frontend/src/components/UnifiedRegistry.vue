@@ -2,28 +2,39 @@
   <div class="registry-wrap" :class="{ 'registry-embedded': embedded }">
 
     <!-- ── Page header (full-page mode only) ─────────────────────────── -->
-    <header v-if="!embedded" class="page-header">
-      <div class="header-title-row">
-        <div>
+    <header v-if="!embedded" class="page-header" @click="categoryDropdownOpen = false">
+
+      <!-- Row 1: Title + CATEGORY custom dropdown -->
+      <div class="header-row header-row-1">
+        <div class="title-block">
           <h1 class="page-title">Citizen Registry</h1>
           <p class="page-subtitle">{{ activeCategoryConfig.subtitle }}</p>
         </div>
-        <!-- Category dropdown — the master controller -->
-        <div class="category-select-wrap">
-          <label class="category-label">Category</label>
-          <div class="category-select-box">
-            <select v-model="category" class="category-select" @change="onCategoryChange">
-              <option v-for="c in CATEGORIES" :key="c.value" :value="c.value">
-                {{ c.label }}
-              </option>
-            </select>
-            <span class="category-icon">{{ activeCategoryConfig.icon }}</span>
+
+        <div class="reg-filter-group" @click.stop>
+          <span class="reg-filter-label">CATEGORY</span>
+          <div class="reg-custom-select" :class="{ open: categoryDropdownOpen }"
+               @click="categoryDropdownOpen = !categoryDropdownOpen">
+            <button class="reg-cs-trigger" type="button">
+              <span class="reg-cs-value">
+                {{ activeCategoryConfig.icon }} {{ activeCategoryConfig.label }}
+              </span>
+              <span class="reg-cs-arrow">▾</span>
+            </button>
+            <div class="reg-cs-dropdown" v-show="categoryDropdownOpen" @click.stop>
+              <div v-for="c in CATEGORIES" :key="c.value"
+                   class="reg-cs-option"
+                   :class="{ selected: category === c.value }"
+                   @click="selectCategory(c.value)">
+                <span class="reg-cs-opt-icon">{{ c.icon }}</span>{{ c.fullLabel }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Search + sub-filters row -->
-      <div class="header-controls">
+      <!-- Row 2: Search + Sub-filters -->
+      <div class="header-row header-row-2">
         <div class="search-box">
           <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
             <path fill-rule="evenodd"
@@ -33,29 +44,44 @@
           <input v-model="search" placeholder="Search by name…" class="search-input"/>
         </div>
 
-        <!-- Sub-filters — rendered dynamically per category -->
-        <div v-if="activeSubFilters.length" class="subfilter-bar">
-          <template v-for="sf in activeSubFilters" :key="sf.key">
-            <span class="subfilter-label">{{ sf.label }}:</span>
-            <button v-for="opt in sf.options" :key="opt.value"
-              class="chip"
-              :class="{ active: subFilters[sf.key] === opt.value }"
-              @click="toggleSubFilter(sf.key, opt.value)">
-              {{ opt.label }}
-            </button>
-            <div class="filter-divider"></div>
-          </template>
-        </div>
+        <template v-if="activeSubFilters.length">
+          <div class="subfilter-bar">
+            <template v-for="sf in activeSubFilters" :key="sf.key">
+              <span class="subfilter-label">{{ sf.label }}:</span>
+              <button v-for="opt in sf.options" :key="opt.value"
+                class="chip"
+                :class="{ active: subFilters[sf.key] === opt.value }"
+                @click="toggleSubFilter(sf.key, opt.value)">
+                {{ opt.label }}
+              </button>
+              <div class="filter-divider"></div>
+            </template>
+          </div>
+        </template>
 
-        <button class="reset-btn" @click="resetFilters">Reset</button>
+        <button class="reset-btn" @click="resetFilters">↺ Reset</button>
       </div>
+
     </header>
 
     <!-- ── Embedded compact toolbar ──────────────────────────────────── -->
-    <div v-if="embedded" class="embedded-toolbar">
-      <select v-model="category" class="category-select-inline" @change="onCategoryChange">
-        <option v-for="c in CATEGORIES" :key="c.value" :value="c.value">{{ c.label }}</option>
-      </select>
+    <div v-if="embedded" class="embedded-toolbar" @click="categoryDropdownOpen = false">
+      <div class="reg-custom-select reg-custom-select--sm"
+           :class="{ open: categoryDropdownOpen }"
+           @click.stop="categoryDropdownOpen = !categoryDropdownOpen">
+        <button class="reg-cs-trigger reg-cs-trigger--sm" type="button">
+          <span class="reg-cs-value">{{ activeCategoryConfig.icon }} {{ activeCategoryConfig.label }}</span>
+          <span class="reg-cs-arrow">▾</span>
+        </button>
+        <div class="reg-cs-dropdown" v-show="categoryDropdownOpen" @click.stop>
+          <div v-for="c in CATEGORIES" :key="c.value"
+               class="reg-cs-option"
+               :class="{ selected: category === c.value }"
+               @click="selectCategory(c.value)">
+            {{ c.icon }} {{ c.fullLabel }}
+          </div>
+        </div>
+      </div>
       <div class="search-box search-box-sm">
         <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
           <path fill-rule="evenodd"
@@ -72,7 +98,7 @@
           {{ opt.label }}
         </button>
       </template>
-      <button class="reset-btn" @click="resetFilters">Reset</button>
+      <button class="reset-btn" @click="resetFilters">↺ Reset</button>
     </div>
 
     <!-- ── Loading ────────────────────────────────────────────────────── -->
@@ -154,12 +180,12 @@ const props = defineProps({
 // which sub-filters to expose, and how to pre-filter the rows.
 
 const CATEGORIES = [
-  { value: '',         label: 'All Citizens'   },
-  { value: 'farmer',  label: 'Farmer'          },
-  { value: 'student', label: 'Student'         },
-  { value: 'disabled',label: 'Disabled'        },
-  { value: 'housewife',label: 'Housewife'      },
-  { value: 'senior',  label: 'Senior Citizen'  },
+  { value: '',          label: 'All',             fullLabel: 'All Citizens',    icon: '👥' },
+  { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
+  { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
+  { value: 'disabled', label: 'Disabled',         fullLabel: 'Disabled',        icon: '♿' },
+  { value: 'housewife',label: 'Housewives',       fullLabel: 'Housewives',      icon: '🏠' },
+  { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
 ]
 
 const CATEGORY_CONFIG = {
@@ -386,9 +412,16 @@ const CATEGORY_CONFIG = {
 // ── State ──────────────────────────────────────────────────────────────────
 const loading     = ref(true)
 const records     = ref([])
-const category    = ref('')
-const search      = ref('')
-const subFilters  = ref({})   // { [filterKey]: selectedValue }
+const category             = ref('')
+const categoryDropdownOpen = ref(false)
+const search               = ref('')
+const subFilters           = ref({})   // { [filterKey]: selectedValue }
+
+function selectCategory(val) {
+  category.value = val
+  categoryDropdownOpen.value = false
+  onCategoryChange()
+}
 const sortKey     = ref('')
 const sortDir     = ref('asc')
 const currentPage = ref(1)
@@ -686,88 +719,134 @@ function esc(s) {
 .registry-embedded { padding: 0.75rem 1rem; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
-.page-header { margin-bottom: 1.5rem; }
-
-.header-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+.page-header {
+  margin-bottom: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  overflow: visible;   /* allow dropdown to escape */
 }
 
+/* Row 1 — Title + CATEGORY dropdown */
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  flex-wrap: wrap;
+}
+.header-row-1 {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  gap: 1.25rem;
+}
+/* Row 2 — search + sub-filters */
+.header-row-2 {
+  gap: 0.55rem;
+  padding: 0.65rem 1.5rem;
+}
+
+.title-block { flex-shrink: 0; }
 .page-title {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: 1.6rem;
   color: var(--text-primary);
   font-weight: 400;
+  line-height: 1.2;
 }
-.page-subtitle { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.35rem; }
+.page-subtitle { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.2rem; }
 
-/* ── Category selector ───────────────────────────────────────────────────── */
-.category-select-wrap {
+/* ── CATEGORY custom dropdown (mirrors 3D Twin "View By") ─────────────────── */
+.reg-filter-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  min-width: 200px;
+  gap: 0.25rem;
+  margin-left: auto;  /* push to right side of Row 1 */
 }
-.category-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
+.reg-filter-label {
+  font-size: 0.63rem;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--text-dim);
-  font-weight: 600;
+  user-select: none;
 }
-.category-select-box {
+
+.reg-custom-select {
   position: relative;
+  min-width: 190px;
+}
+
+.reg-cs-trigger {
   display: flex;
   align-items: center;
-}
-.category-select {
+  justify-content: space-between;
+  gap: 0.4rem;
   width: 100%;
-  height: 38px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--amber);
-  border-radius: 8px;
-  color: var(--text-body);
-  font-family: var(--font-body);
-  font-size: 0.88rem;
+  background: #ffffff;
+  border: 1.5px solid #9ca3af;
+  border-radius: 7px;
+  color: #111827;
+  font-size: 0.82rem;
   font-weight: 500;
-  padding: 0 2rem 0 0.75rem;
-  appearance: none;
+  padding: 0.38rem 0.65rem;
   cursor: pointer;
-  transition: box-shadow 0.2s;
+  outline: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+  white-space: nowrap;
 }
-.category-select:focus { outline: none; box-shadow: 0 0 0 3px var(--amber-dim); }
-.category-icon {
+.reg-cs-trigger:hover          { border-color: #6b7280; }
+.reg-custom-select.open .reg-cs-trigger {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+}
+
+.reg-cs-trigger--sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
+
+.reg-cs-value { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.reg-cs-arrow {
+  font-size: 0.6rem;
+  color: #6b7280;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.reg-custom-select.open .reg-cs-arrow { transform: rotate(180deg); }
+
+/* Dropdown panel — anchored right so it doesn't overlap Row 2 content */
+.reg-cs-dropdown {
   position: absolute;
-  right: 0.6rem;
-  font-size: 1rem;
-  pointer-events: none;
+  top: calc(100% + 5px);
+  right: 0;
+  left: auto;
+  min-width: 100%;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.13), 0 3px 8px rgba(0,0,0,0.08);
+  z-index: 9999;   /* float over row 2 and table */
+  overflow: hidden;
 }
 
-/* Inline category selector (embedded mode) */
-.category-select-inline {
-  height: 30px;
-  background: var(--bg-card);
-  border: 1px solid var(--amber);
-  border-radius: 6px;
-  color: var(--text-body);
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  padding: 0 0.6rem;
-  cursor: pointer;
-}
-
-/* ── Controls row ────────────────────────────────────────────────────────── */
-.header-controls {
+.reg-cs-option {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.46rem 0.8rem;
+  font-size: 0.8rem;
+  color: #111827;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
 }
+.reg-cs-option:hover    { background: #f0fdf4; color: #15803d; }
+.reg-cs-option.selected { background: #dcfce7; color: #15803d; font-weight: 600; }
+.reg-cs-opt-icon        { font-size: 0.9rem; line-height: 1; width: 1.1rem; flex-shrink: 0; }
 
+/* Compact variant for embedded mode */
+.reg-custom-select--sm { min-width: 150px; }
+
+/* ── Embedded toolbar ────────────────────────────────────────────────────── */
 .embedded-toolbar {
   display: flex;
   align-items: center;
@@ -780,20 +859,21 @@ function esc(s) {
 .search-box {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border-light);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  padding: 0 0.75rem;
+  height: 36px;
   flex: 0 1 260px;
-  transition: border-color 0.2s;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
-.search-box-sm { flex: 0 1 200px; }
-.search-box:focus-within { border-color: var(--amber); }
-.search-icon { width: 16px; height: 16px; color: var(--text-dim); flex-shrink: 0; }
+.search-box-sm { flex: 0 1 200px; height: 32px; }
+.search-box:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-dim); }
+.search-icon { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
 .search-input {
   background: none; border: none; outline: none;
-  color: var(--text-body); font-family: var(--font-body); font-size: 0.85rem; width: 100%;
+  color: var(--text-body); font-family: var(--font-body); font-size: 0.84rem; width: 100%;
 }
 .search-input::placeholder { color: var(--text-dim); }
 
@@ -812,7 +892,7 @@ function esc(s) {
   font-weight: 600;
   white-space: nowrap;
 }
-.filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 0.1rem; }
+.filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 0.1rem; flex-shrink: 0; }
 
 .chip {
   background: var(--bg-card);
@@ -830,25 +910,26 @@ function esc(s) {
 .chip.active { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
 
 .reset-btn {
-  height: 30px;
+  height: 36px;
   padding: 0 0.9rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border-light);
   background: var(--bg-surface);
   color: var(--text-muted);
   font-family: var(--font-body);
   font-size: 0.76rem;
   cursor: pointer;
-  transition: all 0.18s;
+  transition: all 0.15s;
   white-space: nowrap;
 }
-.reset-btn:hover { border-color: var(--amber); color: var(--amber); }
+.reset-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
 
 /* ── Table container ─────────────────────────────────────────────────────── */
 .table-container {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
   overflow: hidden;
 }
 

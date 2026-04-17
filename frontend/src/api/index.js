@@ -94,6 +94,17 @@ export function getAdvisory(problems, profile = {}) {
  * @param {string} problemKey  - e.g. 'noIrrigation', 'bplFamilies'
  * @param {object} profile     - { land_size, occupation, bpl }
  */
+/**
+ * Fetch group advisory for a cluster of households.
+ * @param {Array<{key,count,total}>} problems - problem stats from cluster analysis
+ * @param {number} total - total households in cluster
+ */
+export function getClusterAdvisory(problems, total) {
+  if (!problems || !problems.length) return Promise.resolve({ actions: [] })
+  const problemsParam = problems.map(p => `${p.key}:${p.count}:${p.total}`).join(',')
+  return fetchJSON(`/advisory/cluster?problems=${encodeURIComponent(problemsParam)}&total=${total}`)
+}
+
 export function getSchemesForProblem(problemKey, profile = {}) {
   const params = { problem: problemKey, ...profile }
   const qs = toQueryString(params)
