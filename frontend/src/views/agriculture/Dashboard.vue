@@ -62,22 +62,28 @@
             </div>
           </article>
 
-          <article class="card insight-panel age-panel">
+          <article class="card insight-panel divyang-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Age Distribution</h3>
-              <span class="total-note">Total: {{ ageTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">Divyang Distribution</h3>
+              <span class="total-note">Total: {{ divyangTotal.toLocaleString() }}</span>
             </div>
 
-            <div v-if="ageTotal === 0" class="empty-state">
-              No age records available.
+            <div v-if="divyangTotal === 0" class="empty-state">
+              No divyang records available.
             </div>
-            <div v-else class="distribution-bars age-distribution-bars">
-              <div class="distribution-row" v-for="item in ageSegments" :key="item.label">
-                <div class="distribution-label">{{ item.label }}</div>
-                <div class="distribution-track">
-                  <div class="distribution-fill" :style="{ width: ageBarWidth(item.value), background: item.color }"></div>
+            <div v-else class="chart-layout gender-chart-layout">
+              <div class="donut" :style="divyangPieStyle">
+                <div class="donut-hole">
+                  <div class="donut-value">{{ divyangTotal.toLocaleString() }}</div>
+                  <div class="donut-label">Total Divyang</div>
                 </div>
-                <div class="distribution-value">{{ item.value.toLocaleString() }}</div>
+              </div>
+              <div class="dist-items">
+                <div class="dist-item" v-for="item in divyangSegments" :key="item.label">
+                  <span class="dist-dot" :style="{ background: item.color }"></span>
+                  <span class="dist-label">{{ item.label }}</span>
+                  <span class="dist-count">{{ item.value.toLocaleString() }}</span>
+                </div>
               </div>
             </div>
           </article>
@@ -105,6 +111,24 @@
                   <span class="dist-count">{{ item.value.toLocaleString() }}</span>
                 </div>
               </div>
+            </div>
+          </article>
+
+          <article class="card insight-panel age-panel">
+            <div class="panel-header">
+              <h3 class="chart-title">Age-wise Income & Gender</h3>
+            </div>
+
+            <div v-if="ageIncomeGenderSegments.length === 0" class="empty-state">
+              No age-wise data available.
+            </div>
+            <div v-else class="age-mixed-chart">
+              <apexchart
+                height="260"
+                type="line"
+                :options="ageIncomeGenderOptions"
+                :series="ageIncomeGenderSeries"
+              />
             </div>
           </article>
         </div>
@@ -231,7 +255,9 @@ const populationStats = ref({
 const demographics = ref({
   gender_distribution: { male: 0, female: 0, other: 0 },
   age_distribution: { age_0_5: 0, age_6_18: 0, age_19_35: 0, age_36_60: 0, age_60_plus: 0 },
+  age_income_gender_distribution: [],
 })
+const ageIncomeGenderSegments = ref([])
 const education = ref({
   literate_population: 0,
   illiterate_population: 0,
@@ -276,7 +302,18 @@ onMounted(async () => {
   if (agricultureResults[0].status === 'fulfilled') agriculture.value = agricultureResults[0].value
 
   if (populationResults[0].status === 'fulfilled') populationStats.value = populationResults[0].value
-  if (populationResults[1].status === 'fulfilled') demographics.value = populationResults[1].value
+  if (populationResults[1].status === 'fulfilled') {
+    demographics.value = populationResults[1].value
+    const distribution = demographics.value?.age_income_gender_distribution || []
+    ageIncomeGenderSegments.value = Array.isArray(distribution)
+      ? distribution.map(item => ({
+          age_group: item.age_group || item.age_range || '',
+          avg_income: Number(item.avg_income ?? item.average_income ?? 0),
+          male_count: Number(item.male_count || 0),
+          female_count: Number(item.female_count || 0),
+        }))
+      : []
+  }
   if (populationResults[2].status === 'fulfilled') education.value = populationResults[2].value
   if (populationResults[3].status === 'fulfilled') employment.value = populationResults[3].value
   if (populationResults[4].status === 'fulfilled') {
@@ -315,10 +352,8 @@ const ChildIcon = {
 const populationMetrics = computed(() => {
   const s = populationStats.value
   return [
-    { label: 'Total Population', value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
     { label: 'Total Households', value: Number(s.total_households || 0).toLocaleString(), color: 'var(--teal)', iconBg: 'var(--teal-dim)', iconSvg: HomeIcon },
-    { label: 'Working Population', value: Number(s.working_population || 0).toLocaleString(), color: 'var(--green)', iconBg: 'var(--green-dim)', iconSvg: BriefcaseIcon },
-    { label: 'Dependent Population', value: Number(s.dependent_population || 0).toLocaleString(), color: 'var(--red)', iconBg: 'var(--red-dim)', iconSvg: ChildIcon },
+    { label: 'Total Population', value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
   ]
 })
 
@@ -345,19 +380,71 @@ const genderPieStyle = computed(() => {
   }
 })
 
-const ageSegments = computed(() => {
-  const a = demographics.value.age_distribution || {}
+const ageIncomeGenderCategories = computed(() =>
+  ageIncomeGenderSegments.value.map(item => item.age_group)
+)
+
+const ageIncomeGenderSeries = computed(() => {
+  if (!ageIncomeGenderSegments.value.length) return []
+
   return [
-    { label: '0-5', value: Number(a.age_0_5 || 0), color: 'var(--teal)' },
-    { label: '6-18', value: Number(a.age_6_18 || 0), color: 'var(--amber)' },
-    { label: '19-35', value: Number(a.age_19_35 || 0), color: 'var(--green)' },
-    { label: '36-60', value: Number(a.age_36_60 || 0), color: 'var(--red)' },
-    { label: '60+', value: Number(a.age_60_plus || 0), color: 'var(--text-dim)' },
+    {
+      name: 'Income',
+      type: 'column',
+      data: ageIncomeGenderSegments.value.map(item => item.avg_income),
+    },
+    {
+      name: 'Male',
+      type: 'line',
+      data: ageIncomeGenderSegments.value.map(item => item.male_count),
+    },
+    {
+      name: 'Female',
+      type: 'line',
+      data: ageIncomeGenderSegments.value.map(item => item.female_count),
+    },
   ]
 })
-const ageTotal = computed(() => ageSegments.value.reduce((sum, item) => sum + item.value, 0))
-const ageMax = computed(() => Math.max(...ageSegments.value.map((item) => item.value), 1))
-const ageBarWidth = (value) => `${(Number(value || 0) / ageMax.value) * 100}%`
+
+const ageIncomeGenderOptions = computed(() => ({
+  chart: {
+    type: 'line',
+    height: 260,
+    toolbar: { show: false },
+  },
+  stroke: {
+    width: [0, 3, 3],
+  },
+  plotOptions: {
+    bar: {
+      columnWidth: '40%',
+      borderRadius: 4,
+    },
+  },
+  colors: ['#f59e0b', '#2563eb', '#ec4899'],
+  xaxis: {
+    categories: ageIncomeGenderCategories.value,
+    title: {
+      text: 'Age Group',
+    },
+  },
+  yaxis: [
+    {
+      title: {
+        text: 'Income (₹)',
+      },
+    },
+    {
+      opposite: true,
+      title: {
+        text: 'Population',
+      },
+    },
+  ],
+  legend: {
+    position: 'top',
+  },
+}))
 
 const bplSegments = computed(() => {
   const rows = Array.isArray(families.value) ? families.value : []
@@ -388,6 +475,97 @@ const bplPieStyle = computed(() => {
   const nonBplPct = Math.max(0, 100 - bplPct)
   return {
     background: `conic-gradient(#ef4444 0 ${bplPct}%, #10b981 ${bplPct}% ${bplPct + nonBplPct}%)`,
+  }
+})
+
+const DIVYANG_COLORS = ['#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#22c55e', '#3b82f6', '#14b8a6', '#9ca3af']
+
+function mapDisabilityGroup(name) {
+  const n = String(name || '').toLowerCase()
+
+  if (n.includes('blind') || n.includes('low-vision') || n.includes('low vision')) return 'Visual Disability'
+
+  if (
+    n.includes('locomotor') ||
+    n.includes('cerebral') ||
+    n.includes('muscular') ||
+    n.includes('dwarf')
+  ) return 'Locomotor Disability'
+
+  if (
+    n.includes('mental') ||
+    n.includes('autism') ||
+    n.includes('intellectual') ||
+    n.includes('learning')
+  ) return 'Intellectual Disability'
+
+  if (n.includes('hearing')) return 'Hearing Disability'
+  if (n.includes('speech')) return 'Speech Disability'
+  if (n.includes('multiple')) return 'Multiple Disabilities'
+
+  if (
+    n.includes('parkinson') ||
+    n.includes('sclerosis') ||
+    n.includes('sickle') ||
+    n.includes('thalassemia') ||
+    n.includes('neurological')
+  ) return 'Chronic Conditions'
+
+  if (
+    n.includes('acid attack') ||
+    n.includes('leprosy')
+  ) return 'Other'
+
+  return name ? String(name).trim() : 'Other'
+}
+
+const divyangSegments = computed(() => {
+  const source = Array.isArray(demographics.value?.disability_distribution)
+    ? demographics.value.disability_distribution
+    : []
+
+  const grouped = new Map()
+  for (const item of source) {
+    const group = mapDisabilityGroup(item?.name)
+    const next = Number(item?.value || 0)
+    grouped.set(group, Number(grouped.get(group) || 0) + next)
+  }
+
+  const rows = [...grouped.entries()]
+    .map(([label, value], index) => ({
+      label,
+      value,
+      color: DIVYANG_COLORS[index % DIVYANG_COLORS.length],
+    }))
+    .filter(item => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+
+  return rows
+})
+
+const divyangTotal = computed(() => {
+  const apiTotal = Number(demographics.value?.total_divyang || 0)
+  if (apiTotal > 0) return apiTotal
+  return divyangSegments.value.reduce((sum, item) => sum + item.value, 0)
+})
+
+const divyangPieStyle = computed(() => {
+  const total = divyangTotal.value
+  if (!total || !divyangSegments.value.length) {
+    return { background: 'conic-gradient(var(--bg-surface) 0 100%)' }
+  }
+
+  let current = 0
+  const stops = divyangSegments.value.map(segment => {
+    const pct = (segment.value / total) * 100
+    const start = current
+    const end = current + pct
+    current = end
+    return `${segment.color} ${start}% ${end}%`
+  })
+
+  return {
+    background: `conic-gradient(${stops.join(', ')})`,
   }
 })
 
@@ -759,6 +937,10 @@ function landPct(count) {
   background: var(--bg-surface);
 }
 
+.age-mixed-chart {
+  margin-top: 0.25rem;
+}
+
 .loading-state {
   display: flex;
   align-items: center;
@@ -821,6 +1003,105 @@ function landPct(count) {
 .land-bar-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--teal)); border-radius: 4px; transition: width 1s ease; }
 .land-bar-count { font-size: 0.75rem; color: var(--text-body); font-weight: 500; }
 
+/* Age-Income-Gender Chart */
+.age-income-gender-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chart-legend-row {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.aig-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.aig-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 120px;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.aig-age-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+  font-weight: 500;
+}
+
+.aig-income-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.aig-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--bg-deep);
+  border-radius: 5px;
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.aig-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.8s ease;
+}
+
+.aig-bar-value {
+  font-size: 0.7rem;
+  color: var(--text-body);
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+}
+
+.aig-counts {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.aig-count {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-body);
+  font-weight: 500;
+}
+
+.aig-count-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 /* Welfare Grid */
 .welfare-grid {
   display: grid;
@@ -878,6 +1159,15 @@ function landPct(count) {
 }
 
 .bpl-panel .dist-items {
+  min-width: 132px;
+}
+
+.divyang-panel .donut {
+  width: 122px;
+  height: 122px;
+}
+
+.divyang-panel .dist-items {
   min-width: 132px;
 }
 

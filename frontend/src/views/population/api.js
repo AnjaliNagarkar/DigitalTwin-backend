@@ -19,15 +19,15 @@ export function getPopulationDashboard() {
 }
 
 export function getPopulationDemographics() {
-  return fetchJSON('/population/demographics')
+  return fetchJSON('/population/demographics', 15000)
 }
 
 export function getPopulationEducation() {
-  return fetchJSON('/population/education')
+  return fetchJSON('/population/education', 15000)
 }
 
 export function getPopulationEmployment() {
-  return fetchJSON('/population/employment')
+  return fetchJSON('/population/employment', 15000)
 }
 
 export function getPopulationRegistry(params = {}) {

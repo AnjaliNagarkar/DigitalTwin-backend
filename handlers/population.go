@@ -16,8 +16,23 @@ type PopulationHandler struct {
 }
 
 type PopulationDemographicsResponse struct {
-	GenderDistribution map[string]int `json:"gender_distribution"`
-	AgeDistribution    map[string]int `json:"age_distribution"`
+	GenderDistribution          map[string]int               `json:"gender_distribution"`
+	AgeDistribution             map[string]int               `json:"age_distribution"`
+	AgeIncomeGenderDistribution []AgeIncomeGenderItem        `json:"age_income_gender_distribution"`
+	TotalDivyang                int                          `json:"total_divyang"`
+	DisabilityDistribution      []DisabilityDistributionItem `json:"disability_distribution"`
+}
+
+type AgeIncomeGenderItem struct {
+	AgeRange      string  `json:"age_range"`
+	AverageIncome float64 `json:"average_income"`
+	MaleCount     int     `json:"male_count"`
+	FemaleCount   int     `json:"female_count"`
+}
+
+type DisabilityDistributionItem struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
 }
 
 type PopulationEducationResponse struct {
@@ -184,6 +199,128 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 		FROM FAMILY_MEMBER
 	`).Scan(&age0To5, &age6To18, &age19To35, &age36To60, &age60Plus)
 
+	var totalDivyang int
+	h.DB.QueryRow(`
+		SELECT COUNT(*) AS total_divyang
+		FROM FAMILY_MEMBER
+		WHERE DIVYANG = 'Yes'
+	`).Scan(&totalDivyang)
+
+	ageIncomeGenderRows, err := h.DB.Query(`
+		SELECT
+			CASE
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 0 AND 18 THEN '0-18'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) > 60 THEN '60+'
+				ELSE NULL
+			END AS age_range,
+			AVG(CAST(COALESCE(f.ANNUAL_INCOME, 0) AS DECIMAL(15,2))) AS average_income,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male_count,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female_count
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		WHERE fm.DOB IS NOT NULL AND TRIM(fm.DOB) != ''
+		GROUP BY age_range
+		ORDER BY
+			CASE age_range
+				WHEN '0-18' THEN 1
+				WHEN '19-30' THEN 2
+				WHEN '31-45' THEN 3
+				WHEN '46-60' THEN 4
+				WHEN '60+' THEN 5
+				ELSE 6
+			END
+	`)
+	if err != nil {
+		log.Printf("demographics age_income_gender_distribution query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch age income gender distribution"})
+		return
+	}
+	defer ageIncomeGenderRows.Close()
+
+	ageIncomeGenderDistribution := make([]AgeIncomeGenderItem, 0)
+	for ageIncomeGenderRows.Next() {
+		var item AgeIncomeGenderItem
+		if err := ageIncomeGenderRows.Scan(&item.AgeRange, &item.AverageIncome, &item.MaleCount, &item.FemaleCount); err != nil {
+			log.Printf("demographics age_income_gender_distribution scan failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse age income gender distribution"})
+			return
+		}
+		ageIncomeGenderDistribution = append(ageIncomeGenderDistribution, item)
+	}
+	if err := ageIncomeGenderRows.Err(); err != nil {
+		log.Printf("demographics age_income_gender_distribution rows error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read age income gender distribution"})
+		return
+	}
+
+	disabilityRows, err := h.DB.Query(`
+		SELECT
+			CASE
+				WHEN DISABILITY_CATEGORY LIKE '%Blind%'
+					OR DISABILITY_CATEGORY LIKE '%Low vision%'
+				THEN 'Visual Disability'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Locomotor%'
+					OR DISABILITY_CATEGORY LIKE '%Cerebral%'
+					OR DISABILITY_CATEGORY LIKE '%Muscular%'
+					OR DISABILITY_CATEGORY LIKE '%Dwarf%'
+				THEN 'Locomotor Disability'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Mental%'
+					OR DISABILITY_CATEGORY LIKE '%Autism%'
+					OR DISABILITY_CATEGORY LIKE '%Intellectual%'
+					OR DISABILITY_CATEGORY LIKE '%Learning%'
+				THEN 'Intellectual Disability'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Hearing%'
+				THEN 'Hearing Disability'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Speech%'
+				THEN 'Speech Disability'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Multiple%'
+				THEN 'Multiple Disabilities'
+
+				WHEN DISABILITY_CATEGORY LIKE '%Parkinson%'
+					OR DISABILITY_CATEGORY LIKE '%Sclerosis%'
+					OR DISABILITY_CATEGORY LIKE '%Sickle%'
+					OR DISABILITY_CATEGORY LIKE '%Thalassemia%'
+				THEN 'Chronic Conditions'
+
+				ELSE 'Other'
+			END AS disability_group,
+			COUNT(*) AS total
+		FROM FAMILY_MEMBER
+		WHERE DIVYANG = 'Yes'
+		GROUP BY disability_group
+		ORDER BY total DESC
+	`)
+	if err != nil {
+		log.Printf("demographics disability_distribution query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch disability distribution"})
+		return
+	}
+	defer disabilityRows.Close()
+
+	disabilityDistribution := make([]DisabilityDistributionItem, 0)
+	for disabilityRows.Next() {
+		var item DisabilityDistributionItem
+		if err := disabilityRows.Scan(&item.Name, &item.Value); err != nil {
+			log.Printf("demographics disability_distribution scan failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse disability distribution"})
+			return
+		}
+		disabilityDistribution = append(disabilityDistribution, item)
+	}
+	if err := disabilityRows.Err(); err != nil {
+		log.Printf("demographics disability_distribution rows error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read disability distribution"})
+		return
+	}
+
 	response := PopulationDemographicsResponse{
 		GenderDistribution: map[string]int{
 			"male":   male,
@@ -197,6 +334,9 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 			"age_36_60":   age36To60,
 			"age_60_plus": age60Plus,
 		},
+		AgeIncomeGenderDistribution: ageIncomeGenderDistribution,
+		TotalDivyang:                totalDivyang,
+		DisabilityDistribution:      disabilityDistribution,
 	}
 
 	c.JSON(http.StatusOK, response)

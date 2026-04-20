@@ -1015,12 +1015,9 @@ function buildPopulationRowsByHouseVillage(rows = []) {
 
 async function loadFamilyMembers() {
   try {
-    const params = {
-      district_id: selectedDistrict.value || undefined,
-      taluka_id: selectedTaluka.value || undefined,
-      village_id: selectedVillage.value || undefined,
-    }
-    const res = await getPopulationMapData(params)
+    // Load ALL family members globally (no filters) so count computation is always complete.
+    // This data is used to compute population stats during marker enrichment.
+    const res = await getPopulationMapData({})
     const rows = extractPopulationRows(res)
     familyMembers.value = Array.isArray(res?.data?.members)
       ? res.data.members
@@ -1040,9 +1037,11 @@ async function loadFamilyMembers() {
 }
 
 const MAHARASHTRA_BOUNDS = L.latLngBounds(
-  [15.6, 72.5],
-  [22.2, 80.9]
+  [15.6, 72.6],
+  [22.1, 80.9]
 )
+const MAHARASHTRA_CENTER = [19.7515, 75.7139]
+const MAHARASHTRA_INITIAL_ZOOM = 7
 
 let map = null
 const markerRefs    = []   // { marker, house }
@@ -1058,7 +1057,21 @@ function handleFullscreenChange() {
 
 function handleMapResize() {
   if (!map) return
-  map.invalidateSize()
+  try {
+    map.invalidateSize(false)
+  } catch (e) {
+    console.warn('Map resize error:', e.message)
+  }
+}
+
+function ensureMapReady() {
+  if (!map) return
+  try {
+    map.invalidateSize(false)
+    if (map._canvas) map._canvas.style.cursor = 'grab'
+  } catch (e) {
+    console.warn('Map render recovery:', e.message)
+  }
 }
 
 function getMaharashtraFitPadding() {
@@ -1119,7 +1132,8 @@ function getHouseFilters() {
 }
 
 async function fetchAllHouses() {
-  await loadFamilyMembers()
+  // Family members already loaded on mount without filters.
+  // Do NOT reload here with filters — would lose members outside current filter scope.
 
   const base = getHouseFilters()
   const pageLimit = Number(base.limit) || 2000
@@ -1150,7 +1164,7 @@ async function fetchAllHouses() {
   return all
 }
 
-function applyFilters() {
+function applyFilters(autoZoomToResults = true) {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
   houses.value = []
@@ -1163,7 +1177,7 @@ function applyFilters() {
     // Signal plotMarkers to auto-zoom once new data arrives.
     // Always fit when any filter is active; also fit on a plain Apply click
     // so the user gets immediate feedback even on full-dataset reloads.
-    fitAfterLoad = true
+    fitAfterLoad = autoZoomToResults
     loading.value = true
     loadLiveHouseData(0, requestToken)
   }
@@ -1401,8 +1415,13 @@ function getMarkerColor(house) {
     return '#64748b'
   }
   if (colorMode.value === 'land') {
-    const acres = parseFloat(house.totalLand) || 0
-    if (acres === 0)   return '#64748b'
+    const acres =
+      toFiniteNumber(house?.AREA_AGRICULTURE_LAND_ACRES) ??
+      toFiniteNumber(house?.area_agriculture_land_acres) ??
+      toFiniteNumber(house?.LAND_UNDER_CULTIVATION_ACRES) ??
+      toFiniteNumber(house?.land_under_cultivation_acres) ??
+      toFiniteNumber(house?.totalLand)
+    if (!acres || Number.isNaN(acres)) return '#9ca3af'
     if (acres <= 1)    return '#ef4444'
     if (acres <= 2.5)  return '#f59e0b'
     if (acres <= 5)    return '#22c55e'
@@ -1456,6 +1475,7 @@ const headerLegend = computed(() => {
     ]
   } else if (colorMode.value === 'land') {
     entries = [
+      { color: '#9ca3af', label: 'Data not available' },
       { color: '#10b981', label: 'Large >5ac' },
       { color: '#22c55e', label: 'Medium 2.5-5ac' },
       { color: '#f59e0b', label: 'Small 1-2.5ac' },
@@ -1667,6 +1687,9 @@ async function setViewMode(mode) {
     clearClusterSelection()
     showPointLayer()
   }
+  // Ensure map renders properly after layer changes
+  await nextTick()
+  setTimeout(() => handleMapResize(), 50)
 }
 
 // ── Coordinate Anomaly Detection ─────────────────────────────────────────────
@@ -2095,6 +2118,9 @@ function plotMarkers(data) {
         duration: 1.2,
       })
     }
+    // Ensure map renders properly after zoom operations
+    setTimeout(() => ensureMapReady(), 100)
+    setTimeout(() => ensureMapReady(), 200)
   }
 }
 
@@ -2145,14 +2171,34 @@ onMounted(async () => {
   await nextTick()
 
   if (mapContainer.value) {
-    map = L.map(mapContainer.value, { zoomControl: false, doubleClickZoom: false })
+    // Ensure container has proper dimensions before map init
+    const rect = mapContainer.value.getBoundingClientRect()
+    if (rect.width < 100 || rect.height < 100) {
+      console.warn('Map container too small, waiting for layout...')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+
+    map = L.map(mapContainer.value, {
+      zoomControl: false,
+      doubleClickZoom: false,
+      center: MAHARASHTRA_CENTER,
+      zoom: MAHARASHTRA_INITIAL_ZOOM,
+      minZoom: MAHARASHTRA_INITIAL_ZOOM,
+      maxBounds: MAHARASHTRA_BOUNDS,
+      maxBoundsViscosity: 1.0,
+    })
+    map.setMaxBounds(MAHARASHTRA_BOUNDS)
+    map.setMinZoom(MAHARASHTRA_INITIAL_ZOOM)
+    map.options.maxBoundsViscosity = 1.0
     L.control.zoom({ position: 'topleft' }).addTo(map)
     addTiles(map)
     addDistrictBorders(map)
     addMaharashtraHighlight(map)
     fitToMaharashtra()
-    setTimeout(handleMapResize, 60)
-    setTimeout(handleMapResize, 250)
+    // More aggressive size invalidation for reliable rendering
+    setTimeout(() => ensureMapReady(), 50)
+    setTimeout(() => ensureMapReady(), 150)
+    setTimeout(() => ensureMapReady(), 300)
     window.addEventListener('resize', handleMapResize)
     window.addEventListener('click', closeDropdowns)
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -2161,7 +2207,7 @@ onMounted(async () => {
   loading.value = true
   await loadFamilyMembers()
   await loadLocationDropdowns()
-  applyFilters()
+  applyFilters(false)
 })
 
 onUnmounted(() => {
