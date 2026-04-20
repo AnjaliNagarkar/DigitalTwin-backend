@@ -338,8 +338,6 @@
               <div class="cs-option" :class="{ selected: colorMode === 'crops' }"              @click="selectColorMode('crops')">Crop Type</div>
               <div class="cs-option" :class="{ selected: colorMode === 'irrigation' }"         @click="selectColorMode('irrigation')">Irrigation</div>
               <div class="cs-option" :class="{ selected: colorMode === 'land' }"               @click="selectColorMode('land')">Land Holdings</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }"         @click="selectColorMode('sanitation')">Sanitation</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'lighting' }"           @click="selectColorMode('lighting')">Electricity</div>
             </div>
           </div>
         </div>
@@ -364,40 +362,40 @@
       <div class="loading-text">Loading village data…</div>
     </div>
 
+    <!-- VIEWPORT LOADING — shown while a viewport fetch is in-flight -->
+    <div class="loading-overlay map-bg-loading-overlay" v-if="!loadingLiveData && viewportLoading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading map data…</div>
+    </div>
+
     <!-- CENTERING MAP — shown while the initial fit-bounds fly animation runs -->
     <div class="loading-overlay centering-overlay" v-if="centeringMap">
       <div class="loading-spinner"></div>
       <div class="loading-text">Centering map…</div>
     </div>
 
-    <!-- NO DATA STATE (API responded but database is empty) -->
-    <div class="loading-overlay" v-if="!loadingLiveData && houses.length === 0">
-      <div class="loading-text" style="font-size:15px;max-width:320px;text-align:center;line-height:1.6">
-        <div style="font-size:28px;margin-bottom:8px">⚠</div>
-        No household data found in the database.<br>
-        <span style="opacity:0.7;font-size:13px">The API is reachable but the FAMILY table is empty.</span>
-        <br><br>
-        <button
-          style="background:#16a34a;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px"
-          @click="loadData(0)">
-          Retry
-        </button>
-      </div>
+    <!-- EMPTY VIEWPORT HINT (non-blocking; preserves Cesium interactions) -->
+    <div class="map-empty-toast" v-if="showEmptyViewportHint && !loadingLiveData && !viewportLoading">
+      No households in this view. Pan or zoom to a populated area.
     </div>
 
     <!-- STATS BAR -->
     <div class="stats-bar" v-if="!loadingLiveData">
       <span class="stat-item">
         <span class="stat-dot" style="background:#16a34a"></span>
-        <strong>{{ filteredHouses.length.toLocaleString() }}</strong> households
-        <span v-if="filterVillage || filterTaluka || filterDistrict" class="stat-filter-note">
-          (filtered from {{ houses.length.toLocaleString() }})
+        <strong>{{
+          isLocationFiltered
+            ? filteredHouses.length.toLocaleString()
+            : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
+        }}</strong> households
+        <span v-if="isLocationFiltered" class="stat-filter-note">
+          ({{ filteredHouses.length.toLocaleString() }} on map)
         </span>
       </span>
       <span class="stat-sep">·</span>
       <span class="stat-item"><strong>{{ totalPopulation.toLocaleString() }}</strong> population</span>
       <span class="stat-sep">·</span>
-      <span class="stat-item"><strong>{{ stats?.farmers.toLocaleString() || 0 }}</strong> farmers</span>
+      <span class="stat-item"><strong>{{ (agricultureInsights?.totalFarmers || stats?.farmers || 0).toLocaleString() }}</strong> farmers</span>
       <span class="stat-sep">·</span>
       <span class="stat-item">Maharashtra</span>
       <span class="stat-sep" v-if="zoomLabel">·</span>
@@ -448,7 +446,11 @@
             <div class="issue-body">
               <div class="issue-top">
                 <span class="issue-name">Total Households</span>
-                <span class="issue-count">{{ filteredHouses.length.toLocaleString() }}</span>
+                <span class="issue-count">{{
+                  isLocationFiltered
+                    ? filteredHouses.length.toLocaleString()
+                    : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
+                }}</span>
               </div>
               <div class="issue-track"><div class="issue-fill" style="width:100%;background:#16a34a"></div></div>
             </div>
@@ -777,8 +779,9 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getAgricultureInsights, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
+import { getHouses, getHousesByViewport, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
 import * as Cesium from 'cesium'
+import Supercluster from 'supercluster'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 
 Cesium.Ion.defaultAccessToken = ''
@@ -868,7 +871,10 @@ const demoOverviewOpen    = ref(true)
 const tileStyle           = ref('satellite')   // default satellite view
 const cesiumContainer     = ref(null)
 const agricultureInsights = ref(null)
+const populationDashboard = ref(null)
 const loadingLiveData     = ref(true)
+const viewportLoading     = ref(false)   // true while a viewport fetch is in-flight
+const showEmptyViewportHint = ref(false) // subtle non-blocking notice when viewport returns zero rows
 const centeringMap        = ref(false)   // true while the initial fit-bounds fly is in progress
 const sidebarCollapsed    = ref(false)
 const cameraHeight        = ref(120000)
@@ -887,18 +893,37 @@ const pendingDistrict = ref('')
 const pendingTaluka   = ref('')
 const pendingVillage  = ref('')
 
-let viewer      = null
-const entityMap  = new Map()   // entityId → house
+let viewer        = null
+let ptCollection  = null          // PointPrimitiveCollection for all 40k household dots
+let clusterBillboardCollection = null // BillboardCollection for clustered markers
+let clusterIndex = null            // Supercluster index
+let clusterRenderTimer = null
+const clusterImageCache = new Map()
+let buildSeq      = 0             // incremented each buildEntities() call; stale async runs check this
+let prevShowBuildings = false     // tracks last known building-zoom state for lazy entity creation
+let buildingPanTimer = null       // debounce handle for viewport-pan rebuilds within building zoom
+const jitterCache = new Map()     // familyId → {lat, lng}  populated during chunked build
+const entityMap  = new Map()   // entityId → house  (building boxes + cluster entities)
+const ptPrimMap  = new Map()   // familyId → PointPrimitive  (fast primitive lookup)
 const buildingIds = new Set()  // 3D box entity IDs
-const pointIds    = new Set()  // point beacon entity IDs
 const clusterIds   = new Set()  // High-Need cluster entity IDs (problem filter rings)
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
 const macroClusIds       = new Set()  // Grid cluster markers at district/state zoom level
 const miniClusIds        = new Set()  // Grid cluster markers at taluka zoom level
 const zoomClusterDataMap = new Map()  // entityId → { lat, lng, houses[] } for drill-down
-const houseToPointId     = new Map()  // familyId → point entity ID for spiderfy
-let retryTimer    = null
-let twinLoadSeq   = 0
+const houseToPointId     = new Map()  // familyId → point entity ID for spiderfy (kept for compat)
+const spiderfyHouseEntityIds = []
+let spiderfyCenter = null
+let retryTimer         = null
+let twinLoadSeq        = 0
+let viewportSeq        = 0
+let viewportDebounce   = null
+let lastLoadedBbox     = null
+let isInitialLoadDone  = false   // true after first page of data has been fetched and rendered
+let vpInFlight         = 0       // count of loadViewportData calls currently awaiting a fetch
+const viewportTileCache = new Map()   // cacheKey → { ts, data }
+const VIEWPORT_CACHE_TTL = 5 * 60 * 1000   // 5 minutes
+const VIEWPORT_CACHE_MAX = 30
 
 function handleTwinFullscreenChange() {
   isTwinFullscreen.value = !!document.fullscreenElement
@@ -970,7 +995,7 @@ function onTalukaChange() {
   pendingVillage.value = ''
 }
 
-// Apply: copy pending → applied; always fly to the result regardless of viewport.
+// Apply: copy pending → applied; force a fresh load with the new filters.
 function applyFilters() {
   _forceNextFly = true
   filterDistrict.value = pendingDistrict.value
@@ -1026,10 +1051,8 @@ function selectVillage(id) {
 }
 
 const COLOR_MODE_LABELS = {
-  sanitation:          'Sanitation',
   irrigation:          'Irrigation',
   occupation:          'Occupation',
-  lighting:            'Electricity',
   crops:               'Crop Type',
   land:                'Land Holdings',
   ration:              'Ration Card',
@@ -1052,11 +1075,20 @@ const COLOR_MODE_CATEGORY = {
   crops:              'agriculture',
   irrigation:         'agriculture',
   land:               'agriculture',
-  sanitation:         'agriculture',
-  lighting:           'agriculture',
+}
+
+const DISABLED_COLOR_MODES = new Set(['sanitation', 'lighting'])
+
+function isColorModeEnabled(mode) {
+  if (!mode) return false
+  return !DISABLED_COLOR_MODES.has(String(mode))
 }
 
 function selectColorMode(mode) {
+  if (!isColorModeEnabled(mode)) {
+    closeDropdowns()
+    return
+  }
   const prevCategory = COLOR_MODE_CATEGORY[colorMode.value]
   const nextCategory = COLOR_MODE_CATEGORY[mode]
   // Clear problem filters when switching between categories
@@ -1103,7 +1135,6 @@ const PROBLEM_FILTER_META = [
 ]
 
 const PROBLEM_FILTERS_BY_MODE = {
-  sanitation:         ['noRationCard', 'noSanitation'],
   irrigation:         ['noIrrigation', 'noLand'],
   crops:              ['noIrrigation', 'noLand'],
   occupation:         ['unemployed', 'laborers'],
@@ -1402,15 +1433,14 @@ function analyzeCluster(houseList) {
 let _forceNextFly = false   // set by applyFilters, consumed once by the watcher
 
 watch(filteredHouses, (newHouses, oldHouses) => {
-  if (!viewer || loadingLiveData.value) return
+  if (!viewer) return
   buildEntities()
   if (!newHouses.length) return
   const force = _forceNextFly
   _forceNextFly = false
-  // Skip the watcher-driven fly on initial data load (oldHouses was empty) —
-  // loadData() already schedules its own fly with better timing.
   const isInitialLoad = !oldHouses || oldHouses.length === 0
-  if (!isInitialLoad && (force || !housesInView(newHouses))) {
+  // Always fly on initial load; also fly when filter forces it or data is off-screen
+  if (isInitialLoad || force || !housesInView(newHouses)) {
     setTimeout(() => flyToPoints(newHouses), 150)
   }
 }, { flush: 'post' })
@@ -1424,12 +1454,32 @@ const zoomLabel = computed(() => {
   return 'District / State view — zoom in to explore'
 })
 
-// ── Population aggregates (derived from filtered house records) ───────────────
-const totalPopulation   = computed(() => filteredHouses.value.reduce((s, h) => s + (h.totalMembers || 0), 0))
-const maleTotal         = computed(() => filteredHouses.value.reduce((s, h) => s + (h.maleMembers  || 0), 0))
-const femaleTotal       = computed(() => filteredHouses.value.reduce((s, h) => s + (h.femaleMembers || 0), 0))
-const malePct           = computed(() => totalPopulation.value ? Math.round(maleTotal.value / totalPopulation.value * 100) : 0)
-const femalePct         = computed(() => totalPopulation.value ? Math.round(femaleTotal.value / totalPopulation.value * 100) : 0)
+// ── Population aggregates ─────────────────────────────────────────────────────
+// When no location filter is active, use the DB-wide totals from agricultureInsights
+// (covers ALL families, not just the ~2 000 that have GPS coordinates).
+// When a filter is active (district / taluka / village), fall back to summing from
+// the visible filtered houses so the numbers match what the map is showing.
+const isLocationFiltered = computed(() => !!(filterDistrict.value || filterTaluka.value || filterVillage.value))
+
+const totalPopulation = computed(() => {
+  if (!isLocationFiltered.value && populationDashboard.value?.total_population)
+    return populationDashboard.value.total_population
+  if (!isLocationFiltered.value && agricultureInsights.value?.totalPopulation)
+    return agricultureInsights.value.totalPopulation
+  return filteredHouses.value.reduce((s, h) => s + (h.totalMembers || 0), 0)
+})
+const maleTotal = computed(() => {
+  if (!isLocationFiltered.value && agricultureInsights.value?.totalMale)
+    return agricultureInsights.value.totalMale
+  return filteredHouses.value.reduce((s, h) => s + (h.maleMembers || 0), 0)
+})
+const femaleTotal = computed(() => {
+  if (!isLocationFiltered.value && agricultureInsights.value?.totalFemale)
+    return agricultureInsights.value.totalFemale
+  return filteredHouses.value.reduce((s, h) => s + (h.femaleMembers || 0), 0)
+})
+const malePct   = computed(() => totalPopulation.value ? Math.round(maleTotal.value / totalPopulation.value * 100) : 0)
+const femalePct = computed(() => totalPopulation.value ? Math.round(femaleTotal.value / totalPopulation.value * 100) : 0)
 const workingHouseholds = computed(() => filteredHouses.value.filter(h => (h.workingMembers || 0) >= 1).length)
 const divyangHouseholds = computed(() => filteredHouses.value.filter(h => (h.divyangMembers || 0) >= 1).length)
 const literacyRate      = computed(() => {
@@ -1536,7 +1586,6 @@ const issueListAll = computed(() => {
 })
 
 const FIELD_ISSUES_BY_MODE = {
-  sanitation:         ['noSanitation', 'noRationCard'],
   irrigation:         ['noIrrigation', 'noLand'],
   crops:              ['noIrrigation', 'noLand'],
   occupation:         ['unemployed', 'laborers'],
@@ -1559,9 +1608,9 @@ const issueList = computed(() => {
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 const legendTitle = computed(() => ({
-  sanitation: 'Sanitation', irrigation: 'Irrigation',
+  irrigation: 'Irrigation',
   occupation: 'Occupation',
-  lighting:   'Electricity', ration: 'Ration Card',
+  ration: 'Ration Card',
   crops:      'Crops / Season', land: 'Land Holdings',
 })[colorMode.value] || 'Legend')
 
@@ -2099,6 +2148,286 @@ function flyToHouse(house) {
 const MIN_PITCH_RAD = Cesium.Math.toRadians(-80)   // 80° down — keeps buildings visible
 const MAX_PITCH_RAD = Cesium.Math.toRadians(-15)   // 15° down — can't go near-horizontal
 
+function getClusterZoomFromHeight(height) {
+  if (height > 3000000) return 4
+  if (height > 1500000) return 5
+  if (height > 900000) return 7
+  if (height > 500000) return 9
+  if (height > 250000) return 11
+  if (height > 120000) return 12
+  if (height > 60000) return 13
+  if (height > 30000) return 14
+  if (height > 15000) return 15
+  if (height > 7000) return 16
+  if (height > 3500) return 17
+  return 18
+}
+
+function getCurrentSuperclusterBBox() {
+  if (!viewer || viewer.isDestroyed()) return null
+  const rect = viewer.camera.computeViewRectangle()
+  if (!rect) return null
+
+  const west = Cesium.Math.toDegrees(rect.west)
+  const south = Cesium.Math.toDegrees(rect.south)
+  const east = Cesium.Math.toDegrees(rect.east)
+  const north = Cesium.Math.toDegrees(rect.north)
+
+  // Dateline wrap handling: use world-longitude bounds for stable clustering.
+  if (west > east) return [-180, south, 180, north]
+  return [west, south, east, north]
+}
+
+function ensureClusterCollections() {
+  if (!viewer || viewer.isDestroyed()) return
+  if (!ptCollection || ptCollection.isDestroyed()) {
+    ptCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection())
+  }
+  if (!clusterBillboardCollection || clusterBillboardCollection.isDestroyed()) {
+    clusterBillboardCollection = viewer.scene.primitives.add(new Cesium.BillboardCollection())
+  }
+}
+
+function buildSuperclusterIndexFromHouses() {
+  const source = filteredHouses.value
+  const features = source
+    .filter((h) => Number.isFinite(Number(h.longitude)) && Number.isFinite(Number(h.latitude)))
+    .map((h) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [Number(h.longitude), Number(h.latitude)],
+      },
+      properties: { house: h },
+    }))
+
+  clusterIndex = new Supercluster({
+    // Merge nearby points earlier so clusters do not overlap visually.
+    radius: 100,
+    // Any group smaller than 20 is rendered as individual houses (not clustered).
+    minPoints: 20,
+    maxZoom: 18,
+    minZoom: 0,
+    nodeSize: 64,
+  })
+  clusterIndex.load(features)
+}
+
+function getHeightFromClusterZoom(zoom) {
+  const z = Math.max(1, Math.min(18, Number(zoom || 10)))
+  const h = 16000000 / Math.pow(2, z)
+  return Math.max(600, Math.min(300000, h))
+}
+
+function getAltitudeFromMeters(meters) {
+  return Math.max(700, Math.min(120000, Number(meters || 1000)))
+}
+
+function getSpiderfyOffsets(count, radiusMeters = 24) {
+  const offsets = []
+  if (count <= 0) return offsets
+
+  const radius = Math.max(20, Math.min(30, radiusMeters))
+  const step = (2 * Math.PI) / count
+  for (let i = 0; i < count; i += 1) {
+    const angle = step * i
+    offsets.push({
+      east: Math.cos(angle) * radius,
+      north: Math.sin(angle) * radius,
+    })
+  }
+  return offsets
+}
+
+function offsetCartesianDegrees(lat, lng, eastMeters, northMeters) {
+  const metersPerDegLat = 111320
+  const metersPerDegLng = Math.max(Math.cos(Cesium.Math.toRadians(lat)) * 111320, 1)
+  return {
+    lat: lat + (northMeters / metersPerDegLat),
+    lng: lng + (eastMeters / metersPerDegLng),
+  }
+}
+
+function addSpiderLeg(fromLat, fromLng, toLat, toLng) {
+  return { fromLat, fromLng, toLat, toLng }
+}
+
+function getClusterIconSize(count) {
+  const c = Number(count || 0)
+  return Math.max(30, Math.min(45, 30 + (Math.log10(c + 1) * 6)))
+}
+
+function generateClusterBillboardImage(count) {
+  const size = getClusterIconSize(count)
+  const key = `${Math.round(size)}:${count > 999 ? 'k' : 'n'}`
+  const cached = clusterImageCache.get(key)
+  if (cached) return cached
+
+  const canvasSize = 96
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasSize
+  canvas.height = canvasSize
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+
+  const cx = canvasSize / 2
+  const cy = canvasSize / 2
+  const r = (size / 2) * 1.85
+
+  // Solid professional warm amber cluster fill.
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fillStyle = '#E65100'
+  ctx.fill()
+
+  // Crisp white border.
+  ctx.lineWidth = 3
+  ctx.strokeStyle = '#FFFFFF'
+  ctx.stroke()
+
+  const text = count > 999 ? `${Math.round(count / 100) / 10}k` : String(count)
+  ctx.fillStyle = '#FFFFFF'
+  ctx.font = text.length > 3 ? '700 24px Inter, Segoe UI, sans-serif' : '700 28px Inter, Segoe UI, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, cx, cy)
+
+  const image = canvas.toDataURL('image/png')
+  clusterImageCache.set(key, image)
+  return image
+}
+
+function addHouseModelEntity(house, lng, lat) {
+  const selectedId       = selectedHouse.value?.familyId
+  const hasProblemFilter = activeProblemFilters.value.length > 0
+  const isSelected       = house.familyId === selectedId
+  const isProblem        = hasProblemFilter && matchesAllProblems(house)
+  const isBackground     = hasProblemFilter && !isProblem && !isSelected
+
+  const conditionColor = cesiumColor(house)
+  const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
+  const roofColor      = isSelected
+    ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
+    : conditionColor.withAlpha(roofAlpha)
+
+  const wallColor = isSelected
+    ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
+    : isProblem
+      ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
+      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
+
+  const wallOutline = isSelected
+    ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
+    : isProblem
+      ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
+      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
+
+  const footprint = 10
+  const baseH     = 7
+  const roofH     = Math.max(2.5, Math.min(landHeight(house) * 0.22, 5))
+
+  const baseEnt = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH / 2),
+    show: true,
+    box: {
+      dimensions:   new Cesium.Cartesian3(footprint, footprint, baseH),
+      material:     wallColor,
+      outline:      true,
+      outlineColor: wallOutline,
+      outlineWidth: isSelected ? 2 : isProblem ? 2 : 1.5,
+    },
+  })
+
+  const roofEnt = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH + roofH / 2),
+    show: true,
+    box: {
+      dimensions:   new Cesium.Cartesian3(footprint * 0.88, footprint * 0.88, roofH),
+      material:     roofColor,
+      outline:      true,
+      outlineColor: isSelected
+        ? Cesium.Color.WHITE
+        : isProblem
+          ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
+          : roofColor.darken(0.25, new Cesium.Color()),
+      outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
+    },
+  })
+
+  buildingIds.add(baseEnt.id)
+  buildingIds.add(roofEnt.id)
+  entityMap.set(baseEnt.id, house)
+  entityMap.set(roofEnt.id, house)
+  return [baseEnt.id, roofEnt.id]
+}
+
+function renderClustersForCurrentView() {
+  if (!viewer || viewer.isDestroyed()) return
+  ensureClusterCollections()
+
+  viewer.entities.removeAll()
+  entityMap.clear()
+  buildingIds.clear()
+  ptCollection.removeAll()
+  clusterBillboardCollection.removeAll()
+  ptPrimMap.clear()
+
+  if (!clusterIndex) {
+    viewer.scene.requestRender()
+    return
+  }
+
+  const bbox = getCurrentSuperclusterBBox() || [-180, -85, 180, 85]
+  const height = viewer.camera.positionCartographic?.height ?? cameraHeight.value
+  const zoom = getClusterZoomFromHeight(height)
+  const nodes = clusterIndex.getClusters(bbox, zoom)
+
+  const selectedId = selectedHouse.value?.familyId
+
+  nodes.forEach((node) => {
+    const [lng, lat] = node.geometry.coordinates
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+
+    if (node.properties?.cluster) {
+      const count = Number(node.properties.point_count || 0)
+      const expansionZoom = clusterIndex.getClusterExpansionZoom(Number(node.id))
+      const billboard = clusterBillboardCollection.add({
+        position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
+        image: generateClusterBillboardImage(count),
+        width: getClusterIconSize(count),
+        height: getClusterIconSize(count),
+        verticalOrigin: Cesium.VerticalOrigin.CENTER,
+        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        id: {
+          kind: 'cluster',
+          clusterId: node.id,
+          expansionZoom,
+          count,
+          lng,
+          lat,
+        },
+      })
+      billboard.show = true
+      return
+    }
+
+    const house = node.properties?.house
+    if (!house) return
+    addHouseModelEntity(house, lng, lat)
+  })
+
+  viewer.scene.requestRender()
+}
+
+function queueClusterRender(delay = 120) {
+  clearTimeout(clusterRenderTimer)
+  clusterRenderTimer = setTimeout(() => {
+    clusterRenderTimer = null
+    renderClustersForCurrentView()
+  }, delay)
+}
+
 function updateZoomVisibility() {
   if (!viewer || viewer.isDestroyed()) return
   const pos = viewer.camera.positionCartographic
@@ -2112,43 +2441,31 @@ function updateZoomVisibility() {
   if (pitch >= MIN_PITCH_RAD && pitch <= MAX_PITCH_RAD) {
     currentMapPitch = pitch
   }
-  // If the camera has drifted to near-overhead (pitch > MAX_PITCH_RAD, i.e. less negative),
-  // smoothly push it back to the persisted oblique angle — but only when zoomed in.
-  if (pitch > MAX_PITCH_RAD && h < 50000) {
-    viewer.camera.flyTo({
-      destination: viewer.camera.position,
-      orientation: {
-        heading: viewer.camera.heading,
-        pitch:   currentMapPitch,
-        roll:    0,
-      },
-      duration: 0.6,
-      easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
-    })
-    return   // skip entity visibility update during the correction flight
+  if (pitch > MAX_PITCH_RAD) {
+    currentMapPitch = MAX_PITCH_RAD
   }
 
-  const showBuildings = h < THRESHOLD_BUILDINGS
-  const showDots      = h >= THRESHOLD_BUILDINGS && h < THRESHOLD_DOTS
-  const showMini      = h >= THRESHOLD_DOTS      && h < THRESHOLD_MACRO
-  const showMacro     = h >= THRESHOLD_MACRO
+  if (spiderfyHouseEntityIds.length && h > THRESHOLD_BUILDINGS) {
+    clearSpiderfy()
+  }
 
-  // Cluster glow rings persist from taluka-edge all the way down to building view,
-  // so the boundary is still visible after zooming into individual houses.
-  const showClusters = h < THRESHOLD_CLUSTER_HIDE
-  viewer.entities.values.forEach(entity => {
-    if      (buildingIds.has(entity.id))  entity.show = showBuildings
-    else if (pointIds.has(entity.id))     entity.show = showDots
-    else if (clusterIds.has(entity.id))   entity.show = showClusters
-    else if (miniClusIds.has(entity.id))  entity.show = showMini
-    else if (macroClusIds.has(entity.id)) entity.show = showMacro
-  })
+  // Legacy entity-based cluster/building overlays are disabled in supercluster mode.
+  if (buildingIds.size) {
+    buildingIds.forEach((id) => {
+      const ent = viewer.entities.getById(id)
+      if (ent) viewer.entities.remove(ent)
+    })
+    buildingIds.clear()
+  }
 }
 
 function setupZoomListener() {
   if (!viewer) return
   viewer.camera.percentageChanged = 0.03
-  viewer.camera.changed.addEventListener(updateZoomVisibility)
+  viewer.camera.changed.addEventListener(() => {
+    updateZoomVisibility()
+    queueClusterRender(120)
+  })
 }
 
 // ── Jitter: spread houses that share the same coordinate ─────────────────────
@@ -2190,18 +2507,18 @@ let spiderfyOriginals   = []   // { entity, originalPos } to restore on reset
 let spiderfyFamilyIds   = new Set()   // family IDs currently spread
 
 function clearSpiderfy() {
-  spiderfyEntityIds.forEach(id => {
-    const ent = viewer?.entities.getById(id)
-    if (ent) viewer.entities.remove(ent)
-  })
+  if (viewer && !viewer.isDestroyed()) {
+    spiderfyEntityIds.forEach((id) => {
+      const ent = viewer.entities.getById(id)
+      if (ent) viewer.entities.remove(ent)
+      buildingIds.delete(id)
+      entityMap.delete(id)
+    })
+  }
   spiderfyEntityIds = []
-  spiderfyOriginals.forEach(({ entity, pos }) => {
-    if (entity && !entity.isDestroyed?.()) {
-      try { entity.position = new Cesium.ConstantPositionProperty(pos) } catch (_) {}
-    }
-  })
-  spiderfyOriginals = []
+  spiderfyHouseEntityIds.length = 0
   spiderfyFamilyIds = new Set()
+  spiderfyCenter = null
 }
 
 // Returns the group of houses that share the same GPS coordinate as `house`.
@@ -2213,53 +2530,51 @@ function getSamePositionGroup(house) {
   )
 }
 
+function spiderfyHouseGroup(houseGroup, centerLat, centerLng) {
+  if (!viewer || viewer.isDestroyed()) return false
+  if (!Array.isArray(houseGroup) || houseGroup.length < 2) return false
+
+  clearSpiderfy()
+  spiderfyCenter = { lat: centerLat, lng: centerLng }
+
+  const offsets = getSpiderfyOffsets(houseGroup.length, Math.max(22, Math.min(30, 18 + houseGroup.length * 1.2)))
+
+  houseGroup.forEach((house, index) => {
+    const offset = offsets[index]
+    const pos = offsetCartesianDegrees(centerLat, centerLng, offset.east, offset.north)
+
+    addSpiderLeg(centerLat, centerLng, pos.lat, pos.lng)
+
+    const createdIds = addHouseModelEntity(house, pos.lng, pos.lat)
+    createdIds.forEach((id) => {
+      spiderfyEntityIds.push(id)
+      spiderfyHouseEntityIds.push(id)
+    })
+
+    spiderfyFamilyIds.add(house.familyId)
+  })
+
+  viewer.scene.requestRender()
+  return true
+}
+
+function spiderfyClusterLeaves(clusterId, centerLat, centerLng) {
+  if (!clusterIndex) return false
+  const leaves = clusterIndex.getLeaves(Number(clusterId), Infinity) || []
+  const houses = leaves
+    .map((leaf) => leaf?.properties?.house)
+    .filter(Boolean)
+
+  if (houses.length < 2) return false
+  return spiderfyHouseGroup(houses, centerLat, centerLng)
+}
+
 // If `house` is one of ≥2 stacked dots, spread them in a circle and draw
 // connector lines. Returns true if spiderfy was applied.
 function applySpiderfy(house) {
-  if (!viewer) return false
-  clearSpiderfy()
-
   const group = getSamePositionGroup(house)
   if (group.length < 2) return false
-
-  const lat    = house.latitude
-  const lng    = house.longitude
-  const cosLat = Math.cos((lat * Math.PI) / 180)
-  const radiusM = Math.min(12 + group.length * 3, 35)  // 15–35 m spider radius
-  const center  = Cesium.Cartesian3.fromDegrees(lng, lat, 1)
-
-  group.forEach((h, i) => {
-    const angle  = (2 * Math.PI * i) / group.length
-    const newLat = lat + (radiusM * Math.cos(angle)) / 111_000
-    const newLng = lng + (radiusM * Math.sin(angle)) / (111_000 * cosLat)
-    const newPos = Cesium.Cartesian3.fromDegrees(newLng, newLat, 1)
-
-    const ptId  = houseToPointId.get(h.familyId)
-    const ptEnt = ptId ? viewer.entities.getById(ptId) : null
-    if (ptEnt) {
-      spiderfyOriginals.push({ entity: ptEnt, pos: ptEnt.position.getValue(Cesium.JulianDate.now()) })
-      ptEnt.position = new Cesium.ConstantPositionProperty(newPos)
-    }
-
-    // Thin connector line from original center to spread position
-    const lineEnt = viewer.entities.add({
-      show: true,
-      polyline: {
-        positions: [center, newPos],
-        width: 1.2,
-        material: new Cesium.PolylineOutlineMaterialProperty({
-          color:        Cesium.Color.WHITE.withAlpha(0.55),
-          outlineWidth: 0,
-          outlineColor: Cesium.Color.TRANSPARENT,
-        }),
-        clampToGround: true,
-      },
-    })
-    spiderfyEntityIds.push(lineEnt.id)
-    spiderfyFamilyIds.add(h.familyId)
-  })
-
-  return true
+  return spiderfyHouseGroup(group, Number(house.latitude), Number(house.longitude))
 }
 
 // ── Panel nudge: pan camera so selected house stays visible beside the panel ──
@@ -2494,16 +2809,24 @@ function addClusterEntities(problemHouses) {
 }
 
 // ── Build Cesium entities ─────────────────────────────────────────────────────
-function buildEntities() {
+// ── buildEntities: async, chunked — never blocks the main thread ─────────────
+// Dot primitives (PointPrimitiveCollection) are added 2 000 at a time with a
+// browser-yield between chunks.  3D building entities are NOT created here —
+// they are created lazily by buildBuildingEntitiesForViewport() only when the
+// user zooms in below THRESHOLD_BUILDINGS, and only for the visible subset.
+async function buildEntities() {
   if (!viewer) return
-  // Tear down spiderfy state before wiping entities
+
+  const seq = ++buildSeq
+
   spiderfyEntityIds = []
   spiderfyOriginals = []
   spiderfyFamilyIds = new Set()
   viewer.entities.removeAll()
   entityMap.clear()
+  ptPrimMap.clear()
+  jitterCache.clear()
   buildingIds.clear()
-  pointIds.clear()
   clusterIds.clear()
   clusterMap.clear()
   macroClusIds.clear()
@@ -2512,137 +2835,110 @@ function buildEntities() {
   houseToPointId.clear()
   selectedCluster.value = null
 
+  ensureClusterCollections()
+  buildSuperclusterIndexFromHouses()
+  if (seq !== buildSeq) return
+  renderClustersForCurrentView()
+}
+
+// ── Lazy 3D buildings — viewport-only, created on zoom-in ────────────────────
+// Creates box entities only for houses near the camera.  At building zoom
+// (< 3 500 m) the viewport covers ~50–300 houses, not 40 000, so Entity count
+// stays manageable.  Called by updateZoomVisibility() on zoom-in transition.
+function buildBuildingEntitiesForViewport() {
+  if (!viewer || jitterCache.size === 0) return
+
+  // Clear any previously built building entities before rebuilding
+  buildingIds.forEach(id => {
+    const ent = viewer.entities.getById(id)
+    if (ent) viewer.entities.remove(ent)
+  })
+  buildingIds.clear()
+  // Clear building-entity entries from entityMap (keep cluster entries)
+  for (const [id, h] of entityMap) {
+    if (!clusterIds.has(id) && !macroClusIds.has(id) && !miniClusIds.has(id)) {
+      entityMap.delete(id)
+    }
+  }
+
+  const camH = viewer.camera.positionCartographic?.height ?? cameraHeight.value
+  if (camH >= THRESHOLD_BUILDINGS) return
+
+  const pos  = viewer.camera.positionCartographic
+  const cLat = Cesium.Math.toDegrees(pos.latitude)
+  const cLng = Cesium.Math.toDegrees(pos.longitude)
+  // Viewport half-span in degrees: generous 3× margin around camera centre.
+  const span = Math.max((camH / 111_000) * 3, 0.005)
+
   const selectedId       = selectedHouse.value?.familyId
-  const camH             = viewer.camera.positionCartographic?.height ?? cameraHeight.value
-  const showBuildings    = camH < THRESHOLD_BUILDINGS
-  const showDots         = camH >= THRESHOLD_BUILDINGS && camH < THRESHOLD_DOTS
-  const showMini         = camH >= THRESHOLD_DOTS && camH < THRESHOLD_MACRO
-  const showMacro        = camH >= THRESHOLD_MACRO
-  const houseList        = filteredHouses.value
-  const jittered         = computeJitteredPositions(houseList)
   const hasProblemFilter = activeProblemFilters.value.length > 0
+  const houseList        = filteredHouses.value
 
-  // Collect problem-matched houses for cluster analysis after the loop
-  const problemHouses = []
+  for (const house of houseList) {
+    const coords = jitterCache.get(house.familyId)
+    if (!coords) continue
+    const { lat, lng } = coords
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+    if (Math.abs(lat - cLat) > span || Math.abs(lng - cLng) > span) continue
 
-  houseList.forEach((house, idx) => {
-    const { lat, lng } = jittered[idx]
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    const isSelected   = house.familyId === selectedId
+    const isProblem    = hasProblemFilter && matchesAllProblems(house)
+    const isBackground = hasProblemFilter && !isProblem && !isSelected
 
-    const isSelected    = house.familyId === selectedId
-    const isProblem     = hasProblemFilter && matchesAllProblems(house)
-    // Non-flagged houses are still rendered when a problem filter is active so
-    // the colorMode theme stays readable as context.  They are visually dimmed
-    // (lower alpha on wall) and de-emphasized in outline weight.
-    const isBackground  = hasProblemFilter && !isProblem && !isSelected
-
-    if (isProblem) problemHouses.push(house)
-
-    // ── Colour logic ──────────────────────────────────────────────────────────
-    // DESIGN RULE: colorMode ALWAYS controls roof color — it is never overridden.
-    // Problem filter adds a VISUAL OVERLAY (bright outlines + alert ring) on top
-    // so both signals are simultaneously readable:
-    //   Green roof  = good irrigation  |  red outline = also has no ration card
-    //   Orange roof = kharif-only crop |  red outline = flagged by problem filter
-    const conditionColor = cesiumColor(house)   // 80% of getConditionColor hex
-
-    // Roof: ALWAYS the colorMode condition color (selected = gold override only).
-    // Background (non-flagged) houses are dimmed to 40% alpha so flagged ones pop.
-    const roofAlpha = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
-    const roofColor = isSelected
+    const conditionColor = cesiumColor(house)
+    const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
+    const roofColor      = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
-      : conditionColor.withAlpha(roofAlpha)   // problem filter does NOT change hue
+      : conditionColor.withAlpha(roofAlpha)
 
-    // Wall: sandstone base; flagged houses get a vivid pale-red wall tint.
-    // Background houses are also dimmed to keep flagged ones dominant.
     const wallColor = isSelected
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)  // pale red — flagged
+        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
         : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
-    // Outline: flagged → vivid red; background → nearly invisible; normal → mortar
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)   // vivid red ring
+        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
         : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
 
     const footprint = 10
     const baseH     = 7
     const roofH     = Math.max(2.5, Math.min(landHeight(house) * 0.22, 5))
 
-    // ── 3D building (low zoom) ──
     const baseEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH / 2),
-      show: showBuildings,
+      show: true,
       box: {
         dimensions:   new Cesium.Cartesian3(footprint, footprint, baseH),
         material:     wallColor,
         outline:      true,
         outlineColor: wallOutline,
-        outlineWidth: isSelected ? 2 : (isProblem ? 2 : 1.5),
+        outlineWidth: isSelected ? 2 : isProblem ? 2 : 1.5,
       },
     })
 
     const roofEnt = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH + roofH / 2),
-      show: showBuildings,
+      show: true,
       box: {
         dimensions:   new Cesium.Cartesian3(footprint * 0.88, footprint * 0.88, roofH),
         material:     roofColor,
         outline:      true,
-        // Flagged roof gets a bright white edge so it stands out from background
         outlineColor: isSelected
           ? Cesium.Color.WHITE
           : isProblem
             ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
             : roofColor.darken(0.25, new Cesium.Color()),
-        outlineWidth: isSelected ? 2.5 : (isProblem ? 2.5 : (isBackground ? 0.5 : 1.5)),
-      },
-    })
-
-    // ── Point beacon (village zoom: THRESHOLD_BUILDINGS ≤ h < THRESHOLD_DOTS) ──
-    const ptEnt = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
-      show: showDots,
-      point: {
-        pixelSize:    isSelected ? 13 : isProblem ? 11 : isBackground ? 5 : 8,
-        color:        roofColor,
-        outlineColor: isSelected
-          ? Cesium.Color.WHITE
-          : isProblem
-            ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(0.9)
-            : Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(isBackground ? 0.25 : 0.7),
-        outlineWidth:    isSelected ? 2 : (isProblem ? 2.5 : 1.5),
-        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        // Visual priority: problem/selected dots always render above normal dots
-        disableDepthTestDistance: (isSelected || isProblem) ? Number.POSITIVE_INFINITY : undefined,
+        outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
       },
     })
 
     buildingIds.add(baseEnt.id)
     buildingIds.add(roofEnt.id)
-    pointIds.add(ptEnt.id)
-
     entityMap.set(baseEnt.id, house)
     entityMap.set(roofEnt.id, house)
-    entityMap.set(ptEnt.id,   house)
-
-    // Track familyId → point entity ID for spiderfy spread
-    houseToPointId.set(house.familyId, ptEnt.id)
-  })
-
-  // ── Zoom-based grid cluster markers (shown when individual dots are hidden) ──
-  // Macro clusters (district/state level): 1.0° grid cells ≈ 110 km, radius 7 km
-  // Larger cell size prevents label overlap at state zoom.
-  addGridClusterMarkers(macroClusIds, 1.0, 7000, showMacro)
-  // Mini clusters (taluka level): 0.05° grid cells ≈ 5.5 km, radius 450 m
-  addGridClusterMarkers(miniClusIds,  0.05, 450, showMini)
-
-  // ── High-Need problem cluster glow rings (village level only) ──
-  if (hasProblemFilter && problemHouses.length >= 5) {
-    addClusterEntities(problemHouses)
   }
 }
 
@@ -2774,7 +3070,12 @@ async function downloadPDF() {
 }
 
 // ── Watchers ──────────────────────────────────────────────────────────────────
-watch(colorMode, () => {
+watch(colorMode, (mode) => {
+  if (mode && !isColorModeEnabled(mode)) {
+    colorMode.value = 'irrigation'
+    return
+  }
+
   const allowed = new Set(availableProblemFilterKeys.value)
   const next = activeProblemFilters.value.filter(key => allowed.has(key))
   if (next.length !== activeProblemFilters.value.length) {
@@ -2788,132 +3089,236 @@ watch(colorMode, () => {
 
   if (viewer) buildEntities()
 })
+
+// Bridge reactive data updates to Cesium explicitly.
+// Every new houses payload (initial load or viewport refresh) redraws primitives.
+watch(houses, (newValue) => {
+  if (!viewer) return
+  // Keep currently rendered primitives when viewport payload is empty.
+  if (!Array.isArray(newValue) || newValue.length === 0) {
+    viewer.scene.requestRender()
+    return
+  }
+  buildEntities()
+  viewer.scene.requestRender()
+}, { deep: false, flush: 'post' })
+
 watch(selectedHouse, (house) => {
   if (viewer) buildEntities()
   if (house) loadAdvisoryForHouse(house)
 })
 watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
 
-// ── Data loading ──────────────────────────────────────────────────────────────
+// ── Viewport-based data loading ───────────────────────────────────────────────
+// Fetches only the households visible in the current camera viewport.
+// Results are cached in-memory by snapped bbox (5-min TTL, 30-tile LRU).
+
 function clearRetryTimer() {
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
 }
 
-async function fetchAllHouses() {
-  const limit = 2000
-  const all = []
-  let page = 1, total = null
-  while (true) {
-    const res   = await getHouses({ page, limit })
-    const chunk = res.data || []
-    if (!chunk.length) break
-    all.push(...chunk)
-    if (typeof res.total === 'number') total = res.total
-    if (chunk.length < limit) break
-    if (total !== null && all.length >= total) break
-    if (page >= 20) break
-    page++
+// Returns the current camera viewport as {min_lat, max_lat, min_lng, max_lng}.
+// Falls back to an estimate from camera position+height if Cesium hasn't
+// computed the rectangle yet (common on the very first frame).
+function getCurrentViewportBbox(padDeg = 0.05) {
+  if (!viewer) return null
+  try {
+    const rect = viewer.camera.computeViewRectangle()
+    if (rect) {
+      return {
+        min_lat: Math.max(Cesium.Math.toDegrees(rect.south) - padDeg, -90),
+        max_lat: Math.min(Cesium.Math.toDegrees(rect.north) + padDeg,  90),
+        min_lng: Math.max(Cesium.Math.toDegrees(rect.west)  - padDeg, -180),
+        max_lng: Math.min(Cesium.Math.toDegrees(rect.east)  + padDeg,  180),
+      }
+    }
+    // Fallback: approximate from camera position + altitude
+    const pos = viewer.camera.positionCartographic
+    if (!pos) return null
+    const lat     = Cesium.Math.toDegrees(pos.latitude)
+    const lng     = Cesium.Math.toDegrees(pos.longitude)
+    const spanDeg = Math.max((pos.height / 111_000) * 1.5, 0.5)
+    return {
+      min_lat: Math.max(lat - spanDeg - padDeg, -90),
+      max_lat: Math.min(lat + spanDeg + padDeg,  90),
+      min_lng: Math.max(lng - spanDeg - padDeg, -180),
+      max_lng: Math.min(lng + spanDeg + padDeg,  180),
+    }
+  } catch {
+    return null
   }
-  return all
 }
 
-async function fetchHousePage(page, limit) {
-  const res = await getHouses({ page, limit })
+// Snap bbox to a grid so nearby viewports share a cache key.
+function snapBbox(bbox, grid = 0.1) {
   return {
-    rows: Array.isArray(res?.data) ? res.data : [],
-    total: typeof res?.total === 'number' ? res.total : null,
+    min_lat: Math.floor(bbox.min_lat / grid) * grid,
+    max_lat: Math.ceil(bbox.max_lat  / grid) * grid,
+    min_lng: Math.floor(bbox.min_lng / grid) * grid,
+    max_lng: Math.ceil(bbox.max_lng  / grid) * grid,
   }
 }
 
-async function fetchRemainingHousePages(seq, seedRows, firstTotal, limit) {
-  const all = [...seedRows]
-  let total = firstTotal
-  let page = 2
-
-  while (page <= 20) {
-    if (seq !== twinLoadSeq) return
-    const { rows, total: pageTotal } = await fetchHousePage(page, limit)
-    if (pageTotal !== null) total = pageTotal
-    if (!rows.length) break
-
-    all.push(...rows)
-    page += 1
-    if (rows.length < limit) break
-    if (total !== null && all.length >= total) break
+function evictOldTiles() {
+  const now = Date.now()
+  for (const [k, v] of viewportTileCache) {
+    if (now - v.ts > VIEWPORT_CACHE_TTL) viewportTileCache.delete(k)
   }
-
-  if (seq !== twinLoadSeq) return
-  if (all.length > houses.value.length) {
-    houses.value = all
-    if (viewer) buildEntities()
+  if (viewportTileCache.size > VIEWPORT_CACHE_MAX) {
+    const sorted = [...viewportTileCache.entries()].sort((a, b) => a[1].ts - b[1].ts)
+    sorted.slice(0, viewportTileCache.size - VIEWPORT_CACHE_MAX).forEach(([k]) => viewportTileCache.delete(k))
   }
 }
 
-async function loadData(attempt = 0) {
-  const seq     = ++twinLoadSeq
-  const pageLimit = 2000
-  const results = await Promise.allSettled([fetchHousePage(1, pageLimit), getAgricultureInsights()])
-  if (seq !== twinLoadSeq) return
+// ── Initial load — runs once on mount ────────────────────────────────────────
+// Fetches the first page of households with NO bbox constraint so we always
+// get data on the first render, regardless of camera state.  After this
+// completes, isInitialLoadDone = true and the debounce-driven loadViewportData
+// takes over for all subsequent camera pan/zoom refreshes.
+async function loadInitialData() {
+  console.log('[initial] start')
+  loadingLiveData.value = true
+  viewportLoading.value = false
+  showEmptyViewportHint.value = false
 
-  // Mark loading done first so the filteredHouses watcher is no longer blocked
-  loadingLiveData.value = false
+  let attempt = 0
+  while (attempt <= 5) {
+    try {
+      const PAGE_SIZE = 5000
+      let page = 1
+      let total = 0
+      const allRows = []
 
-  if (results[1].status === 'fulfilled') agricultureInsights.value = results[1].value
+      console.log('[initial] fetching all pages attempt', attempt + 1)
+      while (page <= 1000) {
+        const params = { limit: PAGE_SIZE, page }
+        if (filterDistrict.value) params.district_id = filterDistrict.value
+        if (filterTaluka.value)   params.taluka_id   = filterTaluka.value
+        if (filterVillage.value)  params.village_id  = filterVillage.value
 
-  if (results[0].status === 'fulfilled') {
-    const first = results[0].value || { rows: [], total: null }
-    const real = first.rows || []
-    if (real.length > 0) {
-      clearRetryTimer()
-      houses.value = real          // triggers filteredHouses → watcher
-      if (viewer) {
-        buildEntities()
-        centeringMap.value = true
-        // Fire the fly on the very first rendered frame after buildEntities().
-        // postRender guarantees Cesium has processed all entity positions and the
-        // camera API is fully ready — no setTimeout guessing needed.
-        const snapToData = () => {
-          viewer.scene.postRender.removeEventListener(snapToData)
-          if (!viewer || viewer.isDestroyed()) { centeringMap.value = false; return }
-          // Compute bounding box directly from raw coordinates (not entity collection —
-          // cluster ellipses inflate the entity bounding sphere to district level).
-          const valid = real.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
-          if (!valid.length) { centeringMap.value = false; return }
-          const lats   = valid.map(h => h.latitude)
-          const lngs   = valid.map(h => h.longitude)
-          const cLat   = (Math.min(...lats) + Math.max(...lats)) / 2
-          const cLng   = (Math.min(...lngs) + Math.max(...lngs)) / 2
-          const spanDeg = Math.max(
-            Math.max(...lats) - Math.min(...lats),
-            Math.max(...lngs) - Math.min(...lngs),
-            0.002,
-          )
-          const radiusM = Math.max(spanDeg * 111000 * 0.7, 800)
-          const range   = Math.max(Math.min(radiusM * 3.5, 38000), 5000)
-          const centre  = Cesium.Cartesian3.fromDegrees(cLng, cLat, 0)
-          const sphere  = new Cesium.BoundingSphere(centre, radiusM)
-          // Pitch −45° → 3D oblique view as specified; matches the user's fitBounds pitch requirement.
-          const pitch45 = Cesium.Math.toRadians(-45)
-          currentMapPitch = pitch45   // sync persisted pitch so subsequent interactions inherit it
-          viewer.camera.flyToBoundingSphere(sphere, {
-            duration: 2.0,
-            offset: new Cesium.HeadingPitchRange(0, pitch45, range),
-            complete: () => { centeringMap.value = false },
-            cancel:   () => { centeringMap.value = false },
-          })
-        }
-        viewer.scene.postRender.addEventListener(snapToData)
+        const res = await getHouses(params)
+        const chunk = Array.isArray(res?.data) ? res.data : []
+        if (page === 1) total = Number(res?.total || chunk.length || 0)
+        allRows.push(...chunk)
+
+        if (!chunk.length) break
+        if (total > 0 && allRows.length >= total) break
+        page += 1
       }
 
-      // Fetch remaining pages in background so map appears immediately.
-      fetchRemainingHousePages(seq, real, first.total, pageLimit).catch(err => {
-        console.warn('Background house page fetch failed:', err?.message || err)
-      })
-    } else if (attempt < 10) {
-      retryTimer = setTimeout(() => { if (seq === twinLoadSeq) loadData(attempt + 1) }, 3000)
+      console.log('[initial] full fetch done — records:', allRows.length, 'total:', total)
+
+      houses.value = allRows
+      // Snapshot the current bbox so the debounce knows where we started
+      lastLoadedBbox    = getCurrentViewportBbox()
+      isInitialLoadDone = true
+      console.log('[initial] done — isInitialLoadDone=true')
+      return   // success — finally clears loading
+
+    } catch (err) {
+      attempt++
+      console.error('[initial] fetch failed attempt', attempt, err?.message || err)
+      if (attempt > 5) break
+      await new Promise(r => setTimeout(r, 2000 * attempt))  // back-off: 2s, 4s, 6s…
     }
-  } else if (attempt < 10) {
-    retryTimer = setTimeout(() => { if (seq === twinLoadSeq) loadData(attempt + 1) }, 3000)
+  }
+  // All retries exhausted — clear loading so the error UI is shown
+  console.error('[initial] all retries failed')
+  isInitialLoadDone = true   // allow viewport loading to take over (or show empty state)
+
+  // finally block below always runs
+} // note: no explicit finally needed — the while loop handles retries and the
+  // function always exits through the return or the break; loading is cleared below
+
+// Wrapped version so loading is always cleared via finally
+async function loadInitialDataWithCleanup() {
+  try {
+    await loadInitialData()
+  } finally {
+    loadingLiveData.value = false
+    viewportLoading.value = false
+    console.log('[initial] loading cleared — houses:', houses.value.length)
+  }
+}
+
+// ── Viewport load — runs on camera pan/zoom after initial load ────────────────
+// Fetches households for the current camera bbox only.  Results are cached
+// in-memory by snapped bbox tile key (5-min TTL, 30-tile LRU).
+async function loadViewportData() {
+  if (!isInitialLoadDone) {
+    console.warn('[viewport] called before initial load — ignored')
+    return
+  }
+
+  const seq = ++viewportSeq
+  vpInFlight++
+  viewportLoading.value = true
+  showEmptyViewportHint.value = false
+  console.log('[viewport] start seq=', seq, 'inFlight=', vpInFlight)
+
+  try {
+    const bbox = getCurrentViewportBbox()
+    if (!bbox) {
+      console.warn('[viewport] no bbox — skipping')
+      return
+    }
+
+    const camH    = viewer?.camera?.positionCartographic?.height ?? 0
+    const snapped = snapBbox(bbox, camH > THRESHOLD_DOTS ? 0.2 : 0.05)
+    const cacheKey = [
+      snapped.min_lat, snapped.max_lat, snapped.min_lng, snapped.max_lng,
+      filterDistrict.value, filterTaluka.value, filterVillage.value,
+    ].join('|')
+
+    // Cache hit
+    const cached = viewportTileCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < VIEWPORT_CACHE_TTL) {
+      console.log('[viewport] cache hit:', cached.data.length, 'records')
+      if (seq === viewportSeq) {
+        lastLoadedBbox = bbox
+        showEmptyViewportHint.value = cached.data.length === 0
+        if (cached.data.length > 0) {
+          houses.value = cached.data
+        }
+      }
+      return
+    }
+
+    // Live fetch
+    const params = { ...snapped, limit: 2000 }
+    if (filterDistrict.value) params.district_id = filterDistrict.value
+    if (filterTaluka.value)   params.taluka_id   = filterTaluka.value
+    if (filterVillage.value)  params.village_id  = filterVillage.value
+
+    console.log('[viewport] fetching bbox:', snapped)
+    let res
+    try {
+      res = await getHousesByViewport(snapped, params)
+    } catch (fetchErr) {
+      console.error('[viewport] fetch error:', fetchErr?.message || fetchErr)
+      return
+    }
+    console.log('[viewport] fetch done — records:', res?.data?.length)
+
+    if (seq !== viewportSeq) {
+      console.log('[viewport] stale — discarded')
+      return
+    }
+
+    const data = Array.isArray(res?.data) ? res.data : []
+    viewportTileCache.set(cacheKey, { ts: Date.now(), data })
+    evictOldTiles()
+    lastLoadedBbox = bbox
+    showEmptyViewportHint.value = data.length === 0
+    if (data.length > 0) {
+      houses.value = data
+    }
+    console.log('[viewport] applied:', data.length, 'records')
+
+  } finally {
+    vpInFlight--
+    viewportLoading.value = vpInFlight > 0
+    console.log('[viewport] finally seq=', seq, 'inFlight=', vpInFlight, 'loading=', viewportLoading.value)
   }
 }
 
@@ -2950,27 +3355,112 @@ onMounted(async () => {
     viewer.scene.fog.enabled                  = false
     viewer.scene.globe.depthTestAgainstTerrain = false
 
-    // Restrict zoom: prevent users from getting closer than 500 m above the surface
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 500
+    // Allow closer inspection without camera bounce.
+    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 60
 
     // ── Pitch constraints — keep 3D perspective locked ────────────────────────
     // Cesium uses enableCollisionDetection-style tilt limits via minimumZoomDistance
     // but pitch min/max must be enforced through the camera-changed guard above.
     // Set the controller's tilt range so mouse drag can't go fully overhead.
     const ctrl = viewer.scene.screenSpaceCameraController
-    ctrl.minimumZoomDistance = 500
-    // Allow generous tilt via mouse but guard the extremes in updateZoomVisibility
+    ctrl.minimumZoomDistance = 60
+    ctrl.enableCollisionDetection = false
+    // Allow generous tilt via mouse without collision-driven camera pushback
 
-    // Start at a neutral holding position — loadData() will immediately fly
+    // Start at a neutral holding position — loadViewportData() will fly
     // to the actual household bounding box as soon as data arrives.
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 80000),
+      destination: Cesium.Cartesian3.fromDegrees(76.0, 19.5, 220000),
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
     })
+
+    // ── Resolve a scene.pick() result to a house object ─────────────────────────
+    // PointPrimitiveCollection: picked.primitive is a PointPrimitive with .id = house
+    // Entity API (buildings, clusters):  picked.id is the Entity object, .id.id is UUID
+    function resolvePickedHouse(picked) {
+      if (!Cesium.defined(picked)) return null
+      if (picked.primitive instanceof Cesium.Billboard) {
+        const payload = picked.id
+        if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
+      }
+      if (picked.primitive instanceof Cesium.PointPrimitive) {
+        const payload = picked.id
+        if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
+        return payload ?? null
+      }
+      if (picked.id) return entityMap.get(picked.id.id) ?? null
+      return null
+    }
 
     // Click → select house | drill-down cluster | open problem panel | clear
     viewer.screenSpaceEventHandler.setInputAction((e) => {
       const picked = viewer.scene.pick(e.position)
+
+      // ── Cluster billboard click → expansion zoom fly-to ───────────────────
+      if (Cesium.defined(picked) && picked.primitive instanceof Cesium.Billboard) {
+        const payload = picked.id
+        if (payload && typeof payload === 'object' && payload.kind === 'cluster') {
+          const expansionZoom = Number(payload.expansionZoom ?? clusterIndex?.getClusterExpansionZoom?.(Number(payload.clusterId)) ?? 12)
+          const maxClusterZoom = 18
+          if (expansionZoom >= maxClusterZoom) {
+            const leaves = clusterIndex?.getLeaves?.(Number(payload.clusterId), Infinity) || []
+            const houses = leaves.map((leaf) => leaf?.properties?.house).filter(Boolean)
+            if (houses.length >= 2) {
+              spiderfyHouseGroup(houses, Number(payload.lat), Number(payload.lng))
+              return
+            }
+          }
+
+          const targetH = getHeightFromClusterZoom(expansionZoom)
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), targetH),
+            orientation: {
+              heading: viewer.camera.heading,
+              pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
+              roll: 0,
+            },
+            duration: 0.9,
+            easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+          })
+          queueClusterRender(140)
+          return
+        }
+      }
+
+      // ── PointPrimitive (household dot) ───────────────────────────────────────
+      if (Cesium.defined(picked) && picked.primitive instanceof Cesium.PointPrimitive) {
+        const payload = picked.id
+        if (payload && typeof payload === 'object' && payload.kind === 'cluster') {
+          const nextH = Math.max((viewer.camera.positionCartographic?.height ?? 120000) * 0.45, 700)
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), nextH),
+            orientation: {
+              heading: viewer.camera.heading,
+              pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
+              roll: 0,
+            },
+            duration: 0.7,
+            easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
+          })
+          queueClusterRender(120)
+          return
+        }
+
+        const house = payload
+        if (house) {
+          const isAlreadySpiderfied = spiderfyFamilyIds.has(house.familyId)
+          if (!isAlreadySpiderfied) {
+            const wasSpiderfied = applySpiderfy(house)
+            if (wasSpiderfied && getSamePositionGroup(house).length >= 2) return
+          }
+          clearSpiderfy()
+          selectedHouse.value   = house
+          selectedCluster.value = null
+          nudgeCameraForPanel(house)
+        }
+        return
+      }
+
       if (Cesium.defined(picked) && picked.id) {
         const entityId = picked.id.id
 
@@ -2982,18 +3472,13 @@ onMounted(async () => {
           return
         }
 
-        // ── House entity → spiderfy stacked dots then open detail panel ──────
+        // ── House building entity (close zoom 3D box) ────────────────────────
         const house = entityMap.get(entityId)
         if (house) {
-          // If there are ≥2 houses at the same coordinate, spread them first.
-          // A second click on any spread dot then selects it normally.
           const isAlreadySpiderfied = spiderfyFamilyIds.has(house.familyId)
           if (!isAlreadySpiderfied) {
             const wasSpiderfied = applySpiderfy(house)
-            if (wasSpiderfied && getSamePositionGroup(house).length >= 2) {
-              // First click: spread without selecting — user chooses specific dot next
-              return
-            }
+            if (wasSpiderfied && getSamePositionGroup(house).length >= 2) return
           }
           clearSpiderfy()
           selectedHouse.value   = house
@@ -3006,9 +3491,6 @@ onMounted(async () => {
         const cluster = clusterMap.get(entityId)
         if (cluster) {
           clearSpiderfy()
-          // If a problem filter is active, ensure cluster problems reflect it.
-          // The cluster's houses already matched the filter, so we synthesise
-          // problem entries directly from the active filter keys.
           let resolvedCluster = cluster
           if (activeProblemFilters.value.length > 0 && (!cluster.problems || cluster.problems.length === 0)) {
             const syntheticProblems = activeProblemFilters.value.map(key => {
@@ -3024,7 +3506,6 @@ onMounted(async () => {
           clusterAdvisory.value = null
           highlightClusterBoundary(resolvedCluster)
           loadClusterAdvisory(resolvedCluster)
-          // Fit-bounds zoom: fly to bounding rectangle of all houses in cluster
           if (resolvedCluster.houses && resolvedCluster.houses.length > 0) {
             const lats = resolvedCluster.houses.map(h => h.latitude).filter(Number.isFinite)
             const lngs = resolvedCluster.houses.map(h => h.longitude).filter(Number.isFinite)
@@ -3055,23 +3536,19 @@ onMounted(async () => {
       selectedCluster.value = null
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
-    // Double-click → zoom
+    // Double-click → zoom to house
     viewer.screenSpaceEventHandler.setInputAction((e) => {
       const picked = viewer.scene.pick(e.position)
-      if (Cesium.defined(picked) && picked.id) {
-        const house = entityMap.get(picked.id.id)
-        if (house) flyToHouse(house)
-      }
+      const house  = resolvePickedHouse(picked)
+      if (house) flyToHouse(house)
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
-    // Hover
+    // Hover → tooltip
     viewer.screenSpaceEventHandler.setInputAction((e) => {
       mouseX.value = e.endPosition.x + 16
       mouseY.value = e.endPosition.y + 12
       const picked = viewer.scene.pick(e.endPosition)
-      hoveredHouse.value = (Cesium.defined(picked) && picked.id)
-        ? (entityMap.get(picked.id.id) || null)
-        : null
+      hoveredHouse.value = resolvePickedHouse(picked)
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
     setupZoomListener()
@@ -3080,7 +3557,21 @@ onMounted(async () => {
     console.warn('Cesium init failed:', err)
   }
 
-  loadData()
+  // Load insights in parallel (small, fast); initial house data fetched separately
+  getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
+  getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
+  loadInitialDataWithCleanup()
+
+  // Safety net: force-clear loading if still stuck after 30 s
+  setTimeout(() => {
+    if (loadingLiveData.value || viewportLoading.value) {
+      console.error('[initial] loading timeout — forcing clear')
+      loadingLiveData.value = false
+      viewportLoading.value = false
+      isInitialLoadDone     = true
+    }
+  }, 30_000)
+
   setTimeout(handleResize, 60)
   setTimeout(handleResize, 300)
   window.addEventListener('resize', handleResize)
@@ -3091,6 +3582,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearRetryTimer()
+  if (clusterRenderTimer) clearTimeout(clusterRenderTimer)
+  if (viewportDebounce) clearTimeout(viewportDebounce)
+  if (buildingPanTimer) clearTimeout(buildingPanTimer)
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('click', closeDropdowns)
   document.removeEventListener('fullscreenchange', handleTwinFullscreenChange)
@@ -3099,6 +3593,7 @@ onUnmounted(() => {
     viewer.destroy()
   }
   viewer = null
+  ptCollection = null
 })
 </script>
 
@@ -3481,6 +3976,42 @@ onUnmounted(() => {
   backdrop-filter: blur(4px);
   gap: 0.8rem;
 }
+/* Map background-loading overlay: bottom-centre pill, non-blocking */
+.loading-overlay.map-bg-loading-overlay {
+  inset: auto;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  padding: 10px 24px;
+  border-radius: 20px;
+  background: rgba(12, 26, 46, 0.88);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.12);
+  flex-direction: column;
+  gap: 4px;
+  z-index: 510;
+}
+.loading-overlay.map-bg-loading-overlay .loading-spinner {
+  width: 16px; height: 16px;
+  border-width: 2px;
+  border-color: rgba(255,255,255,0.25);
+  border-top-color: #4ade80;
+}
+.loading-overlay.map-bg-loading-overlay .loading-text {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.map-bg-progress {
+  color: #86efac;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
 /* Centering overlay: anchored to bottom-centre, non-blocking — map is visible behind it */
 .loading-overlay.centering-overlay {
   inset: auto;
@@ -3515,6 +4046,26 @@ onUnmounted(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 0.84rem; color: #374151; font-weight: 500; }
+
+.map-empty-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 520;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  background: rgba(12, 26, 46, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 16px;
+  padding: 7px 14px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
 
 /* ═══════════════════════════════════════════════
    LEFT SIDEBAR

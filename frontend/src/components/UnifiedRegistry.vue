@@ -50,7 +50,7 @@
               <span class="subfilter-label">{{ sf.label }}:</span>
               <button v-for="opt in sf.options" :key="opt.value"
                 class="chip"
-                :class="{ active: subFilters[sf.key] === opt.value }"
+                :class="{ active: isSubFilterActive(sf.key, opt.value) }"
                 @click="toggleSubFilter(sf.key, opt.value)">
                 {{ opt.label }}
               </button>
@@ -93,7 +93,7 @@
       <template v-for="sf in activeSubFilters" :key="sf.key">
         <button v-for="opt in sf.options" :key="opt.value"
           class="chip"
-          :class="{ active: subFilters[sf.key] === opt.value }"
+          :class="{ active: isSubFilterActive(sf.key, opt.value) }"
           @click="toggleSubFilter(sf.key, opt.value)">
           {{ opt.label }}
         </button>
@@ -183,7 +183,7 @@ const CATEGORIES = [
   { value: '',          label: 'All',             fullLabel: 'All Citizens',    icon: '👥' },
   { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
   { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
-  { value: 'disabled', label: 'Disabled',         fullLabel: 'Disabled',        icon: '♿' },
+  { value: 'disabled', label: 'Divyang',          fullLabel: 'Divyang',         icon: '♿' },
   { value: 'housewife',label: 'Housewives',       fullLabel: 'Housewives',      icon: '🏠' },
   { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
 ]
@@ -321,7 +321,7 @@ const CATEGORY_CONFIG = {
   },
 
   disabled: {
-    label: 'Disabled',
+    label: 'Divyang',
     subtitle: 'Citizens with reported disability (Divyang)',
     icon: '♿',
     color: '#d97706',
@@ -333,7 +333,7 @@ const CATEGORY_CONFIG = {
       { key: 'pensionStatus',     label: 'Pension Status' },
       { key: 'govtPensionAmount', label: 'Govt. Pension Amt', tdClass: 'td-num' },
       { key: 'caretakerName',     label: 'Caretaker' },
-      { key: 'annualIncome',      label: 'Annual Income',     tdClass: 'td-num' },
+      { key: 'divyangCertificate', label: 'Divyang Certificate' },
     ],
     subFilters: [
       {
@@ -362,16 +362,6 @@ const CATEGORY_CONFIG = {
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
     ],
     subFilters: [
-      {
-        key: 'sourceOfIncome', label: 'Source of Income',
-        options: [
-          { label: 'None',                   value: 'None'                   },
-          { label: 'Small Business/SHG',     value: 'Small Business/SHG'     },
-          { label: 'Tailoring',              value: 'Tailoring'              },
-          { label: 'Poultry',                value: 'Poultry'                },
-          { label: 'Remittance from family', value: 'Remittance from family' },
-        ],
-      },
       {
         key: 'incomeRange', label: 'Income Range',
         options: [
@@ -416,7 +406,7 @@ const records     = ref([])
 const category             = ref('')
 const categoryDropdownOpen = ref(false)
 const search               = ref('')
-const subFilters           = ref({})   // { [filterKey]: selectedValue }
+const subFilters           = ref({})   // { [filterKey]: string[] }
 
 function selectCategory(val) {
   category.value = val
@@ -536,10 +526,24 @@ function toggleSort(key) {
   else { sortKey.value = key; sortDir.value = 'asc' }
 }
 
+function getSelectedValues(key) {
+  const values = subFilters.value[key]
+  return Array.isArray(values) ? values : []
+}
+
+function isSubFilterActive(key, value) {
+  return getSelectedValues(key).includes(value)
+}
+
 function toggleSubFilter(key, value) {
+  const current = getSelectedValues(key)
+  const next = current.includes(value)
+    ? current.filter((v) => v !== value)
+    : [...current, value]
+
   subFilters.value = {
     ...subFilters.value,
-    [key]: subFilters.value[key] === value ? '' : value,
+    [key]: next,
   }
 }
 
@@ -576,58 +580,70 @@ const filteredRecords = computed(() => {
 
   // Apply active sub-filters
   const sf = subFilters.value
+  const selected = (key) => Array.isArray(sf[key]) ? sf[key] : []
+  const hasAny = (key) => selected(key).length > 0
 
   // Gender sub-filter
-  if (sf.gender) {
-    list = list.filter(r => String(r.gender || '').toLowerCase() === sf.gender.toLowerCase())
+  if (hasAny('gender')) {
+    const genderSet = new Set(selected('gender').map(v => String(v).toLowerCase()))
+    list = list.filter(r => genderSet.has(String(r.gender || '').toLowerCase()))
   }
 
   // Land size sub-filter (farmer category)
-  if (sf.landSize) {
+  if (hasAny('landSize')) {
+    const sizeSet = new Set(selected('landSize'))
     list = list.filter(r => {
       const ac = parseLand(r.totalLand)
-      if (sf.landSize === 'large')    return ac > 2
-      if (sf.landSize === 'medium')   return ac >= 1 && ac <= 2
-      if (sf.landSize === 'marginal') return ac > 0 && ac < 1
-      return true
+      const matchesLarge = sizeSet.has('large') && ac > 2
+      const matchesMedium = sizeSet.has('medium') && ac >= 1 && ac <= 2
+      const matchesMarginal = sizeSet.has('marginal') && ac > 0 && ac < 1
+      if (matchesLarge || matchesMedium || matchesMarginal) return true
+      return false
     })
   }
 
   // Irrigation type sub-filter (farmer category)
-  if (sf.irrigationType) {
-    list = list.filter(r => r.irrigationType === sf.irrigationType)
+  if (hasAny('irrigationType')) {
+    const irrigSet = new Set(selected('irrigationType'))
+    list = list.filter(r => irrigSet.has(r.irrigationType))
   }
 
   // Crop type sub-filter (farmer category)
-  if (sf.cropType) {
+  if (hasAny('cropType')) {
+    const cropSet = new Set(selected('cropType'))
     list = list.filter(r => {
       const hasKharif = r.kharifCrop && r.kharifCrop !== 'N/A'
       const hasRabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A'
-      if (sf.cropType === 'kharif') return hasKharif
-      if (sf.cropType === 'rabi')   return hasRabi
-      if (sf.cropType === 'both')   return hasKharif && hasRabi
-      return true
+      const matchesKharif = cropSet.has('kharif') && hasKharif
+      const matchesRabi = cropSet.has('rabi') && hasRabi
+      const matchesBoth = cropSet.has('both') && hasKharif && hasRabi
+      if (matchesKharif || matchesRabi || matchesBoth) return true
+      return false
     })
   }
 
   // Education level sub-filter (student category)
-  if (sf.educationLevel) {
-    list = list.filter(r => r.educationLevel === sf.educationLevel)
+  if (hasAny('educationLevel')) {
+    const eduSet = new Set(selected('educationLevel'))
+    list = list.filter(r => eduSet.has(r.educationLevel))
   }
 
   // Scholarship sub-filter (student category)
-  if (sf.scholarship) {
-    list = list.filter(r => r.scholarship === sf.scholarship)
+  if (hasAny('scholarship')) {
+    const scholSet = new Set(selected('scholarship'))
+    list = list.filter(r => scholSet.has(r.scholarship))
   }
 
   // Source-of-income sub-filter (housewife category)
-  if (sf.sourceOfIncome) {
-    list = list.filter(r => r.sourceOfIncome === sf.sourceOfIncome)
+  if (hasAny('sourceOfIncome')) {
+    const sourceSet = new Set(selected('sourceOfIncome'))
+    list = list.filter(r => sourceSet.has(r.sourceOfIncome))
   }
 
   // Income range — global, works across ALL categories
-  if (sf.incomeRange) {
-    list = list.filter(r => classifyIncome(r.annualIncome) === sf.incomeRange)
+  if (hasAny('incomeRange')) {
+    const incomeSet = new Set(selected('incomeRange'))
+    list = list.filter(r => incomeSet.has(classifyIncome(r.annualIncome)))
   }
 
   // Sort
@@ -724,6 +740,15 @@ function renderCell(r, col) {
 
     case 'disabilityPercent':
       return v && v !== '0' ? `<span class="badge badge-orange">${esc(v)}%</span>` : `<span class="text-dim-sm">—</span>`
+
+    case 'divyangCertificate': {
+      const hasDisabilityMarker = (r.isDivyang === true) ||
+        (String(r.disabilityType || '').trim() !== '' && String(r.disabilityType || '').trim().toLowerCase() !== 'not recorded') ||
+        (String(r.disabilityPercent || '').trim() !== '' && String(r.disabilityPercent || '').trim() !== '0')
+      const cls = hasDisabilityMarker ? 'badge-green' : 'badge-muted'
+      const label = hasDisabilityMarker ? 'Available' : 'Not Available'
+      return `<span class="badge ${cls}">${label}</span>`
+    }
 
     case 'govtPensionAmount': {
       if (!v || v === 'N/A' || v === '0') return `<span class="text-dim-sm">N/A</span>`

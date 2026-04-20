@@ -5,9 +5,36 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+func parseBBoxParam(raw string) (minLng, minLat, maxLng, maxLat float64, ok bool, err error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) != 4 {
+		return 0, 0, 0, 0, false, fmt.Errorf("bbox must be minLng,minLat,maxLng,maxLat")
+	}
+
+	vals := make([]float64, 4)
+	for i := range parts {
+		v, convErr := strconv.ParseFloat(strings.TrimSpace(parts[i]), 64)
+		if convErr != nil {
+			return 0, 0, 0, 0, false, fmt.Errorf("invalid bbox value %q", parts[i])
+		}
+		vals[i] = v
+	}
+
+	minLng, minLat, maxLng, maxLat = vals[0], vals[1], vals[2], vals[3]
+	if minLng > maxLng {
+		minLng, maxLng = maxLng, minLng
+	}
+	if minLat > maxLat {
+		minLat, maxLat = maxLat, minLat
+	}
+
+	return minLng, minLat, maxLng, maxLat, true, nil
+}
 
 type HouseRecord struct {
 	FamilyID       int     `json:"familyId"`
@@ -169,6 +196,42 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	if villageID != "" {
 		where += " AND CAST(f.VILLAGE_ID AS CHAR) = ?"
 		args = append(args, villageID)
+	}
+
+	bboxRaw := strings.TrimSpace(c.Query("bbox"))
+	if bboxRaw != "" {
+		minLng, minLat, maxLng, maxLat, ok, parseErr := parseBBoxParam(bboxRaw)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bbox", "detail": parseErr.Error()})
+			return
+		}
+		if ok {
+			where += fmt.Sprintf(" AND f.%s > ? AND f.%s < ? AND f.%s > ? AND f.%s < ?", latCol, latCol, lngCol, lngCol)
+			args = append(args, minLat, maxLat, minLng, maxLng)
+		}
+	} else {
+		minLatRaw := strings.TrimSpace(c.Query("min_lat"))
+		maxLatRaw := strings.TrimSpace(c.Query("max_lat"))
+		minLngRaw := strings.TrimSpace(c.Query("min_lng"))
+		maxLngRaw := strings.TrimSpace(c.Query("max_lng"))
+		if minLatRaw != "" && maxLatRaw != "" && minLngRaw != "" && maxLngRaw != "" {
+			minLat, errMinLat := strconv.ParseFloat(minLatRaw, 64)
+			maxLat, errMaxLat := strconv.ParseFloat(maxLatRaw, 64)
+			minLng, errMinLng := strconv.ParseFloat(minLngRaw, 64)
+			maxLng, errMaxLng := strconv.ParseFloat(maxLngRaw, 64)
+			if errMinLat != nil || errMaxLat != nil || errMinLng != nil || errMaxLng != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid viewport bounds"})
+				return
+			}
+			if minLat > maxLat {
+				minLat, maxLat = maxLat, minLat
+			}
+			if minLng > maxLng {
+				minLng, maxLng = maxLng, minLng
+			}
+			where += fmt.Sprintf(" AND f.%s > ? AND f.%s < ? AND f.%s > ? AND f.%s < ?", latCol, latCol, lngCol, lngCol)
+			args = append(args, minLat, maxLat, minLng, maxLng)
+		}
 	}
 
 	// Build population stats subquery (detects optional FAMILY_MEMBER columns at runtime)
@@ -384,4 +447,70 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		HouseRecord: house,
 		Members:     members,
 	})
+}
+
+// GetHousesSummary — GET /houses/summary
+// Returns a grid-aggregated count of households within a bounding box.
+// Query params: min_lat, max_lat, min_lng, max_lng (required), grid (degrees, default 0.01)
+func (h *HouseHandler) GetHousesSummary(c *gin.Context) {
+	minLat := c.Query("min_lat")
+	maxLat := c.Query("max_lat")
+	minLng := c.Query("min_lng")
+	maxLng := c.Query("max_lng")
+	grid := c.DefaultQuery("grid", "0.01")
+
+	latCol := h.CC.LatCol
+	lngCol := h.CC.LngCol
+	if latCol == "" {
+		latCol = "LATITUDE"
+	}
+	if lngCol == "" {
+		lngCol = "LONGITUDE"
+	}
+
+	where := fmt.Sprintf(
+		"WHERE f.%s IS NOT NULL AND f.%s IS NOT NULL AND f.%s != 0 AND f.%s != 0",
+		latCol, lngCol, latCol, lngCol,
+	)
+	args := []interface{}{}
+
+	if minLat != "" && maxLat != "" && minLng != "" && maxLng != "" {
+		where += fmt.Sprintf(" AND f.%s BETWEEN ? AND ? AND f.%s BETWEEN ? AND ?", latCol, lngCol)
+		args = append(args, minLat, maxLat, minLng, maxLng)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			ROUND(f.%s / %s) * %s AS cell_lat,
+			ROUND(f.%s / %s) * %s AS cell_lng,
+			COUNT(*) AS cnt
+		FROM FAMILY f
+		%s
+		GROUP BY cell_lat, cell_lng
+		ORDER BY cnt DESC
+		LIMIT 5000
+	`, latCol, grid, grid, lngCol, grid, grid, where)
+
+	rows, err := h.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "summary query failed", "detail": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	type SummaryCell struct {
+		Lat   float64 `json:"lat"`
+		Lng   float64 `json:"lng"`
+		Count int     `json:"count"`
+	}
+	var cells []SummaryCell
+	for rows.Next() {
+		var cell SummaryCell
+		rows.Scan(&cell.Lat, &cell.Lng, &cell.Count)
+		cells = append(cells, cell)
+	}
+	if cells == nil {
+		cells = []SummaryCell{}
+	}
+	c.JSON(http.StatusOK, gin.H{"cells": cells})
 }

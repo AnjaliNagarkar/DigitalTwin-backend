@@ -92,6 +92,7 @@ func main() {
 
 	// ── Digital Twin APIs (new) ───────────────────────────────────────────────
 	r.GET("/houses", houseHandler.GetHouses)
+	r.GET("/houses/summary", houseHandler.GetHousesSummary)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
 
@@ -124,6 +125,7 @@ func main() {
 	log.Println("[STARTUP] Routes registered:")
 	log.Println("  GET /ping")
 	log.Println("  GET /houses           — geo-mapped household data (2D map + 3D twin)")
+	log.Println("  GET /houses/summary   — grid-aggregated household counts (viewport clusters)")
 	log.Println("  GET /house/:id        — single household detail + family members")
 	log.Println("  GET /insights/governance  — sanitation, lighting, geo coverage")
 	log.Println("  GET /insights/agriculture — land distribution, irrigation, crops")

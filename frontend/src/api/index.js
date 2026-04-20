@@ -46,6 +46,16 @@ export function getHouses(params = {}) {
   return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA, 1)
 }
 
+export function getHousesByViewport(bbox, params = {}) {
+  const qs = toQueryString({ ...bbox, ...params })
+  return fetchJSON(`/houses?${qs}`, TIMEOUT_DATA, 1)
+}
+
+export function getHousesSummary(bbox, grid) {
+  const qs = toQueryString({ ...bbox, ...(grid != null ? { grid } : {}) })
+  return fetchJSON(`/houses/summary?${qs}`, TIMEOUT_DATA, 1)
+}
+
 export function getHouseById(id) {
   return fetchJSON(`/house/${id}`)
 }
@@ -60,6 +70,10 @@ export function getAgricultureInsights() {
 
 export function getWelfareInsights() {
   return fetchJSON('/insights/welfare')
+}
+
+export function getPopulationDashboard() {
+  return fetchJSON('/population/dashboard', TIMEOUT_DATA)
 }
 
 export function getFarmers() {
