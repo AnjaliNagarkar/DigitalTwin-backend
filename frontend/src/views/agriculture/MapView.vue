@@ -104,9 +104,15 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div class="cs-option" :class="{ selected: colorMode === 'irrigation' }" @click="selectColorMode('irrigation')">Irrigation</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'crops' }"      @click="selectColorMode('crops')">Crops / Season</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'land' }"       @click="selectColorMode('land')">Land Holdings</div>
+              <div
+                class="cs-option"
+                v-for="option in colorOptions"
+                :key="option.value"
+                :class="{ selected: colorMode === option.value }"
+                @click="selectColorMode(option.value)"
+              >
+                {{ option.label }}
+              </div>
             </div>
           </div>
         </div>
@@ -161,14 +167,14 @@
             <div class="detail-header">
               <div class="detail-header-info">
                 <div class="detail-badge"
-                     :style="{ background: getConditionColor(selectedHouse) + '18',
-                               borderColor: getConditionColor(selectedHouse) + '55',
-                               color: getConditionColor(selectedHouse) }">
-                  {{ getConditionLabel(selectedHouse) }}
+                     :style="{ background: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
+                               borderColor: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
+                               color: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
+                  {{ isPopulationMode ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
                 </div>
-                <div class="detail-name">{{ selectedHouse.headName || 'Household' }}</div>
+                <div class="detail-name">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || 'Household' }}</div>
                 <div class="detail-sub">
-                  <span class="detail-id-chip">ID {{ selectedHouse.familyId }}</span>
+                  <span class="detail-id-chip">ID {{ selectedHouse.familyId || selectedHouse.FAMILY_ID || selectedHouse.EXTERNAL_FAMILY_ID || '—' }}</span>
                   <span v-if="selectedHouse.villageName">{{ selectedHouse.villageName }}</span>
                   <span v-if="selectedHouse.talukaName"> · {{ selectedHouse.talukaName }}</span>
                 </div>
@@ -176,69 +182,121 @@
               <button class="detail-close" @click="selectedHouse = null" title="Close">×</button>
             </div>
 
-            <!-- ── Land & Crops ── -->
-            <div class="dp-section-label">
-              <span class="dp-section-icon">🌾</span> Agriculture
-            </div>
-
-            <div class="dp-stat-row">
-              <div class="dp-stat">
-                <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
-                <div class="dp-stat-key">Total Land</div>
+            <template v-if="isPopulationMode">
+              <div class="dp-section-label">
+                <span class="dp-section-icon">👪</span> Population
               </div>
-              <div class="dp-stat">
-                <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
-                <div class="dp-stat-key">Cultivated</div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">👤</span>
+                <span class="dp-field-key">Household Head</span>
+                <span class="dp-field-val">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || '—' }}</span>
               </div>
-            </div>
 
-            <div class="dp-chip-row">
-              <div class="dp-chip-block">
-                <div class="dp-chip-label">Kharif Crop</div>
-                <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏠</span>
+                <span class="dp-field-key">House Number</span>
+                <span class="dp-field-val">{{ getHouseNumber(selectedHouse) || '—' }}</span>
               </div>
-              <div class="dp-chip-block">
-                <div class="dp-chip-label">Rabi Crop</div>
-                <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">👥</span>
+                <span class="dp-field-key">Total Members</span>
+                <span class="dp-field-val">{{ getTotalMembers(selectedHouse).toLocaleString() }}</span>
               </div>
-            </div>
 
-            <div class="dp-field-row">
-              <span class="dp-field-icon">💧</span>
-              <span class="dp-field-key">Irrigation Source</span>
-              <span class="dp-field-val"
-                    :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
-                {{ selectedHouse.waterSource || '—' }}
-              </span>
-            </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">♂</span>
+                <span class="dp-field-key">Male Count</span>
+                <span class="dp-field-val">{{ getMaleMembers(selectedHouse).toLocaleString() }}</span>
+              </div>
 
-            <!-- ── Infrastructure ── -->
-            <div class="dp-section-label">
-              <span class="dp-section-icon">🏠</span> Infrastructure
-            </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">♀</span>
+                <span class="dp-field-key">Female Count</span>
+                <span class="dp-field-val">{{ getFemaleMembers(selectedHouse).toLocaleString() }}</span>
+              </div>
 
-            <div class="dp-field-row">
-              <span class="dp-field-icon">🚽</span>
-              <span class="dp-field-key">Latrine / Sanitation</span>
-              <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
-                {{ selectedHouse.latrine || '—' }}
-              </span>
-            </div>
+              <template v-if="colorMode === 'employment_status' || colorMode === 'employment'">
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">🧰</span>
+                  <span class="dp-field-key">Working Members</span>
+                  <span class="dp-field-val">{{ getWorkingMembers(selectedHouse).toLocaleString() }}</span>
+                </div>
 
-            <div class="dp-field-row">
-              <span class="dp-field-icon">⚡</span>
-              <span class="dp-field-key">Lighting / Electricity</span>
-              <span class="dp-field-val"
-                    :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
-                {{ selectedHouse.lighting || '—' }}
-              </span>
-            </div>
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">📋</span>
+                  <span class="dp-field-key">Occupation</span>
+                  <span class="dp-field-val">{{ getWorkingOccupations(selectedHouse) }}</span>
+                </div>
+              </template>
+            </template>
 
-            <div class="dp-field-row">
-              <span class="dp-field-icon">🪪</span>
-              <span class="dp-field-key">Ration Card</span>
-              <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
-            </div>
+            <template v-else>
+              <!-- ── Land & Crops ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🌾</span> Agriculture
+              </div>
+
+              <div class="dp-stat-row">
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Total Land</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Cultivated</div>
+                </div>
+              </div>
+
+              <div class="dp-chip-row">
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Kharif Crop</div>
+                  <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+                </div>
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Rabi Crop</div>
+                  <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+                </div>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Irrigation Source</span>
+                <span class="dp-field-val"
+                      :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
+                  {{ selectedHouse.waterSource || '—' }}
+                </span>
+              </div>
+
+              <!-- ── Infrastructure ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🏠</span> Infrastructure
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🚽</span>
+                <span class="dp-field-key">Latrine / Sanitation</span>
+                <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
+                  {{ selectedHouse.latrine || '—' }}
+                </span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">⚡</span>
+                <span class="dp-field-key">Lighting / Electricity</span>
+                <span class="dp-field-val"
+                      :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
+                  {{ selectedHouse.lighting || '—' }}
+                </span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🪪</span>
+                <span class="dp-field-key">Ration Card</span>
+                <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
+              </div>
+            </template>
 
             <!-- ── Village Mismatch (shown for GPS anomaly markers) ── -->
             <template v-if="selectedHouse._distanceKm != null">
@@ -445,10 +503,15 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { getHouses, getLocationOptions } from '../../api/index.js'
+import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
 const houses        = ref([])
+const familyMembers = ref([])
+const populationStatsByFamily = ref(new Map())
+const populationRowsBySignature = ref(new Map())
+const populationRowsByHouseVillage = ref(new Map())
 const selectedHouse  = ref(null)
 const selectedCluster = ref(null)
 const mapContainer  = ref(null)
@@ -471,6 +534,18 @@ const alpListRef           = ref(null)    // ref to the scrollable anomaly list
 
 // ── Custom dropdown state ─────────────────────────────────────────────────────
 const openDropdown = ref(null)
+
+const populationFilters = ['population_density', 'bpl_status', 'divyang_presence', 'employment_status']
+
+const colorOptions = [
+  { label: 'Irrigation', value: 'irrigation' },
+  { label: 'Crops / Season', value: 'crops' },
+  { label: 'Land Holdings', value: 'land' },
+  { label: 'Population Density', value: 'population_density' },
+  { label: 'BPL Status', value: 'bpl_status' },
+  { label: 'Divyang Presence', value: 'divyang_presence' },
+  { label: 'Employment Status', value: 'employment_status' },
+]
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
@@ -498,8 +573,12 @@ function selectVillage(id) {
 
 const COLOR_MODE_LABELS_MAP = {
   irrigation: 'Irrigation',
-  crops:      'Crops / Season',
-  land:       'Land Holdings',
+  crops: 'Crops / Season',
+  land: 'Land Holdings',
+  population_density: 'Population Density',
+  bpl_status: 'BPL Status',
+  divyang_presence: 'Divyang Presence',
+  employment_status: 'Employment Status',
 }
 
 function selectColorMode(mode) {
@@ -521,6 +600,444 @@ const selectedVillageLabel = computed(() => {
   return villageOptions.value.find(v => String(v.id) === String(selectedVillage.value))?.name || 'All'
 })
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Irrigation')
+const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
+
+function normalizeText(value) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function isYesValue(value) {
+  const normalized = normalizeText(value)
+  return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1'
+}
+
+function getHouseHeadName(house) {
+  const first = String(house?.FIRST_NAME_HOUSEHOLD_HEAD || house?.first_name_household_head || '').trim()
+  const middle = String(house?.MIDDLE_NAME_HOUSEHOLD_HEAD || house?.middle_name_household_head || '').trim()
+  const last = String(house?.LAST_NAME_HOUSEHOLD_HEAD || house?.last_name_household_head || '').trim()
+  return `${first} ${middle} ${last}`.replace(/\s+/g, ' ').trim()
+}
+
+function getHouseNumber(house) {
+  return house?.houseNo || house?.HOUSE_NO || house?.house_no || ''
+}
+
+function getPopulationFallbackForHouse(house) {
+  const key = normalizeId(
+    house?.EXTERNAL_FAMILY_ID ??
+    house?.external_family_id ??
+    house?.externalFamilyId
+  )
+  if (!key) return null
+  return populationStatsByFamily.value.get(key) || null
+}
+
+function getTotalMembers(house) {
+  const direct = toFiniteNumber(house?.totalMembers ?? house?.total_members ?? house?.member_count ?? house?.TOTAL_MEMBERS)
+  if (direct !== null) return direct
+  const fallback = getPopulationFallbackForHouse(house)
+  return Number(fallback?.total_members || 0)
+}
+
+function getMaleMembers(house) {
+  const direct = toFiniteNumber(house?.maleMembers ?? house?.male_members ?? house?.male_count ?? house?.male)
+  if (direct !== null) return direct
+  const fallback = getPopulationFallbackForHouse(house)
+  return Number(fallback?.male_count || 0)
+}
+
+function getFemaleMembers(house) {
+  const direct = toFiniteNumber(house?.femaleMembers ?? house?.female_members ?? house?.female_count ?? house?.female)
+  if (direct !== null) return direct
+  const fallback = getPopulationFallbackForHouse(house)
+  return Number(fallback?.female_count || 0)
+}
+
+function getWorkingMembers(house) {
+  const direct = toFiniteNumber(house?.working_members ?? house?.workingMembers)
+  if (direct !== null) return direct
+  const fallback = getPopulationFallbackForHouse(house)
+  return Number(fallback?.working_members || 0)
+}
+
+function getWorkingOccupations(house) {
+  const direct = String(house?.working_occupations || house?.occupation_list || '').trim()
+  if (direct) return direct
+  const fallback = getPopulationFallbackForHouse(house)
+  return String(fallback?.working_occupations || fallback?.occupation_list || '').trim() || 'N/A'
+}
+
+function getBplStatus(house) {
+  const bpl = normalizeText(house?.FAMILY_BELONG_BPL_CATEGORY || house?.familyBelongBplCategory)
+  if (bpl.includes('non-bpl') || bpl === 'no' || bpl === 'apl' || bpl.includes('above poverty')) return 'no'
+  if (bpl.includes('bpl') || bpl === 'yes') return 'yes'
+
+  const ration = normalizeText(house?.rationCard || house?.ration_card_type || house?.RATION_CARD_TYPE)
+  if (ration.includes('bpl') || ration.includes('antyodaya') || ration.includes('aay')) return 'yes'
+  return 'no'
+}
+
+function hasDivyangPresence(house) {
+  if (isYesValue(house?.DIVYANG || house?.divyang)) return true
+  if (Number(house?.has_disability || 0) === 1) return true
+  if (Number(house?.divyang_members || 0) > 0) return true
+  return false
+}
+
+function getOccupationValues(house) {
+  if (Array.isArray(house?.occupation_list_array) && house.occupation_list_array.length) {
+    return house.occupation_list_array.map(value => String(value).trim()).filter(Boolean)
+  }
+
+  const raw = String(
+    house?.OCCUPATION ||
+    house?.occupation ||
+    house?.occupation_list ||
+    house?.working_occupations ||
+    ''
+  )
+
+  if (!raw.trim()) return []
+  return raw.split(/[|,;]+/).map(value => value.trim()).filter(Boolean)
+}
+
+function hasEmployment(house) {
+  if (getWorkingMembers(house) > 0) return true
+  return getOccupationValues(house).length > 0
+}
+
+function toFiniteNumber(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && value.trim() === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+const normalizeId = id => String(id ?? '').trim()
+
+function resolveFamilyId(record) {
+  const resolved =
+    record?.EXTERNAL_FAMILY_ID ??
+    record?.external_family_id ??
+    record?.externalFamilyId ??
+    record?.family_id ??
+    record?.FAMILY_ID ??
+    record?.familyId ??
+    ''
+  return normalizeId(resolved)
+}
+
+function groupMembersByFamily(memberRows = []) {
+  const membersByFamily = {}
+
+  memberRows.forEach(member => {
+    const key = normalizeId(member?.EXTERNAL_FAMILY_ID ?? member?.external_family_id ?? member?.family_id ?? member?.FAMILY_ID)
+    if (!key) return
+
+    if (!membersByFamily[key]) {
+      membersByFamily[key] = []
+    }
+    membersByFamily[key].push(member)
+  })
+
+  return membersByFamily
+}
+
+function extractFamiliesFromResponse(pageResponse) {
+  const candidates = [
+    pageResponse?.data?.families,
+    pageResponse?.data?.familyData,
+    pageResponse?.families,
+    pageResponse?.familyData,
+    pageResponse?.data,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate
+  }
+
+  return []
+}
+
+function collectFamilyMembers(pageResponse, familyRows) {
+  const allMembers = []
+
+  const topLevelCandidates = [
+    pageResponse?.data?.members,
+    pageResponse?.data?.familyMembers,
+    pageResponse?.data?.family_members,
+    pageResponse?.data?.familyMemberData,
+    pageResponse?.familyMembers,
+    pageResponse?.family_members,
+    pageResponse?.familyMemberData,
+    pageResponse?.members,
+    pageResponse?.FAMILY_MEMBER,
+  ]
+
+  topLevelCandidates.forEach(candidate => {
+    if (Array.isArray(candidate)) {
+      allMembers.push(...candidate)
+    }
+  })
+
+  familyRows.forEach(family => {
+    const nestedCandidates = [
+      family?.members,
+      family?.familyMembers,
+      family?.family_members,
+      family?.FAMILY_MEMBER,
+    ]
+
+    nestedCandidates.forEach(candidate => {
+      if (Array.isArray(candidate)) {
+        allMembers.push(...candidate.map(member => ({
+          ...member,
+          EXTERNAL_FAMILY_ID:
+            member?.EXTERNAL_FAMILY_ID ||
+            member?.external_family_id ||
+            family?.EXTERNAL_FAMILY_ID ||
+            family?.external_family_id,
+        })))
+      }
+    })
+  })
+
+  return allMembers
+}
+
+function getPopulationStats(family, familyMembers) {
+  const familyExternalId = normalizeId(family?.EXTERNAL_FAMILY_ID ?? family?.external_family_id ?? family?.externalFamilyId)
+
+  const members = familyMembers.filter(
+    member => normalizeId(member?.EXTERNAL_FAMILY_ID ?? member?.external_family_id) === familyExternalId
+  )
+
+  if (members.length > 0) {
+    return {
+      hasData: true,
+      total_members: members.length,
+      male_count: members.filter(m => normalizeText(m?.GENDER || m?.gender) === 'male').length,
+      female_count: members.filter(m => normalizeText(m?.GENDER || m?.gender) === 'female').length,
+      divyang_members: members.filter(m => isYesValue(m?.DIVYANG || m?.divyang)).length,
+      working_members: members.filter(m => String(m?.OCCUPATION || m?.occupation || '').trim() !== '').length,
+    }
+  }
+
+  const fallback = populationStatsByFamily.value.get(familyExternalId)
+  if (fallback) {
+    return {
+      hasData: true,
+      total_members: Number(fallback.total_members || 0),
+      male_count: Number(fallback.male_count || 0),
+      female_count: Number(fallback.female_count || 0),
+      divyang_members: Number(fallback.divyang_members || 0),
+      working_members: Number(fallback.working_members || 0),
+    }
+  }
+
+  return {
+    hasData: false,
+    total_members: 0,
+    male_count: 0,
+    female_count: 0,
+    divyang_members: 0,
+    working_members: 0,
+  }
+}
+
+function getHouseholdHeadLabel(family) {
+  const first = String(family?.FIRST_NAME_HOUSEHOLD_HEAD || family?.first_name_household_head || '').trim()
+  const middle = String(family?.MIDDLE_NAME_HOUSEHOLD_HEAD || family?.middle_name_household_head || '').trim()
+  const last = String(family?.LAST_NAME_HOUSEHOLD_HEAD || family?.last_name_household_head || '').trim()
+  const fullName = `${first} ${middle} ${last}`.replace(/\s+/g, ' ').trim()
+  return fullName || family?.headName || family?.head_name || ''
+}
+
+function buildPopulationSignature(headName, lat, lng) {
+  const normalizedHead = normalizeText(headName)
+  const latNum = Number(lat)
+  const lngNum = Number(lng)
+  if (!normalizedHead || !Number.isFinite(latNum) || !Number.isFinite(lngNum)) return ''
+  return `${normalizedHead}|${latNum.toFixed(6)}|${lngNum.toFixed(6)}`
+}
+
+function buildHouseVillageKey(houseNo, villageId) {
+  const normalizedHouseNo = normalizeText(houseNo)
+  const normalizedVillageId = normalizeId(villageId)
+  if (!normalizedHouseNo || !normalizedVillageId) return ''
+  return `${normalizedVillageId}|${normalizedHouseNo}`
+}
+
+function inferExternalFamilyId(family) {
+  const existing = normalizeId(family?.EXTERNAL_FAMILY_ID ?? family?.external_family_id ?? family?.externalFamilyId)
+  if (existing) return existing
+
+  const signature = buildPopulationSignature(
+    getHouseholdHeadLabel(family),
+    family?.LATITUDE ?? family?.latitude ?? family?.lat,
+    family?.LONGITUDE ?? family?.longitude ?? family?.lng,
+  )
+
+  const matchedBySignature = signature ? populationRowsBySignature.value.get(signature) : null
+  if (matchedBySignature) {
+    return normalizeId(matchedBySignature?.external_family_id ?? matchedBySignature?.EXTERNAL_FAMILY_ID)
+  }
+
+  const houseVillageKey = buildHouseVillageKey(
+    family?.HOUSE_NO ?? family?.houseNo ?? family?.house_no,
+    family?.VILLAGE_ID ?? family?.villageId ?? family?.village_id,
+  )
+  if (!houseVillageKey) return ''
+
+  const matchedByHouseVillage = populationRowsByHouseVillage.value.get(houseVillageKey)
+  return normalizeId(matchedByHouseVillage?.external_family_id ?? matchedByHouseVillage?.EXTERNAL_FAMILY_ID)
+}
+
+function enrichHouseholdForPopulation(family, familyMembers) {
+  const familyId = resolveFamilyId(family)
+  const inferredExternalFamilyId = inferExternalFamilyId(family)
+  const stats = getPopulationStats(
+    {
+      ...family,
+      EXTERNAL_FAMILY_ID: family?.EXTERNAL_FAMILY_ID || family?.externalFamilyId || inferredExternalFamilyId,
+      external_family_id: family?.external_family_id || family?.externalFamilyId || inferredExternalFamilyId,
+    },
+    familyMembers
+  )
+  const hasMemberRows = stats.hasData
+
+  const existingTotal = toFiniteNumber(family?.total_members ?? family?.totalMembers)
+  const existingMale = toFiniteNumber(family?.male_count ?? family?.male_members ?? family?.maleMembers)
+  const existingFemale = toFiniteNumber(family?.female_count ?? family?.female_members ?? family?.femaleMembers)
+  const existingDivyang = toFiniteNumber(family?.divyang_members)
+  const existingWorking = toFiniteNumber(family?.working_members)
+
+  const latitude = toFiniteNumber(family?.LATITUDE ?? family?.lat ?? family?.latitude)
+  const longitude = toFiniteNumber(family?.LONGITUDE ?? family?.lng ?? family?.longitude)
+
+  const normalizedHouseNo = String(family?.HOUSE_NO || family?.houseNo || family?.house_no || '').trim()
+  const normalizedHeadName = getHouseholdHeadLabel(family)
+  const externalFamilyId = normalizeId(family?.EXTERNAL_FAMILY_ID ?? family?.external_family_id ?? family?.externalFamilyId ?? inferredExternalFamilyId)
+  const fallback = populationStatsByFamily.value.get(externalFamilyId)
+
+  return {
+    ...family,
+    family_id: familyId || String(family?.familyId || family?.FAMILY_ID || ''),
+    EXTERNAL_FAMILY_ID: externalFamilyId,
+    head_name: normalizedHeadName,
+    headName: family?.headName || normalizedHeadName,
+    house_no: normalizedHouseNo,
+    houseNo: family?.houseNo || normalizedHouseNo,
+    lat: latitude ?? family?.lat,
+    lng: longitude ?? family?.lng,
+    latitude: latitude ?? family?.latitude,
+    longitude: longitude ?? family?.longitude,
+    total_members: hasMemberRows ? stats.total_members : (existingTotal ?? 0),
+    totalMembers: hasMemberRows ? stats.total_members : (existingTotal ?? 0),
+    male_count: hasMemberRows ? stats.male_count : (existingMale ?? 0),
+    male_members: hasMemberRows ? stats.male_count : (existingMale ?? 0),
+    maleMembers: hasMemberRows ? stats.male_count : (existingMale ?? 0),
+    female_count: hasMemberRows ? stats.female_count : (existingFemale ?? 0),
+    female_members: hasMemberRows ? stats.female_count : (existingFemale ?? 0),
+    femaleMembers: hasMemberRows ? stats.female_count : (existingFemale ?? 0),
+    divyang_members: hasMemberRows ? stats.divyang_members : (existingDivyang ?? Number(fallback?.divyang_members || 0)),
+    working_members: hasMemberRows ? stats.working_members : (existingWorking ?? Number(fallback?.working_members || 0)),
+    FAMILY_BELONG_BPL_CATEGORY: family?.FAMILY_BELONG_BPL_CATEGORY || fallback?.FAMILY_BELONG_BPL_CATEGORY || '',
+    occupation_list: family?.occupation_list || fallback?.occupation_list || '',
+    working_occupations: family?.working_occupations || fallback?.working_occupations || '',
+  }
+}
+
+function extractPopulationRows(response) {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.data)) return response.data
+  if (Array.isArray(response?.markers)) return response.markers
+  if (Array.isArray(response?.data?.markers)) return response.data.markers
+  return []
+}
+
+function buildPopulationStatsMap(rows = []) {
+  const statsMap = new Map()
+
+  rows.forEach(row => {
+    const key = normalizeId(row?.external_family_id ?? row?.EXTERNAL_FAMILY_ID)
+    if (!key) return
+
+    const nextValue = {
+      total_members: Number(row?.total_members || 0),
+      male_count: Number((row?.male_members ?? row?.male_count) || 0),
+      female_count: Number((row?.female_members ?? row?.female_count) || 0),
+      divyang_members: Number(row?.divyang_members || 0),
+      working_members: Number(row?.working_members || 0),
+      FAMILY_BELONG_BPL_CATEGORY: row?.FAMILY_BELONG_BPL_CATEGORY || '',
+      occupation_list: row?.occupation_list || '',
+      working_occupations: row?.working_occupations || '',
+    }
+
+    const currentValue = statsMap.get(key)
+    if (!currentValue) {
+      statsMap.set(key, nextValue)
+      return
+    }
+
+    // Keep the richest member stats when duplicate family rows exist.
+    if (nextValue.total_members > currentValue.total_members) {
+      statsMap.set(key, nextValue)
+    }
+  })
+
+  return statsMap
+}
+
+function buildPopulationRowsBySignature(rows = []) {
+  const signatureMap = new Map()
+
+  rows.forEach(row => {
+    const signature = buildPopulationSignature(row?.head_name, row?.lat, row?.lng)
+    if (!signature) return
+    signatureMap.set(signature, row)
+  })
+
+  return signatureMap
+}
+
+function buildPopulationRowsByHouseVillage(rows = []) {
+  const houseVillageMap = new Map()
+
+  rows.forEach(row => {
+    const key = buildHouseVillageKey(row?.house_no, row?.village_id)
+    if (!key) return
+    houseVillageMap.set(key, row)
+  })
+
+  return houseVillageMap
+}
+
+async function loadFamilyMembers() {
+  try {
+    const params = {
+      district_id: selectedDistrict.value || undefined,
+      taluka_id: selectedTaluka.value || undefined,
+      village_id: selectedVillage.value || undefined,
+    }
+    const res = await getPopulationMapData(params)
+    const rows = extractPopulationRows(res)
+    familyMembers.value = Array.isArray(res?.data?.members)
+      ? res.data.members
+      : Array.isArray(res?.members)
+        ? res.members
+        : []
+    populationStatsByFamily.value = buildPopulationStatsMap(rows)
+    populationRowsBySignature.value = buildPopulationRowsBySignature(rows)
+    populationRowsByHouseVillage.value = buildPopulationRowsByHouseVillage(rows)
+  } catch (error) {
+    console.warn('Population member stats unavailable:', error?.message || error)
+    familyMembers.value = []
+    populationStatsByFamily.value = new Map()
+    populationRowsBySignature.value = new Map()
+    populationRowsByHouseVillage.value = new Map()
+  }
+}
 
 const MAHARASHTRA_BOUNDS = L.latLngBounds(
   [15.6, 72.5],
@@ -533,6 +1050,7 @@ let clusterGroup    = null // L.layerGroup for village circles
 let highlightCircle = null // currently highlighted village circle
 let retryTimer      = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
+let activeHouseLoadToken = 0
 function handleFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
   handleMapResize()
@@ -601,6 +1119,8 @@ function getHouseFilters() {
 }
 
 async function fetchAllHouses() {
+  await loadFamilyMembers()
+
   const base = getHouseFilters()
   const pageLimit = Number(base.limit) || 2000
   let page = 1
@@ -609,7 +1129,11 @@ async function fetchAllHouses() {
 
   while (true) {
     const res = await getHouses({ ...base, page, limit: pageLimit })
-    const chunk = res.data || []
+    const families = extractFamiliesFromResponse(res)
+    const houseResponseMembers = collectFamilyMembers(res, families)
+    const sourceMembers = houseResponseMembers.length ? houseResponseMembers : familyMembers.value
+
+    const chunk = families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
 
     if (!chunk.length) break
     all.push(...chunk)
@@ -627,6 +1151,8 @@ async function fetchAllHouses() {
 }
 
 function applyFilters() {
+  clearRetryTimer()
+  const requestToken = ++activeHouseLoadToken
   houses.value = []
   selectedHouse.value = null
   selectedCluster.value = null
@@ -639,11 +1165,13 @@ function applyFilters() {
     // so the user gets immediate feedback even on full-dataset reloads.
     fitAfterLoad = true
     loading.value = true
-    loadLiveHouseData(0)
+    loadLiveHouseData(0, requestToken)
   }
 }
 
 async function resetFilters() {
+  clearRetryTimer()
+  const requestToken = ++activeHouseLoadToken
   selectedDistrict.value = ''
   selectedTaluka.value = ''
   selectedVillage.value = ''
@@ -655,7 +1183,7 @@ async function resetFilters() {
   clearMarkers()
   if (map) {
     loading.value = true
-    loadLiveHouseData(0)
+    loadLiveHouseData(0, requestToken)
     fitToMaharashtra()
   }
 }
@@ -687,7 +1215,74 @@ const stats = computed(() => {
 })
 
 const analyticsChart = computed(() => {
-  if (!stats.value) return null
+  const rows = houses.value
+  if (!rows.length || !stats.value) return null
+
+  const mode = colorMode.value
+  if (mode === 'population_density') {
+    const male = rows.reduce((sum, house) => sum + getMaleMembers(house), 0)
+    const female = rows.reduce((sum, house) => sum + getFemaleMembers(house), 0)
+    const total = male + female
+    return {
+      title: 'Gender Distribution',
+      subtitle: 'Population gender split',
+      totalLabel: `${total.toLocaleString()} members`,
+      centerLabel: 'Population',
+      centerValue: total.toLocaleString(),
+      segments: [
+        { label: 'Male', value: male, color: '#2563eb' },
+        { label: 'Female', value: female, color: '#ec4899' },
+      ],
+    }
+  }
+
+  if (mode === 'bpl_status') {
+    const bpl = rows.filter(house => getBplStatus(house) === 'yes').length
+    const nonBpl = Math.max(rows.length - bpl, 0)
+    return {
+      title: 'BPL Distribution',
+      subtitle: 'Household economic category',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'BPL', value: bpl, color: '#ef4444' },
+        { label: 'Non-BPL', value: nonBpl, color: '#16a34a' },
+      ],
+    }
+  }
+
+  if (mode === 'divyang_presence') {
+    const divyang = rows.filter(house => hasDivyangPresence(house)).length
+    const nonDivyang = Math.max(rows.length - divyang, 0)
+    return {
+      title: 'Divyang Distribution',
+      subtitle: 'Household disability presence',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Divyang', value: divyang, color: '#a855f7' },
+        { label: 'Non-divyang', value: nonDivyang, color: '#9ca3af' },
+      ],
+    }
+  }
+
+  if (mode === 'employment_status' || mode === 'employment') {
+    const working = rows.filter(house => hasEmployment(house)).length
+    const nonWorking = Math.max(rows.length - working, 0)
+    return {
+      title: 'Employment Distribution',
+      subtitle: 'Household occupation status',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Working', value: working, color: '#f59e0b' },
+        { label: 'Non-working', value: nonWorking, color: '#9ca3af' },
+      ],
+    }
+  }
 
   const total = stats.value.total || 1
   const landless = houses.value.filter(h => (parseFloat(h.totalLand) || 0) <= 1).length
@@ -697,7 +1292,6 @@ const analyticsChart = computed(() => {
   }).length
   const mediumLarge = Math.max(stats.value.farmers - landless - small, 0)
 
-  const mode = colorMode.value
   if (mode === 'crop_type' || mode === 'crops') {
     return {
       title: 'Crop Distribution',
@@ -779,6 +1373,25 @@ function getMarkerColor(house) {
   // GPS anomaly override — red, clearly distinct from sanitation purple
   if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) return '#ef4444'
 
+  if (colorMode.value === 'population_density') {
+    const members = getTotalMembers(house)
+    if (members <= 2) return '#a7f3d0'
+    if (members <= 5) return '#34d399'
+    return '#047857'
+  }
+
+  if (colorMode.value === 'bpl_status') {
+    return getBplStatus(house) === 'yes' ? '#ef4444' : '#16a34a'
+  }
+
+  if (colorMode.value === 'divyang_presence') {
+    return hasDivyangPresence(house) ? '#a855f7' : '#9ca3af'
+  }
+
+  if (colorMode.value === 'employment_status' || colorMode.value === 'employment') {
+    return hasEmployment(house) ? '#f59e0b' : '#9ca3af'
+  }
+
   if (colorMode.value === 'crops') {
     const k = (house.kharif || '').toLowerCase() === 'yes'
     const r = (house.rabi   || '').toLowerCase() === 'yes'
@@ -813,7 +1426,28 @@ function getMarkerColor(house) {
 
 const headerLegend = computed(() => {
   let entries
-  if (colorMode.value === 'crops') {
+  if (colorMode.value === 'population_density') {
+    entries = [
+      { color: '#a7f3d0', label: '1-2 members' },
+      { color: '#34d399', label: '3-5 members' },
+      { color: '#047857', label: '6+ members' },
+    ]
+  } else if (colorMode.value === 'bpl_status') {
+    entries = [
+      { color: '#ef4444', label: 'BPL households' },
+      { color: '#16a34a', label: 'Non-BPL households' },
+    ]
+  } else if (colorMode.value === 'divyang_presence') {
+    entries = [
+      { color: '#a855f7', label: 'Divyang present' },
+      { color: '#9ca3af', label: 'No divyang' },
+    ]
+  } else if (colorMode.value === 'employment_status' || colorMode.value === 'employment') {
+    entries = [
+      { color: '#f59e0b', label: 'Working households' },
+      { color: '#9ca3af', label: 'Non-working households' },
+    ]
+  } else if (colorMode.value === 'crops') {
     entries = [
       { color: '#10b981', label: 'Both Seasons' },
       { color: '#f59e0b', label: 'Kharif Only' },
@@ -1428,6 +2062,15 @@ function plotMarkers(data) {
           <span style="color:#94a3b8;font-size:0.7em;">Click to see details</span>
         `
       }
+
+      if (populationFilters.includes(colorMode.value)) {
+        return `
+          <strong>${house.headName || getHouseHeadName(house) || 'Household'}</strong><br/>
+          House No: ${getHouseNumber(house) || 'N/A'}<br/>
+          Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
+        `
+      }
+
       return `
         <strong>${house.headName || 'Household'}</strong><br/>
         Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
@@ -1462,9 +2105,13 @@ function clearRetryTimer() {
   }
 }
 
-async function loadLiveHouseData(attempt = 0) {
+async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToken) {
+  if (requestToken !== activeHouseLoadToken) return
+
   try {
     const real = await fetchAllHouses()
+    if (requestToken !== activeHouseLoadToken) return
+
     if (real.length > 0) {
       clearRetryTimer()
       houses.value = real
@@ -1477,17 +2124,20 @@ async function loadLiveHouseData(attempt = 0) {
     }
 
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1), 3000)
+      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
       return
     }
   } catch (e) {
+    if (requestToken !== activeHouseLoadToken) return
+
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1), 3000)
+      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
       return
     }
     console.warn('Houses API not available:', e.message)
   }
 
+  if (requestToken !== activeHouseLoadToken) return
   loading.value = false
 }
 
@@ -1509,6 +2159,7 @@ onMounted(async () => {
   }
 
   loading.value = true
+  await loadFamilyMembers()
   await loadLocationDropdowns()
   applyFilters()
 })

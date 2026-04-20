@@ -10,26 +10,28 @@ import (
 )
 
 type HouseRecord struct {
-	FamilyID       int     `json:"familyId"`
-	DistrictID     string  `json:"districtId"`
-	DistrictName   string  `json:"districtName"`
-	TalukaID       string  `json:"talukaId"`
-	TalukaName     string  `json:"talukaName"`
-	VillageID      string  `json:"villageId"`
-	VillageName    string  `json:"villageName"`
-	Latitude       float64 `json:"latitude"`
-	Longitude      float64 `json:"longitude"`
-	TotalLand      string  `json:"totalLand"`
-	CultivatedLand string  `json:"cultivatedLand"`
-	OwnLand        string  `json:"ownLand"`
-	WaterSource    string  `json:"waterSource"`
-	Kharif         string  `json:"kharif"`
-	Rabi           string  `json:"rabi"`
-	Latrine        string  `json:"latrine"`
-	Lighting       string  `json:"lighting"`
-	RationCard     string  `json:"rationCard"`
-	Occupation     string  `json:"occupation"`
-	HeadName       string  `json:"headName"`
+	FamilyID         int     `json:"familyId"`
+	ExternalFamilyID string  `json:"externalFamilyId"`
+	HouseNo          string  `json:"houseNo"`
+	DistrictID       string  `json:"districtId"`
+	DistrictName     string  `json:"districtName"`
+	TalukaID         string  `json:"talukaId"`
+	TalukaName       string  `json:"talukaName"`
+	VillageID        string  `json:"villageId"`
+	VillageName      string  `json:"villageName"`
+	Latitude         float64 `json:"latitude"`
+	Longitude        float64 `json:"longitude"`
+	TotalLand        string  `json:"totalLand"`
+	CultivatedLand   string  `json:"cultivatedLand"`
+	OwnLand          string  `json:"ownLand"`
+	WaterSource      string  `json:"waterSource"`
+	Kharif           string  `json:"kharif"`
+	Rabi             string  `json:"rabi"`
+	Latrine          string  `json:"latrine"`
+	Lighting         string  `json:"lighting"`
+	RationCard       string  `json:"rationCard"`
+	Occupation       string  `json:"occupation"`
+	HeadName         string  `json:"headName"`
 }
 
 type HouseDetail struct {
@@ -105,6 +107,8 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
+				COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), ''),
+				COALESCE(CAST(f.HOUSE_NO AS CHAR), ''),
 			COALESCE(CAST(f.DISTRICT_ID AS CHAR), ''),
 			COALESCE(dm.vsDisplayName, dm.vsDistrictName, ''),
 			COALESCE(CAST(f.TALUKA_ID AS CHAR), ''),
@@ -139,7 +143,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 				) AS primary_occupation
 			FROM FAMILY_MEMBER fm
 			GROUP BY fm.EXTERNAL_FAMILY_ID
-		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		) occ ON occ.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -166,6 +170,8 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		var house HouseRecord
 		if err := rows.Scan(
 			&house.FamilyID,
+			&house.ExternalFamilyID,
+			&house.HouseNo,
 			&house.DistrictID, &house.DistrictName,
 			&house.TalukaID, &house.TalukaName,
 			&house.VillageID, &house.VillageName,
@@ -214,6 +220,8 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
+			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), ''),
+			COALESCE(CAST(f.HOUSE_NO AS CHAR), ''),
 			COALESCE(CAST(f.DISTRICT_ID AS CHAR), ''),
 			COALESCE(dm.vsDisplayName, dm.vsDistrictName, ''),
 			COALESCE(CAST(f.TALUKA_ID AS CHAR), ''),
@@ -249,7 +257,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 				) AS primary_occupation
 			FROM FAMILY_MEMBER fm
 			GROUP BY fm.EXTERNAL_FAMILY_ID
-		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		) occ ON occ.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -262,6 +270,8 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	var house HouseRecord
 	err := h.DB.QueryRow(query, id).Scan(
 		&house.FamilyID,
+		&house.ExternalFamilyID,
+		&house.HouseNo,
 		&house.DistrictID, &house.DistrictName,
 		&house.TalukaID, &house.TalukaName,
 		&house.VillageID, &house.VillageName,
