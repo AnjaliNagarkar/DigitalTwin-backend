@@ -2021,10 +2021,9 @@ function landHeight(house) {
 function buildImageryProvider(style) {
   const s = style || tileStyle.value
   if (s === 'street') {
-    return new Cesium.UrlTemplateImageryProvider({
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-      credit: 'Tiles © Esri',
-      maximumLevel: 19, tileWidth: 256, tileHeight: 256,
+    return new Cesium.OpenStreetMapImageryProvider({
+      url: 'https://tile.openstreetmap.org/',
+      credit: '© OpenStreetMap contributors',
     })
   }
   return new Cesium.UrlTemplateImageryProvider({
@@ -3332,7 +3331,7 @@ function handleResize() {
 onMounted(async () => {
   try {
     viewer = new Cesium.Viewer(cesiumContainer.value, {
-      imageryProvider:      buildImageryProvider('satellite'),   // satellite by default
+      imageryProvider:      false,
       terrainProvider:      new Cesium.EllipsoidTerrainProvider(),
       baseLayerPicker:      false,
       navigationHelpButton: false,
@@ -3347,6 +3346,9 @@ onMounted(async () => {
       skyBox:               false,
       skyAtmosphere:        false,
     })
+
+    viewer.imageryLayers.removeAll()
+    viewer.imageryLayers.addImageryProvider(buildImageryProvider('satellite'))
 
     viewer.scene.backgroundColor              = Cesium.Color.fromCssColorString('#0c1a2e')
     viewer.scene.globe.baseColor              = Cesium.Color.fromCssColorString('#4a7c59')
