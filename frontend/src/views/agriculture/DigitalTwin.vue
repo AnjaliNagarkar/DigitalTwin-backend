@@ -426,7 +426,7 @@
           </template>
           <template v-else>
             <div class="legend-item">
-              <span class="mini-house" :style="{ '--mh-roof': '#94a3b8' }">
+              <span class="mini-house" :style="{ '--mh-roof': '#ef4444' }">
                 <span class="mh-roof"></span>
                 <span class="mh-wall"></span>
               </span>
@@ -1850,7 +1850,7 @@ function pieStyle(segments) {
 
 // ── Color helpers ────────────────────────────────────────────────────────────
 function getConditionColor(house) {
-  if (!colorMode.value) return '#94a3b8'
+  if (!colorMode.value) return '#ef4444'
   if (colorMode.value === 'sanitation') {
     const l = (house.latrine || '').toLowerCase()
     if (!l || l === 'no latrine' || l === 'none') return '#ef4444'
@@ -2313,13 +2313,13 @@ function addHouseModelEntity(house, lng, lat) {
     ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
+      : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
 
   const wallOutline = isSelected
     ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
+      : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
 
   const footprint = 10
   const baseH     = 7
@@ -2894,13 +2894,13 @@ function buildBuildingEntitiesForViewport() {
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
       : isProblem
         ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-        : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
+        : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
 
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
       : isProblem
         ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-        : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
+        : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
 
     const footprint = 10
     const baseH     = 7
