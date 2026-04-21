@@ -2247,8 +2247,16 @@ function offsetCartesianDegrees(lat, lng, eastMeters, northMeters) {
   }
 }
 
-function addSpiderLeg(fromLat, fromLng, toLat, toLng) {
-  return { fromLat, fromLng, toLat, toLng }
+function addSpiderLeg(centerCartesian, offsetCartesian) {
+  if (!viewer || viewer.isDestroyed()) return null
+  const ent = viewer.entities.add({
+    polyline: {
+      positions: [centerCartesian, offsetCartesian],
+      width: 1.5,
+      material: Cesium.Color.fromCssColorString('#f8fafc').withAlpha(0.95),
+    },
+  })
+  return ent?.id ?? null
 }
 
 function getClusterIconSize(count) {
@@ -2256,9 +2264,11 @@ function getClusterIconSize(count) {
   return Math.max(30, Math.min(45, 30 + (Math.log10(c + 1) * 6)))
 }
 
-function generateClusterBillboardImage(count) {
+function generateClusterBillboardImage(count, expansionZoom) {
   const size = getClusterIconSize(count)
-  const key = `${Math.round(size)}:${count > 999 ? 'k' : 'n'}`
+  const spiderfyCap = Number(expansionZoom || 0) >= 19
+  const variant = spiderfyCap ? 'spiderfy' : 'zoom'
+  const key = `${Math.round(size)}:${count > 999 ? 'k' : 'n'}:${variant}`
   const cached = clusterImageCache.get(key)
   if (cached) return cached
 
@@ -2273,10 +2283,10 @@ function generateClusterBillboardImage(count) {
   const cy = canvasSize / 2
   const r = (size / 2) * 1.85
 
-  // Solid professional warm amber cluster fill.
+  // Use a distinct color for spiderfy-cap clusters (no further zoom expansion).
   ctx.beginPath()
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.fillStyle = '#E65100'
+  ctx.fillStyle = spiderfyCap ? '#F9A825' : '#E65100'
   ctx.fill()
 
   // Crisp white border.
@@ -2392,7 +2402,7 @@ function renderClustersForCurrentView() {
       const expansionZoom = clusterIndex.getClusterExpansionZoom(Number(node.id))
       const billboard = clusterBillboardCollection.add({
         position: Cesium.Cartesian3.fromDegrees(lng, lat, 1),
-        image: generateClusterBillboardImage(count),
+        image: generateClusterBillboardImage(count, expansionZoom),
         width: getClusterIconSize(count),
         height: getClusterIconSize(count),
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
@@ -2501,8 +2511,8 @@ function computeJitteredPositions(houseList) {
 }
 
 // ── Spiderfy: spread stacked dots so each can be clicked individually ─────────
-let spiderfyEntityIds   = []   // IDs of temporary line entities added by spiderfy
-let spiderfyOriginals   = []   // { entity, originalPos } to restore on reset
+let spiderfyEntityIds   = []   // IDs of temporary spiderfy entities (legs + houses)
+let spiderfyOriginals   = []   // reserved for future positional restore flows
 let spiderfyFamilyIds   = new Set()   // family IDs currently spread
 
 function clearSpiderfy() {
@@ -2529,20 +2539,52 @@ function getSamePositionGroup(house) {
   )
 }
 
-function spiderfyHouseGroup(houseGroup, centerLat, centerLng) {
+function hasOverlappingCoordinates(houseGroup, precision = 6) {
+  const seen = new Set()
+  for (const house of houseGroup || []) {
+    const lat = Number(house?.latitude)
+    const lng = Number(house?.longitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+    const key = `${lat.toFixed(precision)},${lng.toFixed(precision)}`
+    if (seen.has(key)) return true
+    seen.add(key)
+  }
+  return false
+}
+
+function spiderfyCluster(clusterOrPoints, centerCartesian) {
   if (!viewer || viewer.isDestroyed()) return false
-  if (!Array.isArray(houseGroup) || houseGroup.length < 2) return false
+
+  const houses = Array.isArray(clusterOrPoints)
+    ? clusterOrPoints.map((item) => item?.properties?.house || item).filter(Boolean)
+    : []
+  if (houses.length < 2) return false
+
+  let center = centerCartesian
+  if (!center) {
+    const ref = houses.find((h) => Number.isFinite(Number(h?.longitude)) && Number.isFinite(Number(h?.latitude)))
+    if (!ref) return false
+    center = Cesium.Cartesian3.fromDegrees(Number(ref.longitude), Number(ref.latitude), 0)
+  }
+
+  const carto = Cesium.Cartographic.fromCartesian(center)
+  if (!carto) return false
+  const centerLat = Cesium.Math.toDegrees(carto.latitude)
+  const centerLng = Cesium.Math.toDegrees(carto.longitude)
 
   clearSpiderfy()
   spiderfyCenter = { lat: centerLat, lng: centerLng }
 
-  const offsets = getSpiderfyOffsets(houseGroup.length, Math.max(22, Math.min(30, 18 + houseGroup.length * 1.2)))
+  const radiusMeters = Math.max(15, Math.min(25, 15 + houses.length * 0.9))
+  const offsets = getSpiderfyOffsets(houses.length, radiusMeters)
 
-  houseGroup.forEach((house, index) => {
+  houses.forEach((house, index) => {
     const offset = offsets[index]
     const pos = offsetCartesianDegrees(centerLat, centerLng, offset.east, offset.north)
+    const offsetCartesian = Cesium.Cartesian3.fromDegrees(pos.lng, pos.lat, 0)
 
-    addSpiderLeg(centerLat, centerLng, pos.lat, pos.lng)
+    const legId = addSpiderLeg(center, offsetCartesian)
+    if (legId) spiderfyEntityIds.push(legId)
 
     const createdIds = addHouseModelEntity(house, pos.lng, pos.lat)
     createdIds.forEach((id) => {
@@ -2557,15 +2599,16 @@ function spiderfyHouseGroup(houseGroup, centerLat, centerLng) {
   return true
 }
 
+function spiderfyHouseGroup(houseGroup, centerLat, centerLng) {
+  const center = Cesium.Cartesian3.fromDegrees(Number(centerLng), Number(centerLat), 0)
+  return spiderfyCluster(houseGroup, center)
+}
+
 function spiderfyClusterLeaves(clusterId, centerLat, centerLng) {
   if (!clusterIndex) return false
   const leaves = clusterIndex.getLeaves(Number(clusterId), Infinity) || []
-  const houses = leaves
-    .map((leaf) => leaf?.properties?.house)
-    .filter(Boolean)
-
-  if (houses.length < 2) return false
-  return spiderfyHouseGroup(houses, centerLat, centerLng)
+  const center = Cesium.Cartesian3.fromDegrees(Number(centerLng), Number(centerLat), 0)
+  return spiderfyCluster(leaves, center)
 }
 
 // If `house` is one of ≥2 stacked dots, spread them in a circle and draw
@@ -3403,12 +3446,14 @@ onMounted(async () => {
         const payload = picked.id
         if (payload && typeof payload === 'object' && payload.kind === 'cluster') {
           const expansionZoom = Number(payload.expansionZoom ?? clusterIndex?.getClusterExpansionZoom?.(Number(payload.clusterId)) ?? 12)
-          const maxClusterZoom = 18
+          const maxClusterZoom = 19
+
           if (expansionZoom >= maxClusterZoom) {
             const leaves = clusterIndex?.getLeaves?.(Number(payload.clusterId), Infinity) || []
             const houses = leaves.map((leaf) => leaf?.properties?.house).filter(Boolean)
             if (houses.length >= 2) {
-              spiderfyHouseGroup(houses, Number(payload.lat), Number(payload.lng))
+              const centerCartesian = Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), 0)
+              spiderfyCluster(houses, centerCartesian)
               return
             }
           }
