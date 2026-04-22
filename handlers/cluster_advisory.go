@@ -21,19 +21,19 @@ type ClusterProblemInput struct {
 
 // GroupActionItem is a single community-level action recommendation.
 type GroupActionItem struct {
-	ProblemKey   string `json:"problemKey"`
-	ProblemLabel string `json:"problemLabel"`
-	AffectedPct  int    `json:"affectedPct"`
-	Count        int    `json:"count"`
-	Total        int    `json:"total"`
-	IsMassIssue  bool   `json:"isMassIssue"` // true when >= MASS_THRESHOLD of cluster
-	MassHeading  string `json:"massHeading"` // "Mass Issue Detected: Lack of Irrigation"
-	Cause        string `json:"cause"`
-	GroupAction  string `json:"groupAction"` // community-level recommended action
-	SchemeName   string `json:"schemeName"`
+	ProblemKey    string `json:"problemKey"`
+	ProblemLabel  string `json:"problemLabel"`
+	AffectedPct   int    `json:"affectedPct"`
+	Count         int    `json:"count"`
+	Total         int    `json:"total"`
+	IsMassIssue   bool   `json:"isMassIssue"` // true when >= MASS_THRESHOLD of cluster
+	MassHeading   string `json:"massHeading"` // "Mass Issue Detected: Lack of Irrigation"
+	Cause         string `json:"cause"`
+	GroupAction   string `json:"groupAction"` // community-level recommended action
+	SchemeName    string `json:"schemeName"`
 	SchemeBenefit string `json:"schemeBenefit"`
-	SchemeType   string `json:"schemeType"` // "community_scheme" | "government_scheme"
-	Source       string `json:"source"`     // "scheme_criteria" | "curated"
+	SchemeType    string `json:"schemeType"` // "community_scheme" | "government_scheme"
+	Source        string `json:"source"`     // "scheme_criteria" | "curated"
 }
 
 // ClusterAdvisoryResponse is returned for /advisory/cluster
@@ -47,7 +47,7 @@ type ClusterAdvisoryResponse struct {
 const MASS_THRESHOLD = 60
 
 type ClusterAdvisoryHandler struct {
-	DB              *sql.DB
+	DB                *sql.DB
 	hasSchemeCriteria bool
 }
 
@@ -64,7 +64,7 @@ func NewClusterAdvisoryHandler(db *sql.DB) *ClusterAdvisoryHandler {
 // problems param: comma-separated key:count:total triplets
 func (h *ClusterAdvisoryHandler) GetClusterAdvisory(c *gin.Context) {
 	problemsRaw := strings.TrimSpace(c.Query("problems"))
-	totalStr    := strings.TrimSpace(c.Query("total"))
+	totalStr := strings.TrimSpace(c.Query("total"))
 
 	total, _ := strconv.Atoi(totalStr)
 	if total <= 0 {
@@ -99,7 +99,10 @@ func (h *ClusterAdvisoryHandler) GetClusterAdvisory(c *gin.Context) {
 	var actions []GroupActionItem
 	for _, inp := range inputs {
 		action := h.resolveGroupAction(inp)
-		actions = append(actions, action)
+		// Only include actions with actual cause AND groupAction — filter out empty/incomplete advisories
+		if strings.TrimSpace(action.Cause) != "" && strings.TrimSpace(action.GroupAction) != "" {
+			actions = append(actions, action)
+		}
 	}
 	if actions == nil {
 		actions = []GroupActionItem{}
@@ -122,44 +125,53 @@ func (h *ClusterAdvisoryHandler) GetClusterAdvisory(c *gin.Context) {
 }
 
 func (h *ClusterAdvisoryHandler) resolveGroupAction(inp ClusterProblemInput) GroupActionItem {
-	pct     := int(float64(inp.Count) / float64(max1(inp.Total, 1)) * 100)
-	isMass  := pct >= MASS_THRESHOLD
-	meta    := clusterProblemMeta(inp.Key)
+	pct := int(float64(inp.Count) / float64(max1(inp.Total, 1)) * 100)
+	isMass := pct >= MASS_THRESHOLD
+	meta := clusterProblemMeta(inp.Key)
 
 	massHeading := ""
 	if isMass {
 		massHeading = fmt.Sprintf("Mass Issue Detected: %s", meta.massLabel)
 	}
 
-	// 1. Try scheme_criteria for community-level scheme
+	// Only try scheme_criteria (database only) — no curated fallback.
 	if h.hasSchemeCriteria {
 		if item, ok := h.fromSchemeCriteria(inp, pct, isMass, massHeading, meta); ok {
 			return item
 		}
 	}
 
-	// 2. Curated community fallback
-	return h.curatedGroupAction(inp, pct, isMass, massHeading, meta)
+	// Not found in database — return empty group action (nothing shown to user)
+	return GroupActionItem{}
 }
 
 func (h *ClusterAdvisoryHandler) fromSchemeCriteria(
 	inp ClusterProblemInput, pct int, isMass bool, massHeading string, meta clusterMeta,
 ) (GroupActionItem, bool) {
 	query := `
-		SELECT COALESCE(scheme_name,''), COALESCE(benefit,''), COALESCE(description,'')
+		SELECT COALESCE(scheme_name,''), COALESCE(cause,''), 
+		       COALESCE(benefit,''), COALESCE(description,'')
 		FROM scheme_criteria
 		WHERE FIND_IN_SET(?, REPLACE(problem_key,' ','')) > 0
 		   OR problem_key = ?
 		LIMIT 1`
-	var name, benefit, desc string
-	err := h.DB.QueryRow(query, inp.Key, inp.Key).Scan(&name, &benefit, &desc)
+	var name, cause, benefit, desc string
+	err := h.DB.QueryRow(query, inp.Key, inp.Key).Scan(&name, &cause, &benefit, &desc)
 	if err != nil || name == "" {
+		// Not found in database — return false
 		return GroupActionItem{}, false
 	}
+
 	groupAction := desc
-	if benefit != "" {
+	if benefit != "" && desc == "" {
 		groupAction = benefit
 	}
+
+	// Only return if BOTH cause and groupAction exist in database
+	if strings.TrimSpace(cause) == "" || strings.TrimSpace(groupAction) == "" {
+		return GroupActionItem{}, false
+	}
+
 	return GroupActionItem{
 		ProblemKey:    inp.Key,
 		ProblemLabel:  meta.label,
@@ -168,7 +180,7 @@ func (h *ClusterAdvisoryHandler) fromSchemeCriteria(
 		Total:         inp.Total,
 		IsMassIssue:   isMass,
 		MassHeading:   massHeading,
-		Cause:         fmt.Sprintf("This area lacks %s, affecting %d of %d households (%d%%).", meta.resourceLabel, inp.Count, inp.Total, pct),
+		Cause:         cause,
 		GroupAction:   groupAction,
 		SchemeName:    name,
 		SchemeBenefit: benefit,
@@ -177,147 +189,30 @@ func (h *ClusterAdvisoryHandler) fromSchemeCriteria(
 	}, true
 }
 
-func (h *ClusterAdvisoryHandler) curatedGroupAction(
-	inp ClusterProblemInput, pct int, isMass bool, massHeading string, meta clusterMeta,
-) GroupActionItem {
-	type communityEntry struct {
-		cause       string
-		groupAction string
-		scheme      string
-		benefit     string
-		schemeType  string
-	}
-
-	communityData := map[string]communityEntry{
-		"noIrrigation": {
-			cause:       fmt.Sprintf("This area lacks a primary water source, affecting %d of %d households (%d%%).", inp.Count, inp.Total, pct),
-			groupAction: "Apply for a Cluster-based Irrigation Project — the District Agriculture Office can process a group application for a Community Farm Pond or Group Well covering multiple fields in one approval.",
-			scheme:      "PMKSY – Community Farm Pond Scheme / Group Drip Irrigation Project",
-			benefit:     "Government funds up to 90% of shared irrigation infrastructure for clusters of 5+ households",
-			schemeType:  "community_scheme",
-		},
-		"noSanitation": {
-			cause:       fmt.Sprintf("Open defecation remains prevalent — %d of %d households (%d%%) in this area have no toilet facility.", inp.Count, inp.Total, pct),
-			groupAction: "Organise a Gram Sabha sanitation drive — the Gram Panchayat can apply for a cluster toilet-construction grant covering all ODF-gap households in one ward simultaneously.",
-			scheme:      "Swachh Bharat Mission (Gramin) – ODF+ Ward Sanitation Drive",
-			benefit:     "₹12,000 per toilet; cluster applications processed as a single ward sanitation plan",
-			schemeType:  "community_scheme",
-		},
-		"noLand": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) in this cluster are landless — collective livelihood action is needed.", inp.Count, inp.Total, pct),
-			groupAction: "Form a Farmer Producer Organisation (FPO) or Self Help Group (SHG) to access collective lease farming, shared inputs, and institutional credit as a group.",
-			scheme:      "NRLM / FPO Formation under SFAC – Collective Land Access Programme",
-			benefit:     "Revolving fund, crop loan linkage, and marketing support for organised landless groups",
-			schemeType:  "community_scheme",
-		},
-		"noRationCard": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) lack a valid ration card — food security is at risk in this area.", inp.Count, inp.Total, pct),
-			groupAction: "Organise a Ration Card Enrollment Camp at the Gram Panchayat office — bulk Aadhaar-linked applications can be submitted together, reducing processing time.",
-			scheme:      "National Food Security Act (NFSA) – Cluster Enrollment Drive",
-			benefit:     "5 kg free grain/member/month; group applications prioritised in Gram Panchayat allocation",
-			schemeType:  "government_scheme",
-		},
-		"unemployed": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) have unemployed members — a targeted livelihood camp is recommended.", inp.Count, inp.Total, pct),
-			groupAction: "Coordinate with the District Employment Mission to run a skill assessment and placement camp for this cluster — group registrations on e-Shram enable faster social security linkage.",
-			scheme:      "DDU-GKY + MGNREGA + e-Shram Cluster Registration Camp",
-			benefit:     "MGNREGA job cards + 100 days guaranteed work; DDU-GKY skill training and placement support",
-			schemeType:  "community_scheme",
-		},
-		"bplFamilies": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) are BPL-classified — a multi-scheme convergence camp is needed.", inp.Count, inp.Total, pct),
-			groupAction: "Run a BPL Welfare Convergence Camp covering Ayushman Bharat registration, NFSA ration card enrollment, and PM-KISAN form collection for all eligible households in one session.",
-			scheme:      "Ayushman Bharat PM-JAY + NFSA + PM-KISAN – BPL Convergence Camp",
-			benefit:     "₹5 lakh health cover + subsidised grain + ₹6,000/year farmer income support per household",
-			schemeType:  "community_scheme",
-		},
-		"illiterateMembers": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) have illiterate members — this cluster needs a literacy mission outreach.", inp.Count, inp.Total, pct),
-			groupAction: "Establish a Saakshar Bharat literacy circle at the Anganwadi centre serving this cluster — identify a local facilitator and register non-literate adults as a group.",
-			scheme:      "Saakshar Bharat Mission – Cluster Literacy Circle",
-			benefit:     "Free adult literacy classes; government funds facilitator and materials for every registered circle",
-			schemeType:  "community_scheme",
-		},
-		"unemployedMembers": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) have unemployed members — group social security registration is the priority.", inp.Count, inp.Total, pct),
-			groupAction: "Conduct a cluster-level e-Shram registration drive — bulk registration enables faster portal onboarding and unlocks accidental insurance immediately for all registered workers.",
-			scheme:      "e-Shram Cluster Registration + SHG Formation under DAY-NRLM",
-			benefit:     "₹2 lakh accidental insurance per registered worker; SHG credit linkage within 3 months of formation",
-			schemeType:  "community_scheme",
-		},
-		"divyangMembers": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) include divyang (disabled) members — certification and pension access must be coordinated.", inp.Count, inp.Total, pct),
-			groupAction: "Organise a Disability Certification Camp with a visiting CDMO/DHO team — group certification drives reduce travel barrier for affected families and speed up pension enrollment.",
-			scheme:      "Indira Gandhi National Disability Pension + ADIP Scheme – Cluster Certification Camp",
-			benefit:     "Monthly pension ₹300–500 per person + free assistive devices for BPL/divyang members",
-			schemeType:  "community_scheme",
-		},
-		"laborers": {
-			cause:       fmt.Sprintf("%d of %d households (%d%%) are primarily wage-laborer households — collective social security registration is the first step.", inp.Count, inp.Total, pct),
-			groupAction: "Run a MGNREGA Job Card + e-Shram cluster enrollment camp — all wage-laborer households can apply together, reducing admin time and ensuring no household is left out.",
-			scheme:      "MGNREGA + e-Shram Cluster Worker Registration",
-			benefit:     "Job cards for 100 days guaranteed work + ₹2 lakh accidental insurance per worker",
-			schemeType:  "community_scheme",
-		},
-	}
-
-	if e, ok := communityData[inp.Key]; ok {
-		return GroupActionItem{
-			ProblemKey:    inp.Key,
-			ProblemLabel:  meta.label,
-			AffectedPct:   pct,
-			Count:         inp.Count,
-			Total:         inp.Total,
-			IsMassIssue:   isMass,
-			MassHeading:   massHeading,
-			Cause:         e.cause,
-			GroupAction:   e.groupAction,
-			SchemeName:    e.scheme,
-			SchemeBenefit: e.benefit,
-			SchemeType:    e.schemeType,
-			Source:        "curated",
-		}
-	}
-
-	return GroupActionItem{
-		ProblemKey:   inp.Key,
-		ProblemLabel: meta.label,
-		AffectedPct:  pct,
-		Count:        inp.Count,
-		Total:        inp.Total,
-		IsMassIssue:  isMass,
-		MassHeading:  massHeading,
-		Cause:        fmt.Sprintf("Data analysis suggests %d households (%d%%) are affected in this area.", inp.Count, pct),
-		GroupAction:  "Consult the District Collector or Block Development Officer for a coordinated intervention.",
-		SchemeName:   "District Administration",
-		SchemeType:   "government_scheme",
-		Source:       "curated",
-	}
-}
+// DEPRECATED: curatedGroupAction removed. Only database-driven group actions are used.
 
 type clusterMeta struct {
-	label         string
-	massLabel     string
-	resourceLabel string
+	label     string
+	massLabel string
 }
 
 func clusterProblemMeta(key string) clusterMeta {
 	table := map[string]clusterMeta{
-		"noIrrigation":      {"No Irrigation",      "Lack of Irrigation",      "a primary water source"},
-		"noSanitation":      {"No Sanitation",       "Open Sanitation Crisis",  "toilet facilities"},
-		"noLand":            {"No Own Land",          "Landlessness",            "owned agricultural land"},
-		"noRationCard":      {"No Ration Card",       "Food Security Gap",       "valid ration cards"},
-		"unemployed":        {"Unemployed",           "Unemployment Crisis",     "stable employment"},
-		"laborers":          {"Laborers",             "Wage Labour Dependency",  "formal employment"},
-		"bplFamilies":       {"BPL Families",         "Poverty Concentration",   "welfare scheme access"},
-		"illiterateMembers": {"Illiterate Members",   "Literacy Crisis",         "formal education"},
-		"unemployedMembers": {"Unemployed Members",   "Member Unemployment",     "employment opportunities"},
-		"divyangMembers":    {"Divyang Members",      "Disability Support Gap",  "disability services"},
+		"noIrrigation":      {"No Irrigation", "Lack of Irrigation"},
+		"noSanitation":      {"No Sanitation", "Open Sanitation Crisis"},
+		"noLand":            {"No Own Land", "Landlessness"},
+		"noRationCard":      {"No Ration Card", "Food Security Gap"},
+		"unemployed":        {"Unemployed", "Unemployment Crisis"},
+		"laborers":          {"Laborers", "Wage Labour Dependency"},
+		"bplFamilies":       {"BPL Families", "Poverty Concentration"},
+		"illiterateMembers": {"Illiterate Members", "Literacy Crisis"},
+		"unemployedMembers": {"Unemployed Members", "Member Unemployment"},
+		"divyangMembers":    {"Divyang Members", "Disability Support Gap"},
 	}
 	if m, ok := table[key]; ok {
 		return m
 	}
-	return clusterMeta{key, key, key}
+	return clusterMeta{key, key}
 }
 
 func max1(a, b int) int {

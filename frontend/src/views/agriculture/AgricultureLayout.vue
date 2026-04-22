@@ -65,7 +65,9 @@
     <main class="main-content">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in">
-          <component :is="Component" />
+          <keep-alive include="UnifiedRegistry">
+            <component :is="Component" />
+          </keep-alive>
         </transition>
       </router-view>
     </main>

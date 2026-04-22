@@ -74,6 +74,12 @@ type HouseDetail struct {
 	Members []MemberRecord `json:"members"`
 }
 
+type HouseMapPoint struct {
+	ID  int     `json:"id"`
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
 type MemberRecord struct {
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
@@ -130,7 +136,7 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 	}
 
 	return fmt.Sprintf(`
-		SELECT fm.EXTERNAL_FAMILY_ID,
+		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
 			%s AS primary_occupation,
 			COUNT(*) AS total_members,
 			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m') THEN 1 ELSE 0 END) AS male_members,
@@ -140,7 +146,7 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 			%s AS divyang_members,
 			%s AS unemployed_members
 		FROM FAMILY_MEMBER fm
-		GROUP BY fm.EXTERNAL_FAMILY_ID`,
+		GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)`,
 		occExpr, workingExpr, illiterateExpr, divyangExpr, unemployedExpr)
 }
 
@@ -262,23 +268,24 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
-			COALESCE(fm_agg.primary_occupation, ''),
+			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), ''),
-			COALESCE(fm_agg.total_members, 0),
-			COALESCE(fm_agg.male_members, 0),
-			COALESCE(fm_agg.female_members, 0),
-			COALESCE(fm_agg.working_members, 0),
-			COALESCE(fm_agg.illiterate_members, 0),
-			COALESCE(fm_agg.divyang_members, 0),
-			COALESCE(fm_agg.unemployed_members, 0),
+			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
+			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
+			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
+			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
+			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
+			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
+			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -290,6 +297,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		lngCol,
 		bplExpr,
 		incomeExpr,
+		popStatsSQL,
 		popStatsSQL,
 		where,
 		limit,
@@ -343,6 +351,70 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	})
 }
 
+// GetHousesMapPoints — GET /houses/map-points
+// Returns lightweight household coordinates for fast client-side clustering.
+func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
+	latCol := h.CC.LatCol
+	lngCol := h.CC.LngCol
+	if latCol == "" {
+		latCol = "LATITUDE"
+	}
+	if lngCol == "" {
+		lngCol = "LONGITUDE"
+	}
+
+	where := fmt.Sprintf(
+		"WHERE f.%s IS NOT NULL AND f.%s IS NOT NULL AND f.%s != 0 AND f.%s != 0",
+		latCol, lngCol, latCol, lngCol,
+	)
+	args := []interface{}{}
+
+	if districtID := strings.TrimSpace(c.Query("district_id")); districtID != "" {
+		where += " AND CAST(f.DISTRICT_ID AS CHAR) = ?"
+		args = append(args, districtID)
+	}
+	if talukaID := strings.TrimSpace(c.Query("taluka_id")); talukaID != "" {
+		where += " AND CAST(f.TALUKA_ID AS CHAR) = ?"
+		args = append(args, talukaID)
+	}
+	if villageID := strings.TrimSpace(c.Query("village_id")); villageID != "" {
+		where += " AND CAST(f.VILLAGE_ID AS CHAR) = ?"
+		args = append(args, villageID)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			f.FAMILY_ID,
+			COALESCE(f.%s, 0),
+			COALESCE(f.%s, 0)
+		FROM FAMILY f
+		%s
+		ORDER BY f.FAMILY_ID
+	`, latCol, lngCol, where)
+
+	rows, err := h.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch map points", "detail": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	points := make([]HouseMapPoint, 0, 4096)
+	for rows.Next() {
+		var point HouseMapPoint
+		if err := rows.Scan(&point.ID, &point.Lat, &point.Lng); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan map point", "detail": err.Error()})
+			return
+		}
+		points = append(points, point)
+	}
+	if points == nil {
+		points = []HouseMapPoint{}
+	}
+
+	c.JSON(http.StatusOK, points)
+}
+
 func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	id := c.Param("id")
 	cc := h.CC
@@ -355,6 +427,10 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	if lngCol == "" {
 		lngCol = "LONGITUDE"
 	}
+
+	popStatsSQL := h.buildPopStatsSQL()
+	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
+	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -376,25 +452,25 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
-			COALESCE(occ.primary_occupation, ''),
+			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
 			COALESCE(
 				TRIM(CONCAT(
 					COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 					COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 					COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
-				)), '')
+				)), ''),
+			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
+			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
+			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
+			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
+			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
+			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
+			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
+			%s,
+			%s
 		FROM FAMILY f
-		LEFT JOIN (
-			SELECT
-				fm.EXTERNAL_FAMILY_ID,
-				COALESCE(
-					MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), '')),
-					MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), '')),
-					''
-				) AS primary_occupation
-			FROM FAMILY_MEMBER fm
-			GROUP BY fm.EXTERNAL_FAMILY_ID
-		) occ ON occ.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -402,6 +478,10 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	`,
 		latCol,
 		lngCol,
+		bplExpr,
+		incomeExpr,
+		popStatsSQL,
+		popStatsSQL,
 	)
 
 	var house HouseRecord
@@ -414,19 +494,30 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
 		&house.Latrine, &house.Lighting, &house.RationCard,
-		&house.Occupation,
-		&house.HeadName,
+		&house.Occupation, &house.HeadName,
+		&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
+		&house.WorkingMembers, &house.IlliterateMembers,
+		&house.DivyangMembers, &house.UnemployedMembers,
+		&house.BplCategory, &house.AnnualIncome,
 	)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
 		return
 	}
 
-	memberRows, err := h.DB.Query(`
+	memberQuery := `
 		SELECT COALESCE(FIRST_NAME, ''), COALESCE(LAST_NAME, '')
 		FROM FAMILY_MEMBER
-		WHERE EXTERNAL_FAMILY_ID = ?
-	`, id)
+		WHERE CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?
+		   OR CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?
+	`
+	memberExternalID := id
+	memberFamilyID := id
+	if h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
+		_ = h.DB.QueryRow("SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?", id).Scan(&memberExternalID)
+	}
+
+	memberRows, err := h.DB.Query(memberQuery, memberExternalID, memberFamilyID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch members"})
 		return

@@ -46,6 +46,11 @@ export function getHouses(params = {}) {
   return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA, 1)
 }
 
+export function getHousesMapPoints(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/houses/map-points?${qs}` : '/houses/map-points', TIMEOUT_DATA, 1)
+}
+
 export function getHousesByViewport(bbox, params = {}) {
   const qs = toQueryString({ ...bbox, ...params })
   return fetchJSON(`/houses?${qs}`, TIMEOUT_DATA, 1)

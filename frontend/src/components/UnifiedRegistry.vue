@@ -166,14 +166,22 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+defineOptions({ name: 'UnifiedRegistry' })
+
+import { ref, computed, onMounted, onActivated, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getUnifiedRegistry, getCitizens } from '../api/index.js'
+import { getRegistryState } from '../state/registryStateCache.js'
 
 // ── Props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
   embedded: { type: Boolean, default: false },
   maxRows:  { type: Number,  default: 0 },
 })
+
+const route = useRoute()
+const registryScope = computed(() => route.path.startsWith('/population') ? 'population' : 'agriculture')
+const registryState = computed(() => getRegistryState(registryScope.value))
 
 // ── Category definitions ───────────────────────────────────────────────────
 // Each category declares: icon, label, subtitle, color, which columns to show,
@@ -223,7 +231,7 @@ const CATEGORY_CONFIG = {
 
   farmer: {
     label: 'Farmer',
-    subtitle: 'Agricultural land-owners with crop & irrigation data',
+    subtitle: 'Citizen-level records in land-owning households (count differs from 3D household total)',
     icon: '🌾',
     color: '#16a34a',
     rowFilter: r => r.isFarmer,
@@ -412,11 +420,41 @@ function selectCategory(val) {
   category.value = val
   categoryDropdownOpen.value = false
   onCategoryChange()
+  persistToCache()
 }
 const sortKey     = ref('')
 const sortDir     = ref('asc')
 const currentPage = ref(1)
 const pageSize    = computed(() => props.maxRows > 0 ? props.maxRows : 50)
+
+function hydrateFromCache() {
+  const cached = registryState.value
+  if (!cached) return false
+
+  if (Array.isArray(cached.records) && cached.records.length > 0) {
+    records.value = cached.records
+  }
+  category.value = cached.category || ''
+  search.value = cached.search || ''
+  subFilters.value = cached.subFilters || {}
+  sortKey.value = cached.sortKey || ''
+  sortDir.value = cached.sortDir || 'asc'
+  currentPage.value = cached.currentPage || 1
+  return records.value.length > 0
+}
+
+function persistToCache() {
+  const cached = registryState.value
+  if (!cached) return
+  cached.records = records.value
+  cached.loadedAt = Date.now()
+  cached.category = category.value
+  cached.search = search.value
+  cached.subFilters = JSON.parse(JSON.stringify(subFilters.value || {}))
+  cached.sortKey = sortKey.value
+  cached.sortDir = sortDir.value
+  cached.currentPage = currentPage.value
+}
 
 function mapLegacyCitizenToUnified(row) {
   const first = String(row?.firstName || '').trim()
@@ -465,6 +503,7 @@ async function loadRegistryData() {
   try {
     const data = await getUnifiedRegistry()
     records.value = Array.isArray(data) ? data : []
+    persistToCache()
     return
   } catch (e) {
     const isAbort = e?.name === 'AbortError'
@@ -474,6 +513,7 @@ async function loadRegistryData() {
   try {
     const legacy = await getCitizens()
     records.value = (Array.isArray(legacy) ? legacy : []).map(mapLegacyCitizenToUnified)
+    persistToCache()
   } catch (e2) {
     console.error('Citizen registry load failed:', e2)
     records.value = []
@@ -485,12 +525,33 @@ const activeCategoryConfig = computed(() => CATEGORY_CONFIG[category.value] || C
 const activeSubFilters     = computed(() => activeCategoryConfig.value.subFilters || [])
 
 // ── Data loading ───────────────────────────────────────────────────────────
-onMounted(async () => {
+async function ensureRegistryData() {
+  if (hydrateFromCache()) {
+    loading.value = false
+    return
+  }
+
+  loading.value = true
   try {
     await loadRegistryData()
   } finally {
     loading.value = false
+    persistToCache()
   }
+}
+
+onMounted(async () => {
+  await ensureRegistryData()
+})
+
+onActivated(async () => {
+  if (!records.value.length) {
+    await ensureRegistryData()
+  }
+})
+
+onBeforeUnmount(() => {
+  persistToCache()
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -545,6 +606,7 @@ function toggleSubFilter(key, value) {
     ...subFilters.value,
     [key]: next,
   }
+  persistToCache()
 }
 
 function onCategoryChange() {
@@ -553,6 +615,7 @@ function onCategoryChange() {
   sortKey.value = ''
   sortDir.value = 'asc'
   currentPage.value = 1
+  persistToCache()
 }
 
 function resetFilters() {
@@ -561,6 +624,7 @@ function resetFilters() {
   sortKey.value = ''
   sortDir.value = 'asc'
   currentPage.value = 1
+  persistToCache()
 }
 
 // ── Category-pre-filtered list ─────────────────────────────────────────────
@@ -677,7 +741,14 @@ const paginatedRecords = computed(() => {
   return filteredRecords.value.slice(start, start + pageSize.value)
 })
 
-watch([search, subFilters, category], () => { currentPage.value = 1 }, { deep: true })
+watch([search, subFilters, category], () => {
+  currentPage.value = 1
+  persistToCache()
+}, { deep: true })
+
+watch([records, sortKey, sortDir, currentPage], () => {
+  persistToCache()
+}, { deep: true })
 
 // ── Cell renderer ──────────────────────────────────────────────────────────
 // Returns an HTML string so the template can use v-html for badge rendering.

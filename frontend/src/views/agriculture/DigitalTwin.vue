@@ -113,11 +113,11 @@
 
           <div class="dp-stat-row">
             <div class="dp-stat">
-              <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+              <div class="dp-stat-val">{{ displayLandValue(selectedHouse.totalLand) }} <small v-if="displayLandValue(selectedHouse.totalLand) !== '—'">ac</small></div>
               <div class="dp-stat-key">Total Land</div>
             </div>
             <div class="dp-stat">
-              <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+              <div class="dp-stat-val">{{ displayLandValue(selectedHouse.cultivatedLand) }} <small v-if="displayLandValue(selectedHouse.cultivatedLand) !== '—'">ac</small></div>
               <div class="dp-stat-key">Cultivated</div>
             </div>
           </div>
@@ -125,13 +125,15 @@
           <div class="dp-chip-row">
             <div class="dp-chip-block">
               <div class="dp-chip-label">Kharif Crop</div>
-              <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+              <div class="dp-chip dp-chip-kharif">{{ displayCropValue(selectedHouse.kharif) }}</div>
             </div>
             <div class="dp-chip-block">
               <div class="dp-chip-label">Rabi Crop</div>
-              <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+              <div class="dp-chip dp-chip-rabi">{{ displayCropValue(selectedHouse.rabi) }}</div>
             </div>
           </div>
+
+          <div v-if="selectedHouseFarmingNote" class="dp-empty-note">{{ selectedHouseFarmingNote }}</div>
 
           <!-- Irrigation source full-width -->
           <div class="dp-field-row">
@@ -328,7 +330,6 @@
               <div class="cs-option-group-label">— Financial —</div>
               <div class="cs-option" :class="{ selected: colorMode === 'income_bracket' }"     @click="selectColorMode('income_bracket')">Family Income Status</div>
               <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }"         @click="selectColorMode('bpl_status')">BPL Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'ration' }"             @click="selectColorMode('ration')">Ration Card</div>
               <div class="cs-option-group-label">— Population —</div>
               <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
               <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectColorMode('education_level')">Education Level</div>
@@ -385,17 +386,17 @@
         <span class="stat-dot" style="background:#16a34a"></span>
         <strong>{{
           isLocationFiltered
-            ? filteredHouses.length.toLocaleString()
+            ? householdsOnMapCount.toLocaleString()
             : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
         }}</strong> households
         <span v-if="isLocationFiltered" class="stat-filter-note">
-          ({{ filteredHouses.length.toLocaleString() }} on map)
+          ({{ householdsOnMapCount.toLocaleString() }} on map)
         </span>
       </span>
       <span class="stat-sep">·</span>
       <span class="stat-item"><strong>{{ totalPopulation.toLocaleString() }}</strong> population</span>
       <span class="stat-sep">·</span>
-      <span class="stat-item"><strong>{{ (agricultureInsights?.totalFarmers || stats?.farmers || 0).toLocaleString() }}</strong> farmers</span>
+      <span class="stat-item"><strong>{{ farmersOwnLandCount.toLocaleString() }}</strong> farmer households</span>
       <span class="stat-sep">·</span>
       <span class="stat-item">Maharashtra</span>
       <span class="stat-sep" v-if="zoomLabel">·</span>
@@ -431,7 +432,7 @@
                 <span class="mh-wall"></span>
               </span>
               <span class="legend-text">All Households
-                <span class="legend-count-pill">{{ filteredHouses.length.toLocaleString() }}</span>
+                <span class="legend-count-pill">{{ householdsOnMapCount.toLocaleString() }}</span>
               </span>
             </div>
             <div class="legend-note">Select a category from <strong>View By</strong> to colour the map</div>
@@ -448,7 +449,7 @@
                 <span class="issue-name">Total Households</span>
                 <span class="issue-count">{{
                   isLocationFiltered
-                    ? filteredHouses.length.toLocaleString()
+                    ? householdsOnMapCount.toLocaleString()
                     : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
                 }}</span>
               </div>
@@ -490,9 +491,9 @@
             <div class="issue-body">
               <div class="issue-top">
                 <span class="issue-name">Farmers (own land)</span>
-                <span class="issue-count">{{ stats?.farmers.toLocaleString() || 0 }}</span>
+                <span class="issue-count">{{ farmersOwnLandCount.toLocaleString() }}</span>
               </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: (filteredHouses.length ? Math.round((stats?.farmers||0)/filteredHouses.length*100) : 0) + '%', background: '#16a34a' }"></div></div>
+              <div class="issue-track"><div class="issue-fill" :style="{ width: farmersOwnLandPct + '%', background: '#16a34a' }"></div></div>
             </div>
           </div>
           <div class="pf-hint" style="margin-top:10px">Select a category from <strong>View By</strong> to explore detailed analytics.</div>
@@ -512,9 +513,10 @@
                 <span class="mh-wall"></span>
               </span>
               <span class="pf-label">{{ pf.label }}</span>
-              <span class="pf-count">{{ problemFilterStats[pf.key] }}</span>
+              <span class="pf-count">{{ formatProblemCount(problemFilterStats[pf.key]) }}</span>
             </label>
           </transition-group>
+          <div class="pf-hint" v-if="!hasDetailedHouseData">Loading detailed household counts for current view…</div>
           <div class="pf-summary" v-if="activeProblemFilters.length">
             <span><strong>{{ problemMatchCount }}</strong> flagged</span>
             <button class="pf-clear-btn" @click="activeProblemFilters = []">✕ Clear</button>
@@ -722,11 +724,8 @@
             <!-- Problem bar -->
             <div class="cp-top">
               <span class="cp-emoji">{{ selectedCluster.problems.find(p=>p.key===action.problemKey)?.emoji || '⚠' }}</span>
-              <div class="cp-info">
-                <span class="cp-label">{{ action.problemLabel }}</span>
-                <span class="cp-stat">{{ action.count }} of {{ action.total }} families ({{ action.affectedPct }}%)</span>
-              </div>
-              <span class="cp-pct-badge" :class="action.isMassIssue ? 'pct-red' : 'pct-amber'">{{ action.affectedPct }}%</span>
+              <span class="cp-label">{{ action.problemLabel }}</span>
+              <span class="cp-stat">{{ action.count }} of {{ action.total }} families ({{ action.affectedPct }}%)</span>
             </div>
             <div class="cp-bar-track">
               <div class="cp-bar-fill" :class="action.isMassIssue ? 'fill-red' : 'fill-amber'"
@@ -779,7 +778,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getHousesByViewport, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
+import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
 import * as Cesium from 'cesium'
 import Supercluster from 'supercluster'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
@@ -788,6 +787,7 @@ Cesium.Ion.defaultAccessToken = ''
 
 // ── Core state ────────────────────────────────────────────────────────────────
 const houses              = ref([])
+const mapPoints           = ref([])
 const selectedHouse       = ref(null)
 const hoveredHouse        = ref(null)
 const mouseX              = ref(0)
@@ -893,6 +893,10 @@ const pendingDistrict = ref('')
 const pendingTaluka   = ref('')
 const pendingVillage  = ref('')
 
+const districtOptions = ref([])
+const talukaOptions = ref([])
+const villageOptions = ref([])
+
 let viewer        = null
 let ptCollection  = null          // PointPrimitiveCollection for all 40k household dots
 let clusterBillboardCollection = null // BillboardCollection for clustered markers
@@ -925,6 +929,40 @@ const viewportTileCache = new Map()   // cacheKey → { ts, data }
 const VIEWPORT_CACHE_TTL = 5 * 60 * 1000   // 5 minutes
 const VIEWPORT_CACHE_MAX = 30
 
+function toMapPointHouse(point) {
+  const id = Number(point?.id)
+  const latitude = Number(point?.lat)
+  const longitude = Number(point?.lng)
+  return {
+    familyId: id,
+    latitude,
+    longitude,
+    headName: `Household ${id}`,
+    villageName: '',
+    talukaName: '',
+    districtName: '',
+    totalMembers: 0,
+    maleMembers: 0,
+    femaleMembers: 0,
+    workingMembers: 0,
+    illiterateMembers: 0,
+    divyangMembers: 0,
+    unemployedMembers: 0,
+    totalLand: '',
+    cultivatedLand: '',
+    ownLand: '',
+    waterSource: '',
+    kharif: '',
+    rabi: '',
+    latrine: '',
+    lighting: '',
+    rationCard: '',
+    occupation: '',
+    bplCategory: '',
+    annualIncome: '',
+  }
+}
+
 function handleTwinFullscreenChange() {
   isTwinFullscreen.value = !!document.fullscreenElement
   handleResize()
@@ -938,43 +976,22 @@ const THRESHOLD_MACRO     = 80000   // above: show macro grid clusters (district
 // so the cluster boundary stays visible even when the user zooms into individual houses.
 const THRESHOLD_CLUSTER_HIDE = THRESHOLD_DOTS  // rings hidden only at taluka+ zoom
 
-// ── Location filter options (derived from loaded data) ────────────────────────
-const districtOptions = computed(() => {
-  const seen = new Map()
-  houses.value.forEach(h => {
-    if (h.districtId != null && !seen.has(h.districtId)) {
-      seen.set(h.districtId, { id: h.districtId, name: h.districtName || 'District ' + h.districtId })
-    }
-  })
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
-})
-
-// Cascade options use PENDING refs so they update before Apply is clicked
-const talukaOptions = computed(() => {
-  if (!pendingDistrict.value) return []
-  const seen = new Map()
-  houses.value
-    .filter(h => String(h.districtId) === String(pendingDistrict.value))
-    .forEach(h => {
-      if (h.talukaId != null && !seen.has(h.talukaId)) {
-        seen.set(h.talukaId, { id: h.talukaId, name: h.talukaName || 'Taluka ' + h.talukaId })
-      }
+async function loadLocationOptions() {
+  try {
+    const res = await getLocationOptions({
+      district_id: pendingDistrict.value || undefined,
+      taluka_id: pendingTaluka.value || undefined,
     })
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
-})
-
-const villageOptions = computed(() => {
-  if (!pendingTaluka.value) return []
-  const seen = new Map()
-  houses.value
-    .filter(h => String(h.talukaId) === String(pendingTaluka.value))
-    .forEach(h => {
-      if (h.villageId != null && !seen.has(h.villageId)) {
-        seen.set(h.villageId, { id: h.villageId, name: h.villageName || 'Village ' + h.villageId })
-      }
-    })
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
-})
+    districtOptions.value = Array.isArray(res?.districts) ? res.districts : []
+    talukaOptions.value = Array.isArray(res?.talukas) ? res.talukas : []
+    villageOptions.value = Array.isArray(res?.villages) ? res.villages : []
+  } catch (error) {
+    console.warn('[location-options] failed:', error?.message || error)
+    districtOptions.value = []
+    talukaOptions.value = []
+    villageOptions.value = []
+  }
+}
 
 // Active filtered subset displayed on map
 const filteredHouses = computed(() => {
@@ -985,43 +1002,27 @@ const filteredHouses = computed(() => {
   return result
 })
 
+const detailedHouseById = computed(() => {
+  const byId = new Map()
+  for (const house of filteredHouses.value) {
+    const id = Number(house?.familyId)
+    if (Number.isFinite(id)) byId.set(id, house)
+  }
+  return byId
+})
+
+const householdsOnMapCount = computed(() => {
+  // mapPoints represents the full filtered household set from DB (not viewport-limited)
+  // while filteredHouses may be capped by viewport fetch limit.
+  if (mapPoints.value.length > 0) return mapPoints.value.length
+  return filteredHouses.value.length
+})
+
 // ── Filter handlers ───────────────────────────────────────────────────────────
-// Reset child pending selections when a parent changes
-function onDistrictChange() {
-  pendingTaluka.value  = ''
-  pendingVillage.value = ''
-}
-function onTalukaChange() {
-  pendingVillage.value = ''
-}
-
-// Apply: copy pending → applied; force a fresh load with the new filters.
-function applyFilters() {
-  _forceNextFly = true
-  filterDistrict.value = pendingDistrict.value
-  filterTaluka.value   = pendingTaluka.value
-  filterVillage.value  = pendingVillage.value
-}
-
-function resetFilters() {
-  pendingDistrict.value = filterDistrict.value = ''
-  pendingTaluka.value   = filterTaluka.value   = ''
-  pendingVillage.value  = filterVillage.value  = ''
-}
-
-// Check if pending state differs from applied state
-const filtersDirty = computed(() =>
-  pendingDistrict.value !== filterDistrict.value ||
-  pendingTaluka.value   !== filterTaluka.value   ||
-  pendingVillage.value  !== filterVillage.value
-)
-
-// ── Custom dropdown state ─────────────────────────────────────────────────────
 const openDropdown = ref(null)
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
-  // Auto-collapse the detail panel when View By dropdown opens to prevent overlap
   if (name === 'colorMode' && openDropdown.value === 'colorMode') {
     selectedHouse.value = null
   }
@@ -1031,24 +1032,63 @@ function closeDropdowns() {
   openDropdown.value = null
 }
 
-// Selection handlers — each closes the dropdown and cascades resets downward
-function selectDistrict(id) {
-  pendingDistrict.value = id
-  pendingTaluka.value   = ''
-  pendingVillage.value  = ''
-  closeDropdowns()
+// Reset child pending selections when a parent changes
+function onDistrictChange() {
+  pendingTaluka.value  = ''
+  pendingVillage.value = ''
+}
+function onTalukaChange() {
+  pendingVillage.value = ''
 }
 
-function selectTaluka(id) {
-  pendingTaluka.value  = id
-  pendingVillage.value = ''
-  closeDropdowns()
+async function selectDistrict(id) {
+  pendingDistrict.value = id
+  onDistrictChange()
+  await loadLocationOptions()
+}
+
+async function selectTaluka(id) {
+  pendingTaluka.value = id
+  onTalukaChange()
+  await loadLocationOptions()
 }
 
 function selectVillage(id) {
   pendingVillage.value = id
   closeDropdowns()
 }
+
+// Apply: copy pending → applied, reload filtered map points, then focus camera.
+async function applyFilters() {
+  _forceNextFly = true
+  filterDistrict.value = pendingDistrict.value
+  filterTaluka.value   = pendingTaluka.value
+  filterVillage.value  = pendingVillage.value
+  await loadInitialDataWithCleanup()
+
+  // Fit camera to filtered map points so location-based Apply is always visible.
+  if (viewer && mapPoints.value.length > 0) {
+    setTimeout(() => flyToPoints(mapPoints.value.map(toMapPointHouse)), 120)
+  }
+}
+
+async function resetFilters() {
+  pendingDistrict.value = ''
+  pendingTaluka.value = ''
+  pendingVillage.value = ''
+  filterDistrict.value = ''
+  filterTaluka.value = ''
+  filterVillage.value = ''
+  _forceNextFly = true
+  await loadLocationOptions()
+  await loadInitialDataWithCleanup()
+}
+
+const filtersDirty = computed(() =>
+  pendingDistrict.value !== filterDistrict.value ||
+  pendingTaluka.value !== filterTaluka.value ||
+  pendingVillage.value !== filterVillage.value
+)
 
 const COLOR_MODE_LABELS = {
   irrigation:          'Irrigation',
@@ -1081,7 +1121,7 @@ const DISABLED_COLOR_MODES = new Set(['sanitation', 'lighting'])
 
 function isColorModeEnabled(mode) {
   if (!mode) return false
-  return !DISABLED_COLOR_MODES.has(String(mode))
+  return !DISABLED_COLOR_MODES.has(String(mode)) && String(mode) !== 'ration'
 }
 
 function selectColorMode(mode) {
@@ -1254,6 +1294,13 @@ const problemFilterStats = computed(() => {
   }
   return counts
 })
+
+const hasDetailedHouseData = computed(() => filteredHouses.value.length > 0)
+
+function formatProblemCount(value) {
+  if (!hasDetailedHouseData.value) return '—'
+  return Number.isFinite(Number(value)) ? Number(value) : 0
+}
 
 // Total households matching ALL active problem filters simultaneously
 const problemMatchCount = computed(() => {
@@ -1432,15 +1479,28 @@ function analyzeCluster(houseList) {
 // (forcefly flag), otherwise only fly if houses are not already in view.
 let _forceNextFly = false   // set by applyFilters, consumed once by the watcher
 
-watch(filteredHouses, (newHouses, oldHouses) => {
+watch(filteredHouses, (newHouses) => {
   if (!viewer) return
+  // Do not clear/rebuild while viewport data is still resolving.
+  // Otherwise the scene blanks out temporarily and looks like houses vanish.
+  if (loadingLiveData.value || viewportLoading.value) {
+    viewer.scene.requestRender()
+    return
+  }
+
   buildEntities()
   if (!newHouses.length) return
+
+  // Keep the current zoom while data is still resolving so the user can
+  // see the empty-state hint in the same camera context.
+  if (showEmptyViewportHint.value) return
+
   const force = _forceNextFly
   _forceNextFly = false
-  const isInitialLoad = !oldHouses || oldHouses.length === 0
-  // Always fly on initial load; also fly when filter forces it or data is off-screen
-  if (isInitialLoad || force || !housesInView(newHouses)) {
+
+  // Do not auto-fly on initial load. Fly only when explicitly forced
+  // (Apply filter) or when refreshed data is outside the current viewport.
+  if (force || !housesInView(newHouses)) {
     setTimeout(() => flyToPoints(newHouses), 150)
   }
 }, { flush: 'post' })
@@ -1507,6 +1567,65 @@ const stats = computed(() => {
     noIrrig:  list.filter(h => isRainFed(h)).length,
     bpl:      list.filter(h => (h.rationCard || '').toLowerCase().includes('bpl') || (h.rationCard || '').toLowerCase().includes('antyodaya')).length,
   }
+})
+
+const farmersOwnLandCount = computed(() => {
+  if (!isLocationFiltered.value && agricultureInsights.value?.totalFarmers != null) {
+    return Number(agricultureInsights.value.totalFarmers) || 0
+  }
+  if (stats.value?.farmers != null) return stats.value.farmers
+  return 0
+})
+
+const farmersOwnLandPct = computed(() => {
+  const denom = isLocationFiltered.value
+    ? householdsOnMapCount.value
+    : Number(agricultureInsights.value?.totalHouseholds || householdsOnMapCount.value || 0)
+  if (!denom) return 0
+  return Math.max(0, Math.min(100, Math.round((farmersOwnLandCount.value / denom) * 100)))
+})
+
+function displayLandValue(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '—'
+  const n = Number(raw)
+  if (Number.isFinite(n) && n <= 0) return '—'
+  return raw
+}
+
+function displayCropValue(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '—'
+  const normalized = raw.toLowerCase()
+  if (['no', 'none', 'n/a', 'na', '-', '--'].includes(normalized)) return '—'
+  return raw
+}
+
+function hasRecordedCrop(value) {
+  return displayCropValue(value) !== '—'
+}
+
+const selectedHouseFarmingNote = computed(() => {
+  const house = selectedHouse.value
+  if (!house) return ''
+
+  const hasLandData = displayLandValue(house.totalLand) !== '—' || displayLandValue(house.cultivatedLand) !== '—'
+  const hasCropData = displayCropValue(house.kharif) !== '—' || displayCropValue(house.rabi) !== '—'
+  const ownLand = String(house.ownLand || '').toLowerCase()
+  if (ownLand && ownLand !== 'yes' && !hasLandData && !hasCropData) {
+    return 'Household has no own agricultural land.'
+  }
+
+  // Some records have cultivation values even when OWN_AGRICULTURE_LAND is "No"
+  // (leased/shared land). Prefer showing available data over a hard "no land" note.
+  if (ownLand && ownLand !== 'yes' && (hasLandData || hasCropData)) {
+    return 'Household may be cultivating non-owned (leased/shared) land.'
+  }
+
+  if (!hasLandData && !hasCropData) {
+    return 'Farming fields are not available in survey data for this household.'
+  }
+  return ''
 })
 
 function isRainFed(house) {
@@ -1646,7 +1765,7 @@ const currentLegend = computed(() => {
     { color: '#4ade80', label: '2.5–5 acres (Medium)' },
     { color: '#f59e0b', label: '1–2.5 acres (Small)' },
     { color: '#ef4444', label: '≤ 1 acre (Marginal)' },
-    { color: '#94a3b8', label: 'No land' },
+    { color: '#94a3b8', label: 'No land / data unavailable' },
   ]
   if (colorMode.value === 'population_density') return [
     { color: '#22c55e', label: '1–2 members (Small)' },
@@ -1695,8 +1814,8 @@ const pieCharts = computed(() => {
   const occupiedOther = Math.max(total - unemployed - laborers, 0)
 
   list.forEach(h => {
-    const k = (h.kharif || '').toLowerCase() === 'yes'
-    const r = (h.rabi   || '').toLowerCase() === 'yes'
+    const k = hasRecordedCrop(h.kharif)
+    const r = hasRecordedCrop(h.rabi)
     if (k && r) both++; else if (k) kOnly++; else if (r) rOnly++; else none++
     const land = parseFloat(h.totalLand) || 0
     if (land <= 1) marginal++; else if (land <= 2.5) small++; else medLarge++
@@ -1872,15 +1991,18 @@ function getConditionColor(house) {
     return l === 'electricity' ? '#16a34a' : l === 'kerosene' ? '#f59e0b' : '#ef4444'
   }
   if (colorMode.value === 'crops') {
-    const k = (house.kharif || '').toLowerCase() === 'yes'
-    const r = (house.rabi   || '').toLowerCase() === 'yes'
+    const k = hasRecordedCrop(house.kharif)
+    const r = hasRecordedCrop(house.rabi)
     if (k && r) return '#16a34a'
     if (k)      return '#f59e0b'
     if (r)      return '#38bdf8'
     return '#94a3b8'
   }
   if (colorMode.value === 'land') {
-    const a = parseFloat(house.totalLand) || 0
+    const rawLand = String(house.totalLand ?? '').trim()
+    const a = parseFloat(rawLand) || 0
+    const own = String(house.ownLand || '').toLowerCase().trim()
+    if (!rawLand && !own) return '#94a3b8'
     if (a === 0)  return '#94a3b8'
     if (a <= 1)   return '#ef4444'
     if (a <= 2.5) return '#f59e0b'
@@ -1940,7 +2062,10 @@ function getConditionLabel(house) {
     return 'No Crop Data'
   }
   if (colorMode.value === 'land') {
-    const a = parseFloat(house.totalLand) || 0
+    const rawLand = String(house.totalLand ?? '').trim()
+    const own = String(house.ownLand || '').toLowerCase().trim()
+    if (!rawLand && !own) return 'Land Data Unavailable'
+    const a = parseFloat(rawLand) || 0
     if (a === 0)  return 'Landless'
     if (a <= 1)   return 'Marginal Farmer'
     if (a <= 2.5) return 'Small Farmer'
@@ -2188,16 +2313,16 @@ function ensureClusterCollections() {
 }
 
 function buildSuperclusterIndexFromHouses() {
-  const source = filteredHouses.value
+  const source = mapPoints.value
   const features = source
-    .filter((h) => Number.isFinite(Number(h.longitude)) && Number.isFinite(Number(h.latitude)))
+    .filter((h) => Number.isFinite(Number(h.lng)) && Number.isFinite(Number(h.lat)))
     .map((h) => ({
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: [Number(h.longitude), Number(h.latitude)],
+        coordinates: [Number(h.lng), Number(h.lat)],
       },
-      properties: { house: h },
+      properties: { id: Number(h.id) },
     }))
 
   clusterIndex = new Supercluster({
@@ -2370,6 +2495,22 @@ function addHouseModelEntity(house, lng, lat) {
   return [baseEnt.id, roofEnt.id]
 }
 
+function resolveHouseForRendering(pointId, lng, lat) {
+  const id = Number(pointId)
+  const detailed = detailedHouseById.value.get(id)
+  if (detailed) {
+    const latNum = Number(detailed.latitude)
+    const lngNum = Number(detailed.longitude)
+    return {
+      ...detailed,
+      latitude: Number.isFinite(latNum) ? latNum : Number(lat),
+      longitude: Number.isFinite(lngNum) ? lngNum : Number(lng),
+      familyId: Number.isFinite(Number(detailed.familyId)) ? Number(detailed.familyId) : id,
+    }
+  }
+  return toMapPointHouse({ id, lng, lat })
+}
+
 function renderClustersForCurrentView() {
   if (!viewer || viewer.isDestroyed()) return
   ensureClusterCollections()
@@ -2421,8 +2562,8 @@ function renderClustersForCurrentView() {
       return
     }
 
-    const house = node.properties?.house
-    if (!house) return
+    const house = resolveHouseForRendering(node.properties?.id, lng, lat)
+    if (!Number.isFinite(house.familyId)) return
     addHouseModelEntity(house, lng, lat)
   })
 
@@ -2431,8 +2572,11 @@ function renderClustersForCurrentView() {
 
 function queueClusterRender(delay = 120) {
   clearTimeout(clusterRenderTimer)
-  clusterRenderTimer = setTimeout(() => {
+  clusterRenderTimer = setTimeout(async () => {
     clusterRenderTimer = null
+    // Load viewport data (detailed household records) BEFORE rendering
+    // This ensures detailedHouseById has the totalLand field for color rendering
+    await loadViewportData()
     renderClustersForCurrentView()
   }, delay)
 }
@@ -2533,9 +2677,9 @@ function clearSpiderfy() {
 // Returns the group of houses that share the same GPS coordinate as `house`.
 // Uses a 0.0001° tolerance (~11 m) to catch floating-point duplicates.
 function getSamePositionGroup(house) {
-  return filteredHouses.value.filter(h =>
-    Math.abs(h.latitude  - house.latitude)  < 0.0001 &&
-    Math.abs(h.longitude - house.longitude) < 0.0001
+  return mapPoints.value.filter(h =>
+    Math.abs(Number(h.lat) - Number(house.latitude))  < 0.0001 &&
+    Math.abs(Number(h.lng) - Number(house.longitude)) < 0.0001
   )
 }
 
@@ -2552,11 +2696,42 @@ function hasOverlappingCoordinates(houseGroup, precision = 6) {
   return false
 }
 
+async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
+  const preserveSpiderfy = !!options.preserveSpiderfy
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId)) return
+
+  selectedCluster.value = null
+  if (!preserveSpiderfy) {
+    clearSpiderfy()
+  }
+
+  try {
+    const detail = await getHouseById(numericId)
+    if (detail) {
+      selectedHouse.value = detail
+      return
+    }
+  } catch (error) {
+    console.warn('[house-detail] fetch failed:', error?.message || error)
+  }
+
+  if (fallbackHouse) {
+    selectedHouse.value = fallbackHouse
+  }
+}
+
 function spiderfyCluster(clusterOrPoints, centerCartesian) {
   if (!viewer || viewer.isDestroyed()) return false
 
   const houses = Array.isArray(clusterOrPoints)
-    ? clusterOrPoints.map((item) => item?.properties?.house || item).filter(Boolean)
+    ? clusterOrPoints.map((item) => {
+        const pointId = Number(item?.properties?.id ?? item?.id ?? item?.properties?.house?.familyId)
+        const lng = Number(item?.geometry?.coordinates?.[0] ?? item?.lng ?? item?.longitude)
+        const lat = Number(item?.geometry?.coordinates?.[1] ?? item?.lat ?? item?.latitude)
+        if (!Number.isFinite(pointId) || !Number.isFinite(lng) || !Number.isFinite(lat)) return null
+        return resolveHouseForRendering(pointId, lng, lat)
+      }).filter(Boolean)
     : []
   if (houses.length < 2) return false
 
@@ -3136,6 +3311,10 @@ watch(colorMode, (mode) => {
 // Every new houses payload (initial load or viewport refresh) redraws primitives.
 watch(houses, (newValue) => {
   if (!viewer) return
+  if (loadingLiveData.value || viewportLoading.value) {
+    viewer.scene.requestRender()
+    return
+  }
   // Keep currently rendered primitives when viewport payload is empty.
   if (!Array.isArray(newValue) || newValue.length === 0) {
     viewer.scene.requestRender()
@@ -3226,60 +3405,53 @@ async function loadInitialData() {
   let attempt = 0
   while (attempt <= 5) {
     try {
-      const PAGE_SIZE = 5000
-      let page = 1
-      let total = 0
-      const allRows = []
+      const res = await getHousesMapPoints({
+        district_id: filterDistrict.value || undefined,
+        taluka_id: filterTaluka.value || undefined,
+        village_id: filterVillage.value || undefined,
+      })
 
-      console.log('[initial] fetching all pages attempt', attempt + 1)
-      while (page <= 1000) {
-        const params = { limit: PAGE_SIZE, page }
-        if (filterDistrict.value) params.district_id = filterDistrict.value
-        if (filterTaluka.value)   params.taluka_id   = filterTaluka.value
-        if (filterVillage.value)  params.village_id  = filterVillage.value
+      const points = Array.isArray(res) ? res : []
+      mapPoints.value = points
+        .map((point) => ({
+          id: Number(point?.id),
+          lat: Number(point?.lat),
+          lng: Number(point?.lng),
+        }))
+        .filter((point) => Number.isFinite(point.id) && Number.isFinite(point.lat) && Number.isFinite(point.lng))
 
-        const res = await getHouses(params)
-        const chunk = Array.isArray(res?.data) ? res.data : []
-        if (page === 1) total = Number(res?.total || chunk.length || 0)
-        allRows.push(...chunk)
+      console.log('[initial] map points loaded — records:', mapPoints.value.length)
 
-        if (!chunk.length) break
-        if (total > 0 && allRows.length >= total) break
-        page += 1
-      }
-
-      console.log('[initial] full fetch done — records:', allRows.length, 'total:', total)
-
-      houses.value = allRows
-      // Snapshot the current bbox so the debounce knows where we started
+      // Snapshot the current bbox so camera-change debounce starts from current view.
       lastLoadedBbox    = getCurrentViewportBbox()
       isInitialLoadDone = true
-      console.log('[initial] done — isInitialLoadDone=true')
-      return   // success — finally clears loading
+
+      buildSuperclusterIndexFromHouses()
+      renderClustersForCurrentView()
+      return
 
     } catch (err) {
       attempt++
-      console.error('[initial] fetch failed attempt', attempt, err?.message || err)
+      console.error('[initial] map points fetch failed attempt', attempt, err?.message || err)
       if (attempt > 5) break
-      await new Promise(r => setTimeout(r, 2000 * attempt))  // back-off: 2s, 4s, 6s…
+      await new Promise(r => setTimeout(r, 1200 * attempt))
     }
   }
-  // All retries exhausted — clear loading so the error UI is shown
-  console.error('[initial] all retries failed')
-  isInitialLoadDone = true   // allow viewport loading to take over (or show empty state)
 
-  // finally block below always runs
-} // note: no explicit finally needed — the while loop handles retries and the
-  // function always exits through the return or the break; loading is cleared below
+  console.error('[initial] all retries failed')
+  isInitialLoadDone = true
+}
 
 // Wrapped version so loading is always cleared via finally
 async function loadInitialDataWithCleanup() {
   try {
     await loadInitialData()
+    // Prime detailed household rows for counters/problem filters on first view.
+    await loadViewportData()
   } finally {
     loadingLiveData.value = false
     viewportLoading.value = false
-    console.log('[initial] loading cleared — houses:', houses.value.length)
+    console.log('[initial] loading cleared — mapPoints:', mapPoints.value.length)
   }
 }
 
@@ -3438,7 +3610,7 @@ onMounted(async () => {
     }
 
     // Click → select house | drill-down cluster | open problem panel | clear
-    viewer.screenSpaceEventHandler.setInputAction((e) => {
+    viewer.screenSpaceEventHandler.setInputAction(async (e) => {
       const picked = viewer.scene.pick(e.position)
 
       // ── Cluster billboard click → expansion zoom fly-to ───────────────────
@@ -3450,10 +3622,9 @@ onMounted(async () => {
 
           if (expansionZoom >= maxClusterZoom) {
             const leaves = clusterIndex?.getLeaves?.(Number(payload.clusterId), Infinity) || []
-            const houses = leaves.map((leaf) => leaf?.properties?.house).filter(Boolean)
-            if (houses.length >= 2) {
+            if (leaves.length >= 2) {
               const centerCartesian = Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), 0)
-              spiderfyCluster(houses, centerCartesian)
+              spiderfyCluster(leaves, centerCartesian)
               return
             }
           }
@@ -3500,10 +3671,9 @@ onMounted(async () => {
             const wasSpiderfied = applySpiderfy(house)
             if (wasSpiderfied && getSamePositionGroup(house).length >= 2) return
           }
-          clearSpiderfy()
-          selectedHouse.value   = house
+          await selectHouseDetailsById(house.familyId, house, { preserveSpiderfy: isAlreadySpiderfied })
           selectedCluster.value = null
-          nudgeCameraForPanel(house)
+          nudgeCameraForPanel(selectedHouse.value || house)
         }
         return
       }
@@ -3527,10 +3697,9 @@ onMounted(async () => {
             const wasSpiderfied = applySpiderfy(house)
             if (wasSpiderfied && getSamePositionGroup(house).length >= 2) return
           }
-          clearSpiderfy()
-          selectedHouse.value   = house
+          await selectHouseDetailsById(house.familyId, house, { preserveSpiderfy: isAlreadySpiderfied })
           selectedCluster.value = null
-          nudgeCameraForPanel(house)
+          nudgeCameraForPanel(selectedHouse.value || house)
           return
         }
 
@@ -3607,6 +3776,7 @@ onMounted(async () => {
   // Load insights in parallel (small, fast); initial house data fetched separately
   getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
   getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
+  await loadLocationOptions()
   loadInitialDataWithCleanup()
 
   // Safety net: force-clear loading if still stuck after 30 s
@@ -4544,6 +4714,17 @@ onUnmounted(() => {
 }
 .dp-chip-kharif { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .dp-chip-rabi   { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.dp-empty-note {
+  margin: 0.45rem 1rem 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.69rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
 
 /* ── Full-width field rows ── */
 .dp-field-row {
