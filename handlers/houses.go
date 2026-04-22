@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -88,13 +89,34 @@ type MemberRecord struct {
 type HouseHandler struct {
 	DB *sql.DB
 	CC *ColumnChecker
+
+	memberColCacheMu sync.RWMutex
+	memberColCache   map[string]bool
 }
 
 func (h *HouseHandler) memberColExists(col string) bool {
+	h.memberColCacheMu.RLock()
+	if h.memberColCache != nil {
+		if v, ok := h.memberColCache[col]; ok {
+			h.memberColCacheMu.RUnlock()
+			return v
+		}
+	}
+	h.memberColCacheMu.RUnlock()
+
 	var n int
 	_ = h.DB.QueryRow(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='FAMILY_MEMBER' AND COLUMN_NAME=?`, col).Scan(&n)
-	return n > 0
+	exists := n > 0
+
+	h.memberColCacheMu.Lock()
+	if h.memberColCache == nil {
+		h.memberColCache = make(map[string]bool)
+	}
+	h.memberColCache[col] = exists
+	h.memberColCacheMu.Unlock()
+
+	return exists
 }
 
 // buildPopStatsSQL returns a SQL subquery that aggregates per-family member stats.

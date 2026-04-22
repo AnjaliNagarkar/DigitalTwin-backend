@@ -902,6 +902,7 @@ let ptCollection  = null          // PointPrimitiveCollection for all 40k househ
 let clusterBillboardCollection = null // BillboardCollection for clustered markers
 let clusterIndex = null            // Supercluster index
 let clusterRenderTimer = null
+let clusterRenderSeq = 0
 const clusterImageCache = new Map()
 let buildSeq      = 0             // incremented each buildEntities() call; stale async runs check this
 let prevShowBuildings = false     // tracks last known building-zoom state for lazy entity creation
@@ -1363,16 +1364,21 @@ function drillIntoCluster(cluster) {
     viewer.entities.removeById(clusterBoundaryId)
     clusterBoundaryId = null
   }
-  // Fly to the cluster location at village-level altitude, preserving pitch
+  const currentHeight = Number(viewer.camera.positionCartographic?.height ?? 0)
+  const calculatedAltitude = currentHeight > 0 ? currentHeight * 0.5 : 1200
+  const targetH = getStrictZoomInHeight(calculatedAltitude)
+
+  suspendAutoFly(1500)
+  viewer.camera.cancelFlight()
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(cluster.lng, cluster.lat, 1800),
+    destination: Cesium.Cartesian3.fromDegrees(cluster.lng, cluster.lat, targetH),
     orientation: {
       heading: viewer.camera.heading,
       pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
       roll: 0,
     },
-    duration: 1.5,
-    easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+    duration: 0.9,
+    easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
   })
 }
 
@@ -1506,9 +1512,9 @@ watch(filteredHouses, (newHouses) => {
   // Prevent click-driven flyTo and watcher auto-fly from fighting each other.
   if (Date.now() < _suspendAutoFlyUntil) return
 
-  // Do not auto-fly on initial load. Fly only when explicitly forced
-  // (Apply filter) or when refreshed data is outside the current viewport.
-  if (force || !housesInView(newHouses)) {
+  // Keep camera stable during normal data refresh/cluster interactions.
+  // Only explicit Apply-filter actions are allowed to move the camera.
+  if (force) {
     setTimeout(() => flyToPoints(newHouses), 150)
   }
 }, { flush: 'post' })
@@ -2615,9 +2621,16 @@ function queueClusterRender(delay = 120) {
   clearTimeout(clusterRenderTimer)
   clusterRenderTimer = setTimeout(async () => {
     clusterRenderTimer = null
-    // Load viewport data (detailed household records) BEFORE rendering
-    // This ensures detailedHouseById has the totalLand field for color rendering
+    const seq = ++clusterRenderSeq
+
+    // Render immediately so households appear quickly after cluster click/zoom.
+    renderClustersForCurrentView()
+
+    // Hydrate detailed household fields in the background and repaint when done.
+    // Skip spawning another fetch while one is already in-flight.
+    if (vpInFlight > 0) return
     await loadViewportData()
+    if (seq !== clusterRenderSeq) return
     renderClustersForCurrentView()
   }, delay)
 }
@@ -2747,10 +2760,17 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
     clearSpiderfy()
   }
 
+  // Render immediately from already-loaded map data so the panel does not
+  // sit empty while the full detail payload is still loading.
+  const cached = detailedHouseById.value.get(numericId)
+  const immediateHouse = mergeHouseDetailWithFallback(cached || fallbackHouse, fallbackHouse)
+  if (immediateHouse) {
+    selectedHouse.value = immediateHouse
+  }
+
   try {
     const detail = await getHouseById(numericId)
     if (detail) {
-      const cached = detailedHouseById.value.get(numericId)
       selectedHouse.value = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
       return
     }
@@ -2758,9 +2778,11 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
     console.warn('[house-detail] fetch failed:', error?.message || error)
   }
 
-  const cached = detailedHouseById.value.get(numericId)
-  if (cached || fallbackHouse) {
-    selectedHouse.value = mergeHouseDetailWithFallback(cached, fallbackHouse)
+  if (!immediateHouse) {
+    const finalFallback = cached || fallbackHouse
+    if (finalFallback) {
+      selectedHouse.value = mergeHouseDetailWithFallback(finalFallback, fallbackHouse)
+    }
   }
 }
 
@@ -2769,7 +2791,7 @@ function spiderfyCluster(clusterOrPoints, centerCartesian) {
 
   const houses = Array.isArray(clusterOrPoints)
     ? clusterOrPoints.map((item) => {
-        const pointId = Number(item?.properties?.id ?? item?.id ?? item?.properties?.house?.familyId)
+        const pointId = Number(item?.properties?.id ?? item?.id ?? item?.familyId ?? item?.properties?.house?.familyId)
         const lng = Number(item?.geometry?.coordinates?.[0] ?? item?.lng ?? item?.longitude)
         const lat = Number(item?.geometry?.coordinates?.[1] ?? item?.lat ?? item?.latitude)
         if (!Number.isFinite(pointId) || !Number.isFinite(lng) || !Number.isFinite(lat)) return null
@@ -3074,10 +3096,27 @@ function addClusterEntities(problemHouses) {
 // browser-yield between chunks.  3D building entities are NOT created here —
 // they are created lazily by buildBuildingEntitiesForViewport() only when the
 // user zooms in below THRESHOLD_BUILDINGS, and only for the visible subset.
-async function buildEntities() {
+async function buildEntities(preserveSpiderfy = false) {
   if (!viewer) return
 
   const seq = ++buildSeq
+  const spiderfySnapshot = preserveSpiderfy
+    ? [...spiderfyFamilyIds].map((familyId) => {
+        const numericFamilyId = Number(familyId)
+        const detailed = detailedHouseById.value.get(numericFamilyId)
+        const point = mapPoints.value.find((item) => Number(item?.id) === numericFamilyId)
+        const house = detailed || (point ? toMapPointHouse(point) : null)
+        if (!house) return null
+        const lat = Number(house.latitude)
+        const lng = Number(house.longitude)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+        return {
+          familyId: numericFamilyId,
+          latitude: lat,
+          longitude: lng,
+        }
+      }).filter(Boolean)
+    : []
 
   spiderfyEntityIds = []
   spiderfyOriginals = []
@@ -3099,6 +3138,10 @@ async function buildEntities() {
   buildSuperclusterIndexFromHouses()
   if (seq !== buildSeq) return
   renderClustersForCurrentView()
+
+  if (preserveSpiderfy && spiderfySnapshot.length >= 2) {
+    spiderfyCluster(spiderfySnapshot, null)
+  }
 }
 
 // ── Lazy 3D buildings — viewport-only, created on zoom-in ────────────────────
@@ -3368,7 +3411,7 @@ watch(houses, (newValue) => {
 }, { deep: false, flush: 'post' })
 
 watch(selectedHouse, (house) => {
-  if (viewer) buildEntities()
+  if (viewer) buildEntities(!!(house && spiderfyFamilyIds.has(house.familyId)))
   if (house) loadAdvisoryForHouse(house)
 })
 watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
@@ -3489,11 +3532,13 @@ async function loadInitialData() {
 async function loadInitialDataWithCleanup() {
   try {
     await loadInitialData()
-    // Prime detailed household rows for counters/problem filters on first view.
-    await loadViewportData()
+    // Prime detailed household rows for counters/problem filters on first view,
+    // but do not block initial map rendering on this network call.
+    loadViewportData().catch((err) => {
+      console.warn('[initial] viewport prime failed:', err?.message || err)
+    })
   } finally {
     loadingLiveData.value = false
-    viewportLoading.value = false
     console.log('[initial] loading cleared — mapPoints:', mapPoints.value.length)
   }
 }
@@ -3616,6 +3661,7 @@ onMounted(async () => {
     viewer.scene.globe.depthTestAgainstTerrain = false
 
     // Disable Cesium's built-in double-click entity tracking/zoom behavior.
+    viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)
     viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
     // Allow closer inspection without camera bounce.
@@ -3655,6 +3701,22 @@ onMounted(async () => {
       return null
     }
 
+    function getStrictZoomInHeight(calculatedAltitude) {
+      const currentHeight = Number(viewer?.camera?.positionCartographic?.height ?? 0)
+      const defaultZoomIn = currentHeight > 0 ? currentHeight * 0.5 : 1500
+
+      let safeTarget = Number(calculatedAltitude)
+      if (!Number.isFinite(safeTarget) || safeTarget <= 0) safeTarget = defaultZoomIn
+
+      // Force zoom-in behavior only: target must stay below current height.
+      safeTarget = Math.min(safeTarget, defaultZoomIn)
+      if (currentHeight > 0 && safeTarget >= currentHeight) {
+        safeTarget = Math.max(20, currentHeight * 0.9)
+      }
+
+      return safeTarget
+    }
+
     // Click → select house | drill-down cluster | open problem panel | clear
     viewer.screenSpaceEventHandler.setInputAction(async (e) => {
       // Never allow implicit entity tracking to take over custom click camera logic.
@@ -3679,7 +3741,8 @@ onMounted(async () => {
             }
           }
 
-          const targetH = getHeightFromClusterZoom(expansionZoom)
+          const calculatedAltitude = getHeightFromClusterZoom(expansionZoom)
+          const targetH = getStrictZoomInHeight(calculatedAltitude)
           suspendAutoFly(1700)
           viewer.camera.cancelFlight()
           viewer.camera.flyTo({
@@ -3692,7 +3755,7 @@ onMounted(async () => {
             duration: 0.9,
             easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
           })
-          queueClusterRender(140)
+          queueClusterRender(35)
           return
         }
       }
@@ -3701,7 +3764,9 @@ onMounted(async () => {
       if (Cesium.defined(picked) && picked.primitive instanceof Cesium.PointPrimitive) {
         const payload = picked.id
         if (payload && typeof payload === 'object' && payload.kind === 'cluster') {
-          const nextH = Math.max((viewer.camera.positionCartographic?.height ?? 120000) * 0.45, 700)
+          const expansionZoom = Number(payload.expansionZoom ?? clusterIndex?.getClusterExpansionZoom?.(Number(payload.clusterId)) ?? 12)
+          const calculatedAltitude = getHeightFromClusterZoom(expansionZoom)
+          const nextH = getStrictZoomInHeight(calculatedAltitude)
           suspendAutoFly(1500)
           viewer.camera.cancelFlight()
           viewer.camera.flyTo({
@@ -3714,7 +3779,7 @@ onMounted(async () => {
             duration: 0.7,
             easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
           })
-          queueClusterRender(120)
+          queueClusterRender(30)
           return
         }
 
@@ -3727,7 +3792,6 @@ onMounted(async () => {
           }
           await selectHouseDetailsById(house.familyId, house, { preserveSpiderfy: isAlreadySpiderfied })
           selectedCluster.value = null
-          nudgeCameraForPanel(selectedHouse.value || house)
         }
         return
       }
@@ -3739,7 +3803,22 @@ onMounted(async () => {
         const zCluster = zoomClusterDataMap.get(entityId)
         if (zCluster) {
           clearSpiderfy()
-          flyToPoints(zCluster.houses)
+          const targetH = getStrictZoomInHeight((viewer.camera.positionCartographic?.height ?? 120000) * 0.6)
+          if (Number.isFinite(Number(zCluster.lng)) && Number.isFinite(Number(zCluster.lat))) {
+            suspendAutoFly(1500)
+            viewer.camera.cancelFlight()
+            viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(Number(zCluster.lng), Number(zCluster.lat), targetH),
+              orientation: {
+                heading: viewer.camera.heading,
+                pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
+                roll: 0,
+              },
+              duration: 0.8,
+              easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
+            })
+            queueClusterRender(30)
+          }
           return
         }
 
@@ -3753,7 +3832,6 @@ onMounted(async () => {
           }
           await selectHouseDetailsById(house.familyId, house, { preserveSpiderfy: isAlreadySpiderfied })
           selectedCluster.value = null
-          nudgeCameraForPanel(selectedHouse.value || house)
           return
         }
 
@@ -3784,10 +3862,15 @@ onMounted(async () => {
               const north = Math.max(...lats) + 0.0005
               const west  = Math.min(...lngs) - 0.0005
               const east  = Math.max(...lngs) + 0.0005
+              const spanDeg = Math.max(north - south, east - west, 0.0005)
+              const calculatedAltitude = Math.max(spanDeg * 111000 * 1.8, 120)
+              const targetH = getStrictZoomInHeight(calculatedAltitude)
+              const centerLat = (south + north) / 2
+              const centerLng = (west + east) / 2
               suspendAutoFly(1900)
               viewer.camera.cancelFlight()
               viewer.camera.flyTo({
-                destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
+                destination: Cesium.Cartesian3.fromDegrees(centerLng, centerLat, targetH),
                 orientation: {
                   heading: viewer.camera.heading,
                   pitch: Math.max(Math.min(currentMapPitch, MAX_PITCH_RAD), MIN_PITCH_RAD),
