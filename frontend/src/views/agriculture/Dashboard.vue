@@ -136,43 +136,6 @@
 
       <section class="intelligence-layout">
         <div class="insights-grid intelligence-row-1">
-          <!-- Agriculture Panel -->
-          <div class="card insight-panel agriculture-panel">
-            <div class="panel-header">
-              <h2 class="card-title">Agriculture Intelligence</h2>
-            </div>
-            <div class="agri-stats">
-              <div class="agri-stat">
-                <div class="agri-stat-num" style="color: var(--amber)">{{ agriculture.totalFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Total Farmers</div>
-              </div>
-              <div class="agri-stat">
-                <div class="agri-stat-num" style="color: var(--red)">{{ agriculture.farmersWithoutIrrigation?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">No Irrigation</div>
-              </div>
-              <div class="agri-stat">
-                <div class="agri-stat-num" style="color: var(--teal)">{{ agriculture.kharifFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Kharif Active</div>
-              </div>
-              <div class="agri-stat">
-                <div class="agri-stat-num" style="color: var(--green)">{{ agriculture.rabiFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Rabi Active</div>
-              </div>
-            </div>
-            <div class="distribution-section" v-if="agriculture.landDistribution?.length">
-              <h3 class="dist-title">Land Holdings Distribution</h3>
-              <div class="land-bars">
-                <div class="land-bar-item" v-for="d in agriculture.landDistribution" :key="d.label">
-                  <div class="land-bar-label">{{ d.label }}</div>
-                  <div class="land-bar-track">
-                    <div class="land-bar-fill" :style="{ width: landPct(d.count) + '%' }"></div>
-                  </div>
-                  <div class="land-bar-count">{{ d.count.toLocaleString() }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <article class="card insight-panel">
             <div class="panel-header">
               <h2 class="card-title">Education Intelligence</h2>
@@ -204,9 +167,7 @@
               <div>{{ Number(education.literate_population || 0).toLocaleString() }} literate out of {{ Number(populationStats.total_population || 0).toLocaleString() }} population</div>
             </div>
           </article>
-        </div>
 
-        <div class="insights-grid intelligence-row-2">
           <article class="card insight-panel">
             <div class="panel-header">
               <h2 class="card-title">Employment Insights</h2>
@@ -234,15 +195,90 @@
             </div>
           </article>
         </div>
+
+        <div class="insights-grid intelligence-row-2">
+          <div class="card insight-panel agriculture-panel">
+            <div class="panel-header">
+              <h2 class="card-title">Agriculture Intelligence</h2>
+            </div>
+
+            <div class="agri-stats">
+              <div class="agri-stat">
+                <div class="agri-stat-num" style="color: var(--amber)">{{ agriculture.totalFarmers?.toLocaleString() || '—' }}</div>
+                <div class="agri-stat-label">Total Farmers</div>
+              </div>
+              <div class="agri-stat">
+                <div class="agri-stat-num" style="color: var(--red)">{{ agriculture.farmersWithoutIrrigation?.toLocaleString() || '—' }}</div>
+                <div class="agri-stat-label">No Irrigation</div>
+              </div>
+              <div class="agri-stat">
+                <div class="agri-stat-num" style="color: var(--teal)">{{ agriculture.kharifFarmers?.toLocaleString() || '—' }}</div>
+                <div class="agri-stat-label">Kharif Active</div>
+              </div>
+              <div class="agri-stat">
+                <div class="agri-stat-num" style="color: var(--green)">{{ agriculture.rabiFarmers?.toLocaleString() || '—' }}</div>
+                <div class="agri-stat-label">Rabi Active</div>
+              </div>
+            </div>
+
+            <div class="distribution-section">
+              <div class="agri-chart-grid">
+                <article class="agri-chart-card">
+                  <h3 class="dist-title">Land Holdings Distribution</h3>
+                  <div v-if="agriculture.landDistribution?.length" class="agri-land-bars">
+                    <div class="land-bar-item" v-for="d in agriculture.landDistribution" :key="d.label">
+                      <div class="land-bar-label">{{ d.label }}</div>
+                      <div class="land-bar-track">
+                        <div class="land-bar-fill" :style="{ width: landPct(d.count) + '%' }"></div>
+                      </div>
+                      <div class="land-bar-count">{{ d.count.toLocaleString() }}</div>
+                    </div>
+                  </div>
+                  <div v-else class="empty-state">No land holdings records available.</div>
+                </article>
+
+                <article class="agri-chart-card">
+                  <h3 class="dist-title">Land Utilization</h3>
+                  <div v-if="landUtilizationHasData" class="agri-apex-wrap">
+                    <apexchart
+                      height="280"
+                      type="donut"
+                      :options="landUtilizationOptions"
+                      :series="landUtilizationSeries"
+                    />
+                    <div class="land-utilization-footnote">
+                      <div>Based on {{ landUtilizationRows.validRecords.toLocaleString() }} valid survey records</div>
+                      <div><span class="land-utilization-footnote-warn">{{ landUtilizationRows.invalidRecords.toLocaleString() }}</span> records excluded due to invalid values</div>
+                    </div>
+                  </div>
+                  <div v-else class="empty-state">No land utilization records available.</div>
+                </article>
+
+                <article class="agri-chart-card">
+                  <h3 class="dist-title">Season-wise Crops</h3>
+                  <div v-if="seasonCropHasData" class="agri-apex-wrap">
+                    <apexchart
+                      height="280"
+                      type="bar"
+                      :options="seasonCropOptions"
+                      :series="seasonCropSeries"
+                    />
+                  </div>
+                  <div v-else class="empty-state">No season-wise crop records available.</div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { getAgricultureInsights } from '../../api/index.js'
-import { getPopulationDashboard, getPopulationDemographics, getPopulationEducation, getPopulationEmployment, getPopulationMapData } from '../population/api.js'
+import { getPopulationDashboard, getPopulationDemographics, getPopulationEducation, getPopulationEmployment, getPopulationMapInsights } from '../population/api.js'
 
 const loading = ref(true)
 const agriculture = ref({})
@@ -284,41 +320,47 @@ const employment = ref({
     other: 0,
   },
 })
-const families = ref([])
+const bplDistribution = ref({ bpl: 0, non_bpl: 0, total_households: 0 })
+let isActive = true
+
+onUnmounted(() => {
+  isActive = false
+})
+
+function applyDemographicsData(data) {
+  demographics.value = data
+  const distribution = demographics.value?.age_income_gender_distribution || []
+  ageIncomeGenderSegments.value = Array.isArray(distribution)
+    ? distribution.map(item => ({
+        age_group: item.age_group || item.age_range || '',
+        avg_income: Number(item.avg_income ?? item.average_income ?? 0),
+        male_count: Number(item.male_count || 0),
+        female_count: Number(item.female_count || 0),
+      }))
+    : []
+}
 
 onMounted(async () => {
-  const agricultureResults = await Promise.allSettled([
-    getAgricultureInsights(),
-  ])
+  loading.value = true
 
-  const populationResults = await Promise.allSettled([
+  const coreResults = await Promise.allSettled([
+    getAgricultureInsights(),
     getPopulationDashboard(),
     getPopulationDemographics(),
     getPopulationEducation(),
     getPopulationEmployment(),
-    getPopulationMapData(),
+    getPopulationMapInsights(),
   ])
 
-  if (agricultureResults[0].status === 'fulfilled') agriculture.value = agricultureResults[0].value
+  if (!isActive) return
 
-  if (populationResults[0].status === 'fulfilled') populationStats.value = populationResults[0].value
-  if (populationResults[1].status === 'fulfilled') {
-    demographics.value = populationResults[1].value
-    const distribution = demographics.value?.age_income_gender_distribution || []
-    ageIncomeGenderSegments.value = Array.isArray(distribution)
-      ? distribution.map(item => ({
-          age_group: item.age_group || item.age_range || '',
-          avg_income: Number(item.avg_income ?? item.average_income ?? 0),
-          male_count: Number(item.male_count || 0),
-          female_count: Number(item.female_count || 0),
-        }))
-      : []
-  }
-  if (populationResults[2].status === 'fulfilled') education.value = populationResults[2].value
-  if (populationResults[3].status === 'fulfilled') employment.value = populationResults[3].value
-  if (populationResults[4].status === 'fulfilled') {
-    const rows = Array.isArray(populationResults[4].value) ? populationResults[4].value : []
-    families.value = rows
+  if (coreResults[0].status === 'fulfilled') agriculture.value = coreResults[0].value
+  if (coreResults[1].status === 'fulfilled') populationStats.value = coreResults[1].value
+  if (coreResults[2].status === 'fulfilled') applyDemographicsData(coreResults[2].value)
+  if (coreResults[3].status === 'fulfilled') education.value = coreResults[3].value
+  if (coreResults[4].status === 'fulfilled') employment.value = coreResults[4].value
+  if (coreResults[5].status === 'fulfilled') {
+    bplDistribution.value = coreResults[5].value?.bpl_distribution || { bpl: 0, non_bpl: 0, total_households: 0 }
   }
 
   loading.value = false
@@ -447,15 +489,8 @@ const ageIncomeGenderOptions = computed(() => ({
 }))
 
 const bplSegments = computed(() => {
-  const rows = Array.isArray(families.value) ? families.value : []
-  let bpl = 0
-  let nonBpl = 0
-
-  for (const family of rows) {
-    const category = String(family?.FAMILY_BELONG_BPL_CATEGORY || '').trim().toUpperCase()
-    if (category === 'YES') bpl += 1
-    if (category === 'NO') nonBpl += 1
-  }
+  const bpl = Number(bplDistribution.value?.bpl || 0)
+  const nonBpl = Number(bplDistribution.value?.non_bpl || 0)
 
   return [
     { label: 'BPL', value: bpl, color: '#ef4444' },
@@ -622,6 +657,218 @@ const occupationTotal = computed(() => occupationSegments.value.reduce((sum, ite
 const occupationMax = computed(() => Math.max(...occupationSegments.value.map((item) => item.value), 1))
 const occupationBarWidth = (value) => `${(Number(value || 0) / occupationMax.value) * 100}%`
 
+const landUtilizationRows = computed(() => {
+  const summary = agriculture.value?.land_utilization_summary || agriculture.value?.landUtilizationSummary
+  if (summary) {
+    const total = Number(summary.total_land ?? summary.totalLand ?? 0)
+    const cultivated = Number(summary.cultivated_land ?? summary.cultivatedLand ?? 0)
+    const unused = Number(summary.unused_land ?? summary.unusedLand ?? Math.max(total - cultivated, 0))
+    const validRecords = Number(summary.valid_records ?? summary.validRecords ?? 0)
+    const invalidRecords = Number(summary.invalid_records ?? summary.invalidRecords ?? 0)
+    const cultivatedPercent = Number(summary.cultivated_percent ?? summary.cultivatedPercent ?? (total > 0 ? (cultivated * 100) / total : 0))
+    const unusedPercent = Number(summary.unused_percent ?? summary.unusedPercent ?? (total > 0 ? (Math.max(unused, 0) * 100) / total : 0))
+
+    return {
+      total: Number(total.toFixed(2)),
+      cultivated: Number(cultivated.toFixed(2)),
+      unused: Number(Math.max(unused, 0).toFixed(2)),
+      validRecords,
+      invalidRecords,
+      cultivatedPercent: Number(cultivatedPercent.toFixed(2)),
+      unusedPercent: Number(unusedPercent.toFixed(2)),
+    }
+  }
+
+  return {
+    total: 0,
+    cultivated: 0,
+    unused: 0,
+    validRecords: 0,
+    invalidRecords: 0,
+    cultivatedPercent: 0,
+    unusedPercent: 0,
+  }
+})
+
+const landUtilizationSeries = computed(() => [
+  landUtilizationRows.value.cultivated,
+  landUtilizationRows.value.unused,
+])
+
+const landUtilizationHasData = computed(() =>
+  landUtilizationRows.value.total > 0
+)
+
+const landUtilizationOptions = computed(() => {
+  const total = landUtilizationRows.value.total
+  const totalFormatted = `${Number(total || 0).toLocaleString()} acres`
+  const cultivatedPercent = landUtilizationRows.value.cultivatedPercent
+  const unusedPercent = landUtilizationRows.value.unusedPercent
+  
+  return {
+    chart: {
+      type: 'donut',
+      toolbar: { show: false },
+    },
+    labels: ['Cultivated Land', 'Unused Land'],
+    plotOptions: {
+      pie: {
+        donut: {
+          size: '60%',
+          labels: {
+            show: true,
+            name: {
+              show: true,
+              fontSize: '12px',
+              fontFamily: 'var(--font-display)',
+              color: 'var(--text-muted)',
+            },
+            value: {
+              show: true,
+              fontSize: '18px',
+              fontFamily: 'var(--font-display)',
+              color: 'var(--text-primary)',
+              formatter: () => totalFormatted,
+            },
+            total: {
+              show: true,
+              label: 'Total Land',
+              fontSize: '11px',
+              fontFamily: 'var(--font-body)',
+              color: 'var(--text-dim)',
+            },
+          },
+        },
+      },
+    },
+    colors: ['#22c55e', '#ef4444'],
+    stroke: {
+      width: 2,
+      colors: ['var(--bg-surface)'],
+    },
+    legend: {
+      position: 'bottom',
+      fontSize: '12px',
+    },
+    tooltip: {
+      y: {
+        formatter: (value, { seriesIndex }) => {
+          const pct = seriesIndex === 0 ? cultivatedPercent : unusedPercent
+          return `${Number(value || 0).toLocaleString()} acres (${Number(pct || 0).toFixed(2)}%)`
+        },
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+  }
+})
+
+function toCropList(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(Boolean)
+
+  return String(value)
+    .split(/[,;/|&]+|\band\b/gi)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+const seasonCropCounts = computed(() => {
+  const source = Array.isArray(agriculture.value?.season_crop_rows)
+    ? agriculture.value.season_crop_rows
+    : Array.isArray(agriculture.value?.seasonCropRows)
+      ? agriculture.value.seasonCropRows
+      : []
+
+  const kharif = new Map()
+  const rabi = new Map()
+
+  for (const row of source) {
+    const season = String(row?.season || '').trim().toLowerCase()
+    const cropName = String(row?.crop || '').trim()
+    const aggregatedCount = Number(row?.count ?? row?.cnt ?? 0)
+
+    if (season && cropName && aggregatedCount > 0) {
+      const key = cropName.toUpperCase()
+      if (season === 'kharif') {
+        kharif.set(key, (kharif.get(key) || 0) + aggregatedCount)
+      } else if (season === 'rabi') {
+        rabi.set(key, (rabi.get(key) || 0) + aggregatedCount)
+      }
+      continue
+    }
+
+    const kharifCrops = toCropList(row?.CULTIVATING_DURING_KHARIF_SEASON ?? row?.cultivating_during_kharif_season)
+    const rabiCrops = toCropList(row?.CULTIVATING_DURING_RABI_SEASON ?? row?.cultivating_during_rabi_season)
+
+    for (const crop of kharifCrops) {
+      const key = crop.toUpperCase()
+      kharif.set(key, (kharif.get(key) || 0) + 1)
+    }
+
+    for (const crop of rabiCrops) {
+      const key = crop.toUpperCase()
+      rabi.set(key, (rabi.get(key) || 0) + 1)
+    }
+  }
+
+  const cropSet = new Set([...kharif.keys(), ...rabi.keys()])
+  const ranked = [...cropSet]
+    .map(crop => ({
+      crop,
+      kharif: kharif.get(crop) || 0,
+      rabi: rabi.get(crop) || 0,
+      total: (kharif.get(crop) || 0) + (rabi.get(crop) || 0),
+    }))
+    .filter(item => item.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6)
+
+  return ranked
+})
+
+const seasonCropSeries = computed(() => ([
+  {
+    name: 'Kharif',
+    data: seasonCropCounts.value.map(item => item.kharif),
+  },
+  {
+    name: 'Rabi',
+    data: seasonCropCounts.value.map(item => item.rabi),
+  },
+]))
+
+const seasonCropHasData = computed(() => seasonCropCounts.value.length > 0)
+
+const seasonCropOptions = computed(() => ({
+  chart: {
+    type: 'bar',
+    stacked: false,
+    toolbar: { show: false },
+  },
+  plotOptions: {
+    bar: {
+      columnWidth: '58%',
+      borderRadius: 4,
+    },
+  },
+  colors: ['#0ea5e9', '#14b8a6'],
+  xaxis: {
+    categories: seasonCropCounts.value.map(item => item.crop),
+    title: { text: 'Crop Name' },
+  },
+  yaxis: {
+    title: { text: 'Count' },
+  },
+  legend: {
+    position: 'top',
+  },
+  dataLabels: {
+    enabled: false,
+  },
+}))
+
 function landPct(count) {
   const max = Math.max(...(agriculture.value.landDistribution || []).map(d => d.count), 1)
   return (count / max * 100).toFixed(1)
@@ -765,10 +1012,6 @@ function landPct(count) {
 .insight-panel { padding: 1.1rem; }
 .welfare-panel { grid-column: 1 / -1; }
 .agriculture-panel { grid-column: 1 / -1; }
-
-.intelligence-row-1 .agriculture-panel {
-  grid-column: auto;
-}
 
 .panel-header {
   display: flex;
@@ -990,6 +1233,43 @@ function landPct(count) {
 .agri-stat-num { font-family: var(--font-display); font-size: 1.35rem; }
 .agri-stat-label { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.2rem; }
 
+.agri-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.9rem;
+}
+
+.agri-chart-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem;
+  min-height: 338px;
+}
+
+.agri-apex-wrap {
+  margin-top: 0.15rem;
+}
+
+.agri-land-bars {
+  margin-top: 0.15rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.land-utilization-footnote {
+  margin-top: 0.35rem;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.land-utilization-footnote-warn {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
 /* Land Bars */
 .land-bar-item {
   display: grid;
@@ -1192,6 +1472,10 @@ function landPct(count) {
 
   .welfare-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .agri-chart-grid {
+    grid-template-columns: 1fr;
   }
 }
 

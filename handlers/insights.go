@@ -108,6 +108,8 @@ func (h *InsightHandler) GetGovernanceInsights(c *gin.Context) {
 func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 	log.Println("[SELECT] GET /insights/agriculture")
 	result := gin.H{}
+	result["landUtilizationRows"] = []gin.H{}
+	result["seasonCropRows"] = []gin.H{}
 
 	var totalFarmers int
 	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY WHERE OWN_AGRICULTURE_LAND = 'Yes'").Scan(&totalFarmers)
@@ -166,6 +168,157 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 			items = append(items, item)
 		}
 		result["waterSourceDistribution"] = items
+	}
+
+	if h.CC.Has("AREA_AGRICULTURE_LAND_ACRES") && h.CC.Has("LAND_UNDER_CULTIVATION_ACRES") {
+		var totalLand sql.NullFloat64
+		var cultivatedLand sql.NullFloat64
+		var unusedLand sql.NullFloat64
+		var validRecords int64
+		var invalidRecords int64
+
+		err := h.DB.QueryRow(`
+			SELECT
+				COALESCE(ROUND(SUM(total_land), 2), 0) AS total_land,
+				COALESCE(ROUND(SUM(cultivated_land), 2), 0) AS cultivated_land,
+				COALESCE(ROUND(SUM(total_land - cultivated_land), 2), 0) AS unused_land,
+				COUNT(*) AS valid_records
+			FROM (
+				SELECT
+					CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) AS total_land,
+					CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) AS cultivated_land
+				FROM FAMILY
+				WHERE OWN_AGRICULTURE_LAND = 'Yes'
+				  AND AREA_AGRICULTURE_LAND_ACRES IS NOT NULL
+				  AND LAND_UNDER_CULTIVATION_ACRES IS NOT NULL
+				  AND TRIM(AREA_AGRICULTURE_LAND_ACRES) <> ''
+				  AND TRIM(LAND_UNDER_CULTIVATION_ACRES) <> ''
+				  AND AREA_AGRICULTURE_LAND_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+				  AND LAND_UNDER_CULTIVATION_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+				  AND CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) <= CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+				  AND CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) BETWEEN 0 AND 500
+			) t
+		`).Scan(&totalLand, &cultivatedLand, &unusedLand, &validRecords)
+
+		if err == nil {
+			err = h.DB.QueryRow(`
+				SELECT COUNT(*) AS invalid_records
+				FROM FAMILY
+				WHERE OWN_AGRICULTURE_LAND = 'Yes'
+				  AND (
+					AREA_AGRICULTURE_LAND_ACRES IS NULL
+					OR LAND_UNDER_CULTIVATION_ACRES IS NULL
+					OR TRIM(AREA_AGRICULTURE_LAND_ACRES) = ''
+					OR TRIM(LAND_UNDER_CULTIVATION_ACRES) = ''
+					OR AREA_AGRICULTURE_LAND_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+					OR LAND_UNDER_CULTIVATION_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+					OR CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) > CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+					OR CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) > 500
+				  )
+			`).Scan(&invalidRecords)
+		}
+
+		if err == nil {
+			total := totalLand.Float64
+			cultivated := cultivatedLand.Float64
+			unused := unusedLand.Float64
+			if unused < 0 {
+				unused = 0
+			}
+
+			cultivatedPercent := 0.0
+			unusedPercent := 0.0
+			if total > 0 {
+				cultivatedPercent = (cultivated * 100) / total
+				unusedPercent = (unused * 100) / total
+			}
+
+			result["landUtilizationSummary"] = gin.H{
+				"total_land":         total,
+				"cultivated_land":    cultivated,
+				"unused_land":        unused,
+				"valid_records":      validRecords,
+				"invalid_records":    invalidRecords,
+				"cultivated_percent": cultivatedPercent,
+				"unused_percent":     unusedPercent,
+			}
+
+			result["landUtilizationRows"] = []gin.H{
+				{
+					"AREA_AGRICULTURE_LAND_ACRES":  total,
+					"LAND_UNDER_CULTIVATION_ACRES": cultivated,
+					"unused_land_acres":            unused,
+					"valid_records":                validRecords,
+					"invalid_records":              invalidRecords,
+				},
+			}
+		}
+	}
+
+	rabiColumn := ""
+	if h.CC.Has("CULTIVATING_DURING_RABI_SEASON") {
+		rabiColumn = "CULTIVATING_DURING_RABI_SEASON"
+	} else if h.CC.Has("TAKING_CROPS_RABI_SEASON") {
+		rabiColumn = "TAKING_CROPS_RABI_SEASON"
+	}
+
+	if h.CC.Has("CULTIVATING_DURING_KHARIF_SEASON") || rabiColumn != "" {
+		queryParts := []string{}
+
+		if h.CC.Has("CULTIVATING_DURING_KHARIF_SEASON") {
+			queryParts = append(queryParts, `
+				SELECT 'Kharif' AS season, TRIM(CULTIVATING_DURING_KHARIF_SEASON) AS crop, COUNT(*) AS cnt
+				FROM FAMILY
+				WHERE OWN_AGRICULTURE_LAND = 'Yes'
+				  AND CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
+				  AND TRIM(CULTIVATING_DURING_KHARIF_SEASON) != ''
+				GROUP BY TRIM(CULTIVATING_DURING_KHARIF_SEASON)
+			`)
+		}
+
+		if rabiColumn != "" {
+			queryParts = append(queryParts, `
+				SELECT 'Rabi' AS season, TRIM(`+rabiColumn+`) AS crop, COUNT(*) AS cnt
+				FROM FAMILY
+				WHERE OWN_AGRICULTURE_LAND = 'Yes'
+				  AND `+rabiColumn+` IS NOT NULL
+				  AND TRIM(`+rabiColumn+`) != ''
+				GROUP BY TRIM(`+rabiColumn+`)
+			`)
+		}
+
+		if len(queryParts) > 0 {
+			cropRows, err := h.DB.Query(`
+				SELECT season, crop, cnt
+				FROM (
+					` + queryParts[0] + func() string {
+				if len(queryParts) > 1 {
+					return ` UNION ALL ` + queryParts[1]
+				}
+				return ``
+			}() + `
+				) merged
+				ORDER BY cnt DESC
+			`)
+
+			if err == nil {
+				defer cropRows.Close()
+				items := []gin.H{}
+				for cropRows.Next() {
+					var season string
+					var crop string
+					var count int
+					if scanErr := cropRows.Scan(&season, &crop, &count); scanErr == nil {
+						items = append(items, gin.H{
+							"season": season,
+							"crop":   crop,
+							"count":  count,
+						})
+					}
+				}
+				result["seasonCropRows"] = items
+			}
+		}
 	}
 
 	var kharifCount int
