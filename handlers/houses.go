@@ -101,6 +101,19 @@ func (h *HouseHandler) memberColExists(col string) bool {
 // It detects optional FAMILY_MEMBER columns (DIVYANG, DISABILITY, EVER_ATTENDED_SCHOOL)
 // and falls back to 0 when they are absent, so the main query never errors.
 func (h *HouseHandler) buildPopStatsSQL() string {
+	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+	hasFamilyID := h.memberColExists("FAMILY_ID")
+
+	familyJoinExpr := "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	switch {
+	case hasExternalFamilyID && hasFamilyID:
+		familyJoinExpr = "CAST(COALESCE(fm.EXTERNAL_FAMILY_ID, fm.FAMILY_ID) AS CHAR)"
+	case hasFamilyID:
+		familyJoinExpr = "CAST(fm.FAMILY_ID AS CHAR)"
+	case hasExternalFamilyID:
+		familyJoinExpr = "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	}
+
 	illiterateExpr := "0"
 	if h.memberColExists("EVER_ATTENDED_SCHOOL") {
 		illiterateExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL,'')))='NO' THEN 1 ELSE 0 END)"
@@ -136,7 +149,7 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 	}
 
 	return fmt.Sprintf(`
-		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+		SELECT %s AS family_join_id,
 			%s AS primary_occupation,
 			COUNT(*) AS total_members,
 			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m') THEN 1 ELSE 0 END) AS male_members,
@@ -146,8 +159,10 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 			%s AS divyang_members,
 			%s AS unemployed_members
 		FROM FAMILY_MEMBER fm
-		GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)`,
-		occExpr, workingExpr, illiterateExpr, divyangExpr, unemployedExpr)
+		GROUP BY %s`,
+		familyJoinExpr,
+		occExpr, workingExpr, illiterateExpr, divyangExpr, unemployedExpr,
+		familyJoinExpr)
 }
 
 func (h *HouseHandler) GetHouses(c *gin.Context) {
@@ -505,19 +520,47 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		return
 	}
 
-	memberQuery := `
-		SELECT COALESCE(FIRST_NAME, ''), COALESCE(LAST_NAME, '')
-		FROM FAMILY_MEMBER
-		WHERE CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?
-		   OR CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?
-	`
+	memberWhere := []string{}
+	memberArgs := []interface{}{}
+	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+	hasFamilyID := h.memberColExists("FAMILY_ID")
+
+	if hasExternalFamilyID {
+		memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
+		memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
+	}
+	if hasFamilyID {
+		memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
+	}
+
 	memberExternalID := id
 	memberFamilyID := id
-	if h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
+	if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
 		_ = h.DB.QueryRow("SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?", id).Scan(&memberExternalID)
 	}
 
-	memberRows, err := h.DB.Query(memberQuery, memberExternalID, memberFamilyID)
+	if hasExternalFamilyID {
+		memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
+	}
+	if hasFamilyID {
+		memberArgs = append(memberArgs, memberFamilyID)
+	}
+
+	if len(memberWhere) == 0 {
+		c.JSON(http.StatusOK, HouseDetail{
+			HouseRecord: house,
+			Members:     []MemberRecord{},
+		})
+		return
+	}
+
+	memberQuery := fmt.Sprintf(`
+		SELECT COALESCE(FIRST_NAME, ''), COALESCE(LAST_NAME, '')
+		FROM FAMILY_MEMBER
+		WHERE %s
+	`, strings.Join(memberWhere, " OR "))
+
+	memberRows, err := h.DB.Query(memberQuery, memberArgs...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch members"})
 		return

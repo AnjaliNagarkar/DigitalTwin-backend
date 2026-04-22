@@ -1478,6 +1478,11 @@ function analyzeCluster(houseList) {
 // entities and fly to the filtered set — always fly when the user pressed Apply
 // (forcefly flag), otherwise only fly if houses are not already in view.
 let _forceNextFly = false   // set by applyFilters, consumed once by the watcher
+let _suspendAutoFlyUntil = 0
+
+function suspendAutoFly(ms = 1400) {
+  _suspendAutoFlyUntil = Date.now() + ms
+}
 
 watch(filteredHouses, (newHouses) => {
   if (!viewer) return
@@ -1497,6 +1502,9 @@ watch(filteredHouses, (newHouses) => {
 
   const force = _forceNextFly
   _forceNextFly = false
+
+  // Prevent click-driven flyTo and watcher auto-fly from fighting each other.
+  if (Date.now() < _suspendAutoFlyUntil) return
 
   // Do not auto-fly on initial load. Fly only when explicitly forced
   // (Apply filter) or when refreshed data is outside the current viewport.
@@ -1771,6 +1779,7 @@ const currentLegend = computed(() => {
     { color: '#22c55e', label: '1–2 members (Small)' },
     { color: '#f59e0b', label: '3–5 members (Average)' },
     { color: '#ef4444', label: '6+ members (Large)' },
+    { color: '#94a3b8', label: 'No member data' },
   ]
   if (colorMode.value === 'bpl_status') return [
     { color: '#ef4444', label: 'BPL household' },
@@ -2011,7 +2020,10 @@ function getConditionColor(house) {
   }
   // Population modes
   if (colorMode.value === 'population_density') {
-    const m = house.totalMembers || 0
+    const rawMembers = Number(house?.totalMembers)
+    const hasMemberData = Number.isFinite(rawMembers) && rawMembers > 0
+    if (!hasMemberData) return '#94a3b8'
+    const m = rawMembers
     if (m <= 2) return '#22c55e'
     if (m <= 5) return '#f59e0b'
     return '#ef4444'
@@ -2071,6 +2083,13 @@ function getConditionLabel(house) {
     if (a <= 2.5) return 'Small Farmer'
     if (a <= 5)   return 'Medium Holding'
     return 'Large Holding'
+  }
+  if (colorMode.value === 'population_density') {
+    const m = Number(house?.totalMembers)
+    if (!Number.isFinite(m) || m <= 0) return 'Member Data Unavailable'
+    if (m <= 2) return 'Small Household (1-2)'
+    if (m <= 5) return 'Average Household (3-5)'
+    return 'Large Household (6+)'
   }
   if (!colorMode.value) return 'Household'
   if (color === '#ef4444') return 'High Risk'
@@ -2511,6 +2530,28 @@ function resolveHouseForRendering(pointId, lng, lat) {
   return toMapPointHouse({ id, lng, lat })
 }
 
+function mergeHouseDetailWithFallback(detail, fallbackHouse) {
+  if (!detail) return fallbackHouse || null
+  if (!fallbackHouse) return detail
+
+  const merged = { ...fallbackHouse, ...detail }
+  const detailMembers = Number(detail?.totalMembers)
+  const fallbackMembers = Number(fallbackHouse?.totalMembers)
+  // If detailed API row arrives without member aggregates but we already have
+  // populated household stats in memory, preserve those values for UI consistency.
+  if ((!Number.isFinite(detailMembers) || detailMembers <= 0) && Number.isFinite(fallbackMembers) && fallbackMembers > 0) {
+    merged.totalMembers = fallbackHouse.totalMembers
+    merged.maleMembers = fallbackHouse.maleMembers
+    merged.femaleMembers = fallbackHouse.femaleMembers
+    merged.workingMembers = fallbackHouse.workingMembers
+    merged.illiterateMembers = fallbackHouse.illiterateMembers
+    merged.divyangMembers = fallbackHouse.divyangMembers
+    merged.unemployedMembers = fallbackHouse.unemployedMembers
+  }
+
+  return merged
+}
+
 function renderClustersForCurrentView() {
   if (!viewer || viewer.isDestroyed()) return
   ensureClusterCollections()
@@ -2709,15 +2750,17 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
   try {
     const detail = await getHouseById(numericId)
     if (detail) {
-      selectedHouse.value = detail
+      const cached = detailedHouseById.value.get(numericId)
+      selectedHouse.value = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
       return
     }
   } catch (error) {
     console.warn('[house-detail] fetch failed:', error?.message || error)
   }
 
-  if (fallbackHouse) {
-    selectedHouse.value = fallbackHouse
+  const cached = detailedHouseById.value.get(numericId)
+  if (cached || fallbackHouse) {
+    selectedHouse.value = mergeHouseDetailWithFallback(cached, fallbackHouse)
   }
 }
 
@@ -3572,6 +3615,9 @@ onMounted(async () => {
     viewer.scene.fog.enabled                  = false
     viewer.scene.globe.depthTestAgainstTerrain = false
 
+    // Disable Cesium's built-in double-click entity tracking/zoom behavior.
+    viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
+
     // Allow closer inspection without camera bounce.
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 60
 
@@ -3611,6 +3657,10 @@ onMounted(async () => {
 
     // Click → select house | drill-down cluster | open problem panel | clear
     viewer.screenSpaceEventHandler.setInputAction(async (e) => {
+      // Never allow implicit entity tracking to take over custom click camera logic.
+      viewer.trackedEntity = undefined
+      viewer.selectedEntity = undefined
+
       const picked = viewer.scene.pick(e.position)
 
       // ── Cluster billboard click → expansion zoom fly-to ───────────────────
@@ -3630,6 +3680,8 @@ onMounted(async () => {
           }
 
           const targetH = getHeightFromClusterZoom(expansionZoom)
+          suspendAutoFly(1700)
+          viewer.camera.cancelFlight()
           viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), targetH),
             orientation: {
@@ -3650,6 +3702,8 @@ onMounted(async () => {
         const payload = picked.id
         if (payload && typeof payload === 'object' && payload.kind === 'cluster') {
           const nextH = Math.max((viewer.camera.positionCartographic?.height ?? 120000) * 0.45, 700)
+          suspendAutoFly(1500)
+          viewer.camera.cancelFlight()
           viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(Number(payload.lng), Number(payload.lat), nextH),
             orientation: {
@@ -3730,6 +3784,8 @@ onMounted(async () => {
               const north = Math.max(...lats) + 0.0005
               const west  = Math.min(...lngs) - 0.0005
               const east  = Math.max(...lngs) + 0.0005
+              suspendAutoFly(1900)
+              viewer.camera.cancelFlight()
               viewer.camera.flyTo({
                 destination: Cesium.Rectangle.fromDegrees(west, south, east, north),
                 orientation: {
@@ -3753,10 +3809,8 @@ onMounted(async () => {
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
     // Double-click → zoom to house
-    viewer.screenSpaceEventHandler.setInputAction((e) => {
-      const picked = viewer.scene.pick(e.position)
-      const house  = resolvePickedHouse(picked)
-      if (house) flyToHouse(house)
+    viewer.screenSpaceEventHandler.setInputAction(() => {
+      // Keep double-click inert to avoid accidental zoom bounce.
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
     // Hover → tooltip
