@@ -111,20 +111,41 @@ type PopulationMapSummaryResponse struct {
 // It returns top-card population metrics using SELECT-only queries.
 func (h *PopulationHandler) GetPopulationDashboard(c *gin.Context) {
 	log.Println("[SELECT] GET /population/dashboard")
+	_, cancel, ok := ensureDBReady(c, h.DB, "/population/dashboard")
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection unavailable"})
+		return
+	}
+	defer cancel()
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	log.Printf("[FILTER] /population/dashboard district_id=%q taluka_id=%q village_id=%q", districtID, talukaID, villageID)
+	where, args := h.buildPopulationFamilyFilters("f", c)
 
 	var totalPopulation int
 	var totalHouseholds int
 	var workingPopulation int
 	var dependentPopulation int
 
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY_MEMBER").Scan(&totalPopulation)
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY").Scan(&totalHouseholds)
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE OCCUPATION IS NOT NULL
-		  AND TRIM(OCCUPATION) != ''
-		  AND UPPER(TRIM(OCCUPATION)) NOT IN (
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&totalPopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY f
+		WHERE %s
+	`, where), args...).Scan(&totalHouseholds)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE fm.OCCUPATION IS NOT NULL
+		  AND TRIM(fm.OCCUPATION) != ''
+		  AND UPPER(TRIM(fm.OCCUPATION)) NOT IN (
 			'HOUSEWIFE',
 			'STUDYING',
 			'STUDENT',
@@ -132,29 +153,32 @@ func (h *PopulationHandler) GetPopulationDashboard(c *gin.Context) {
 			'NOT APPLICABLE',
 			'NA'
 		  )
-	`).Scan(&workingPopulation)
-	h.DB.QueryRow(`
+		  AND %s
+	`, where), args...).Scan(&workingPopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE (
-			STR_TO_DATE(DOB, '%Y-%m-%d') IS NOT NULL
+			STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL
 			AND (
-				TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%Y-%m-%d'), CURDATE()) < 18
-				OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%Y-%m-%d'), CURDATE()) > 60
+				TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) < 18
+				OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) > 60
 			)
 		  )
 		   OR (
-			STR_TO_DATE(DOB, '%Y-%m-%d') IS NOT NULL
-			AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%Y-%m-%d'), CURDATE()) BETWEEN 18 AND 60
-			AND UPPER(TRIM(COALESCE(OCCUPATION, ''))) IN (
+			STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL
+			AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) BETWEEN 18 AND 60
+			AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN (
 				'HOUSEWIFE',
 				'STUDYING',
 				'STUDENT',
 				'UNEMPLOYED',
 				'NOT APPLICABLE'
 			)
-		  )
-	`).Scan(&dependentPopulation)
+		  ))
+		  AND %s
+	`, where), args...).Scan(&dependentPopulation)
 
 	result := gin.H{
 		"total_population":     totalPopulation,
@@ -170,18 +194,31 @@ func (h *PopulationHandler) GetPopulationDashboard(c *gin.Context) {
 // It returns gender and age bucket distributions from FAMILY_MEMBER.
 func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 	log.Println("[SELECT] GET /population/demographics")
+	_, cancel, ok := ensureDBReady(c, h.DB, "/population/demographics")
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection unavailable"})
+		return
+	}
+	defer cancel()
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	log.Printf("[FILTER] /population/demographics district_id=%q taluka_id=%q village_id=%q", districtID, talukaID, villageID)
+	where, args := h.buildPopulationFamilyFilters("f", c)
 
 	var male int
 	var female int
 	var other int
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT
-			SUM(CASE WHEN LOWER(TRIM(GENDER)) = 'male' THEN 1 ELSE 0 END) AS male,
-			SUM(CASE WHEN LOWER(TRIM(GENDER)) = 'female' THEN 1 ELSE 0 END) AS female,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END) AS other
-		FROM FAMILY_MEMBER
-	`).Scan(&male, &female, &other)
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END) AS other
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&male, &female, &other)
 
 	var age0To5 int
 	var age6To18 int
@@ -189,31 +226,35 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 	var age36To60 int
 	var age60Plus int
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) AS age_0_5,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 6 AND 18 THEN 1 ELSE 0 END) AS age_6_18,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 19 AND 35 THEN 1 ELSE 0 END) AS age_19_35,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 36 AND 60 THEN 1 ELSE 0 END) AS age_36_60,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(DOB, '%d-%m-%Y'), CURDATE()) > 60 THEN 1 ELSE 0 END) AS age_60_plus
-		FROM FAMILY_MEMBER
-	`).Scan(&age0To5, &age6To18, &age19To35, &age36To60, &age60Plus)
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) AS age_0_5,
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 6 AND 18 THEN 1 ELSE 0 END) AS age_6_18,
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 19 AND 35 THEN 1 ELSE 0 END) AS age_19_35,
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 36 AND 60 THEN 1 ELSE 0 END) AS age_36_60,
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60 THEN 1 ELSE 0 END) AS age_60_plus
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&age0To5, &age6To18, &age19To35, &age36To60, &age60Plus)
 
 	var totalDivyang int
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) AS total_divyang
-		FROM FAMILY_MEMBER
-		WHERE DIVYANG = 'Yes'
-	`).Scan(&totalDivyang)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+		  AND %s
+	`, where), args...).Scan(&totalDivyang)
 
-	ageIncomeGenderRows, err := h.DB.Query(`
+	ageIncomeGenderRows, err := h.DB.Query(fmt.Sprintf(`
 		SELECT
 			CASE
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 0 AND 18 THEN '0-18'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) > 60 THEN '60+'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 0 AND 18 THEN '0-18'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60 THEN '60+'
 				ELSE NULL
 			END AS age_range,
 			AVG(CAST(COALESCE(f.ANNUAL_INCOME, 0) AS DECIMAL(15,2))) AS average_income,
@@ -222,6 +263,7 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 		FROM FAMILY_MEMBER fm
 		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		WHERE fm.DOB IS NOT NULL AND TRIM(fm.DOB) != ''
+		  AND %s
 		GROUP BY age_range
 		ORDER BY
 			CASE age_range
@@ -232,7 +274,7 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 				WHEN '60+' THEN 5
 				ELSE 6
 			END
-	`)
+	`, where), args...)
 	if err != nil {
 		log.Printf("demographics age_income_gender_distribution query failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch age income gender distribution"})
@@ -256,48 +298,50 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 		return
 	}
 
-	disabilityRows, err := h.DB.Query(`
+	disabilityRows, err := h.DB.Query(fmt.Sprintf(`
 		SELECT
 			CASE
-				WHEN DISABILITY_CATEGORY LIKE '%Blind%'
-					OR DISABILITY_CATEGORY LIKE '%Low vision%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Blind%%'
+					OR DISABILITY_CATEGORY LIKE '%%Low vision%%'
 				THEN 'Visual Disability'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Locomotor%'
-					OR DISABILITY_CATEGORY LIKE '%Cerebral%'
-					OR DISABILITY_CATEGORY LIKE '%Muscular%'
-					OR DISABILITY_CATEGORY LIKE '%Dwarf%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Locomotor%%'
+					OR DISABILITY_CATEGORY LIKE '%%Cerebral%%'
+					OR DISABILITY_CATEGORY LIKE '%%Muscular%%'
+					OR DISABILITY_CATEGORY LIKE '%%Dwarf%%'
 				THEN 'Locomotor Disability'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Mental%'
-					OR DISABILITY_CATEGORY LIKE '%Autism%'
-					OR DISABILITY_CATEGORY LIKE '%Intellectual%'
-					OR DISABILITY_CATEGORY LIKE '%Learning%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Mental%%'
+					OR DISABILITY_CATEGORY LIKE '%%Autism%%'
+					OR DISABILITY_CATEGORY LIKE '%%Intellectual%%'
+					OR DISABILITY_CATEGORY LIKE '%%Learning%%'
 				THEN 'Intellectual Disability'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Hearing%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Hearing%%'
 				THEN 'Hearing Disability'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Speech%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Speech%%'
 				THEN 'Speech Disability'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Multiple%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Multiple%%'
 				THEN 'Multiple Disabilities'
 
-				WHEN DISABILITY_CATEGORY LIKE '%Parkinson%'
-					OR DISABILITY_CATEGORY LIKE '%Sclerosis%'
-					OR DISABILITY_CATEGORY LIKE '%Sickle%'
-					OR DISABILITY_CATEGORY LIKE '%Thalassemia%'
+				WHEN DISABILITY_CATEGORY LIKE '%%Parkinson%%'
+					OR DISABILITY_CATEGORY LIKE '%%Sclerosis%%'
+					OR DISABILITY_CATEGORY LIKE '%%Sickle%%'
+					OR DISABILITY_CATEGORY LIKE '%%Thalassemia%%'
 				THEN 'Chronic Conditions'
 
 				ELSE 'Other'
 			END AS disability_group,
 			COUNT(*) AS total
-		FROM FAMILY_MEMBER
-		WHERE DIVYANG = 'Yes'
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+		  AND %s
 		GROUP BY disability_group
 		ORDER BY total DESC
-	`)
+	`, where), args...)
 	if err != nil {
 		log.Printf("demographics disability_distribution query failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch disability distribution"})
@@ -346,6 +390,17 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 // It returns education intelligence metrics and qualification breakdown.
 func (h *PopulationHandler) GetPopulationEducation(c *gin.Context) {
 	log.Println("[SELECT] GET /population/education")
+	_, cancel, ok := ensureDBReady(c, h.DB, "/population/education")
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection unavailable"})
+		return
+	}
+	defer cancel()
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	log.Printf("[FILTER] /population/education district_id=%q taluka_id=%q village_id=%q", districtID, talukaID, villageID)
+	where, args := h.buildPopulationFamilyFilters("f", c)
 
 	var totalPopulation int
 	var literatePopulation int
@@ -354,49 +409,66 @@ func (h *PopulationHandler) GetPopulationEducation(c *gin.Context) {
 	var dropoutCount int
 	var graduatePopulation int
 
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY_MEMBER").Scan(&totalPopulation)
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE UPPER(TRIM(COALESCE(EVER_ATTENDED_SCHOOL, ''))) = 'YES'
-	`).Scan(&literatePopulation)
-	h.DB.QueryRow(`
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&totalPopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE UPPER(TRIM(COALESCE(EVER_ATTENDED_SCHOOL, ''))) = 'NO'
-		   OR EVER_ATTENDED_SCHOOL IS NULL
-	`).Scan(&illiteratePopulation)
-	h.DB.QueryRow(`
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
+		  AND %s
+	`, where), args...).Scan(&literatePopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE UPPER(TRIM(COALESCE(CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
-	`).Scan(&studentsCount)
-	h.DB.QueryRow(`
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE (UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO'
+		   OR fm.EVER_ATTENDED_SCHOOL IS NULL)
+		  AND %s
+	`, where), args...).Scan(&illiteratePopulation)
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE UPPER(TRIM(COALESCE(EVER_ATTENDED_SCHOOL, ''))) = 'YES'
-		  AND UPPER(TRIM(COALESCE(CURRENTLY_PURSUING_EDUCATION, ''))) != 'YES'
-		  AND DROP_OUT IS NOT NULL
-		  AND TRIM(DROP_OUT) != ''
-	`).Scan(&dropoutCount)
-	h.DB.QueryRow(`
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
+		  AND %s
+	`, where), args...).Scan(&studentsCount)
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE TRIM(COALESCE(QUALIFICATION, '')) = 'Graduation & Above'
-	`).Scan(&graduatePopulation)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
+		  AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'YES'
+		  AND fm.DROP_OUT IS NOT NULL
+		  AND TRIM(fm.DROP_OUT) != ''
+		  AND %s
+	`, where), args...).Scan(&dropoutCount)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above'
+		  AND %s
+	`, where), args...).Scan(&graduatePopulation)
 
 	var below10th int
 	var tenth int
 	var twelfth int
 	var graduateAbove int
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT
-			SUM(CASE WHEN QUALIFICATION IS NULL OR TRIM(QUALIFICATION) = '' THEN 1 ELSE 0 END) AS below_10th,
-			SUM(CASE WHEN TRIM(QUALIFICATION) = '10th' THEN 1 ELSE 0 END) AS tenth,
-			SUM(CASE WHEN TRIM(QUALIFICATION) = '12th' THEN 1 ELSE 0 END) AS twelfth,
-			SUM(CASE WHEN TRIM(QUALIFICATION) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_above
-		FROM FAMILY_MEMBER
-	`).Scan(&below10th, &tenth, &twelfth, &graduateAbove)
+			SUM(CASE WHEN fm.QUALIFICATION IS NULL OR TRIM(fm.QUALIFICATION) = '' THEN 1 ELSE 0 END) AS below_10th,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '10th' THEN 1 ELSE 0 END) AS tenth,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '12th' THEN 1 ELSE 0 END) AS twelfth,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_above
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&below10th, &tenth, &twelfth, &graduateAbove)
 
 	literacyRate := 0.0
 	if totalPopulation > 0 {
@@ -425,57 +497,78 @@ func (h *PopulationHandler) GetPopulationEducation(c *gin.Context) {
 // It returns employment insight metrics and occupation distribution.
 func (h *PopulationHandler) GetPopulationEmployment(c *gin.Context) {
 	log.Println("[SELECT] GET /population/employment")
+	_, cancel, ok := ensureDBReady(c, h.DB, "/population/employment")
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection unavailable"})
+		return
+	}
+	defer cancel()
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	log.Printf("[FILTER] /population/employment district_id=%q taluka_id=%q village_id=%q", districtID, talukaID, villageID)
+	where, args := h.buildPopulationFamilyFilters("f", c)
 
 	var employedMembers int
 	var unemployedMembers int
 	var dailyWageWorkers int
 	var skilledWorkers int
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE TRIM(COALESCE(OCCUPATION, '')) IN (
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE TRIM(COALESCE(fm.OCCUPATION, '')) IN (
 			'Salaried Job',
 			'Self Employed - Farm based',
 			'Self Employed- Non-farm based',
 			'Self Employed-Agri allied',
 			'Wage Work'
 		)
-	`).Scan(&employedMembers)
+		  AND %s
+	`, where), args...).Scan(&employedMembers)
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE TRIM(COALESCE(OCCUPATION, '')) IN (
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE TRIM(COALESCE(fm.OCCUPATION, '')) IN (
 			'Unemployed',
 			'Not Applicable'
 		)
-	`).Scan(&unemployedMembers)
+		  AND %s
+	`, where), args...).Scan(&unemployedMembers)
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE TRIM(COALESCE(OCCUPATION, '')) = 'Wage Work'
-		   OR NATURE_WAGE_WORK IS NOT NULL
-	`).Scan(&dailyWageWorkers)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE (TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work'
+		   OR fm.NATURE_WAGE_WORK IS NOT NULL)
+		  AND %s
+	`, where), args...).Scan(&dailyWageWorkers)
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*)
-		FROM FAMILY_MEMBER
-		WHERE LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%driver%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%electric%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%mechanic%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%tailor%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%carpenter%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%computer%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%bank%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%shop%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%company worker%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%security%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%painter%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%civil%'
-		   OR LOWER(COALESCE(NATURE_WAGE_WORK, '')) LIKE '%technician%'
-	`).Scan(&skilledWorkers)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE (
+		   LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%driver%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%electric%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%mechanic%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%tailor%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%carpenter%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%computer%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%bank%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%shop%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%company worker%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%security%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%painter%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%civil%%'
+		   OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%technician%%'
+		)
+		  AND %s
+	`, where), args...).Scan(&skilledWorkers)
 
 	var farmBased int
 	var agriAllied int
@@ -487,19 +580,21 @@ func (h *PopulationHandler) GetPopulationEmployment(c *gin.Context) {
 	var unemployed int
 	var other int
 
-	h.DB.QueryRow(`
+	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Self Employed - Farm based' THEN 1 ELSE 0 END) AS farm_based,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Self Employed-Agri allied' THEN 1 ELSE 0 END) AS agri_allied,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Self Employed- Non-farm based' THEN 1 ELSE 0 END) AS non_farm,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Salaried Job' THEN 1 ELSE 0 END) AS salaried,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Wage Work' THEN 1 ELSE 0 END) AS wage_workers,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Housewife' THEN 1 ELSE 0 END) AS housewife,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Studying' THEN 1 ELSE 0 END) AS students,
-			SUM(CASE WHEN TRIM(COALESCE(OCCUPATION, '')) = 'Unemployed' THEN 1 ELSE 0 END) AS unemployed,
-			SUM(CASE WHEN OCCUPATION IS NULL OR TRIM(COALESCE(OCCUPATION, '')) = '' THEN 1 ELSE 0 END) AS other
-		FROM FAMILY_MEMBER
-	`).Scan(&farmBased, &agriAllied, &nonFarm, &salaried, &wageWorkers, &housewife, &students, &unemployed, &other)
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed - Farm based' THEN 1 ELSE 0 END) AS farm_based,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed-Agri allied' THEN 1 ELSE 0 END) AS agri_allied,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed- Non-farm based' THEN 1 ELSE 0 END) AS non_farm,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Salaried Job' THEN 1 ELSE 0 END) AS salaried,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' THEN 1 ELSE 0 END) AS wage_workers,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Housewife' THEN 1 ELSE 0 END) AS housewife,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Studying' THEN 1 ELSE 0 END) AS students,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Unemployed' THEN 1 ELSE 0 END) AS unemployed,
+			SUM(CASE WHEN fm.OCCUPATION IS NULL OR TRIM(COALESCE(fm.OCCUPATION, '')) = '' THEN 1 ELSE 0 END) AS other
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&farmBased, &agriAllied, &nonFarm, &salaried, &wageWorkers, &housewife, &students, &unemployed, &other)
 
 	response := PopulationEmploymentResponse{
 		EmployedMembers:   employedMembers,
@@ -554,27 +649,32 @@ func (h *PopulationHandler) buildPopulationFamilyFilters(alias string, c *gin.Co
 	clauses := []string{"1=1"}
 	args := []interface{}{}
 
+	toNullable := func(value string) interface{} {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		return trimmed
+	}
+
 	stateID := strings.TrimSpace(c.Query("state_id"))
-	districtID := strings.TrimSpace(c.Query("district_id"))
-	talukaID := strings.TrimSpace(c.Query("taluka_id"))
-	villageID := strings.TrimSpace(c.Query("village_id"))
+	districtID := toNullable(c.Query("district_id"))
+	talukaID := toNullable(c.Query("taluka_id"))
+	villageID := toNullable(c.Query("village_id"))
 
 	if stateID != "" && h.familyColumnExists("STATE_ID") {
 		clauses = append(clauses, fmt.Sprintf("CAST(%s.STATE_ID AS CHAR) = ?", alias))
 		args = append(args, stateID)
 	}
-	if districtID != "" {
-		clauses = append(clauses, fmt.Sprintf("CAST(%s.DISTRICT_ID AS CHAR) = ?", alias))
-		args = append(args, districtID)
-	}
-	if talukaID != "" {
-		clauses = append(clauses, fmt.Sprintf("CAST(%s.TALUKA_ID AS CHAR) = ?", alias))
-		args = append(args, talukaID)
-	}
-	if villageID != "" {
-		clauses = append(clauses, fmt.Sprintf("CAST(%s.VILLAGE_ID AS CHAR) = ?", alias))
-		args = append(args, villageID)
-	}
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.DISTRICT_ID AS CHAR) = ?)", alias))
+	args = append(args, districtID, districtID, districtID)
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.TALUKA_ID AS CHAR) = ?)", alias))
+	args = append(args, talukaID, talukaID, talukaID)
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.VILLAGE_ID AS CHAR) = ?)", alias))
+	args = append(args, villageID, villageID, villageID)
 
 	return strings.Join(clauses, " AND "), args
 }

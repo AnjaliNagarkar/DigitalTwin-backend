@@ -5,8 +5,10 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +21,34 @@ type InsightHandler struct {
 type CountItem struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
+}
+
+func (h *InsightHandler) buildInsightFamilyFilters(alias string, c *gin.Context) (string, []interface{}) {
+	clauses := []string{"1=1"}
+	args := []interface{}{}
+
+	toNullable := func(value string) interface{} {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		return trimmed
+	}
+
+	districtID := toNullable(c.Query("district_id"))
+	talukaID := toNullable(c.Query("taluka_id"))
+	villageID := toNullable(c.Query("village_id"))
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.DISTRICT_ID AS CHAR) = ?)", alias))
+	args = append(args, districtID, districtID, districtID)
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.TALUKA_ID AS CHAR) = ?)", alias))
+	args = append(args, talukaID, talukaID, talukaID)
+
+	clauses = append(clauses, fmt.Sprintf("(? IS NULL OR ? = '' OR CAST(%s.VILLAGE_ID AS CHAR) = ?)", alias))
+	args = append(args, villageID, villageID, villageID)
+
+	return strings.Join(clauses, " AND "), args
 }
 
 // GetGovernanceInsights — GET /insights/governance
@@ -107,42 +137,55 @@ func (h *InsightHandler) GetGovernanceInsights(c *gin.Context) {
 // Returns land distribution, irrigation coverage, and crop season data.
 func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 	log.Println("[SELECT] GET /insights/agriculture")
+	_, cancel, ok := ensureDBReady(c, h.DB, "/insights/agriculture")
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection unavailable"})
+		return
+	}
+	defer cancel()
+	districtID := strings.TrimSpace(c.Query("district_id"))
+	talukaID := strings.TrimSpace(c.Query("taluka_id"))
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	log.Printf("[FILTER] /insights/agriculture district_id=%q taluka_id=%q village_id=%q", districtID, talukaID, villageID)
+	where, args := h.buildInsightFamilyFilters("f", c)
 	result := gin.H{}
 	result["landUtilizationRows"] = []gin.H{}
 	result["seasonCropRows"] = []gin.H{}
 
 	var totalFarmers int
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY WHERE OWN_AGRICULTURE_LAND = 'Yes'").Scan(&totalFarmers)
+	h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f WHERE f.OWN_AGRICULTURE_LAND = 'Yes' AND %s", where), args...).Scan(&totalFarmers)
 	result["totalFarmers"] = totalFarmers
 
 	var noIrrigation int
-	h.DB.QueryRow(`
-		SELECT COUNT(*) FROM FAMILY
-		WHERE OWN_AGRICULTURE_LAND = 'Yes'
-		  AND (SOURCE_WATER_IRRIGATION IS NULL
-		    OR SOURCE_WATER_IRRIGATION = ''
-		    OR SOURCE_WATER_IRRIGATION = 'None'
-		    OR SOURCE_WATER_IRRIGATION = 'Rain Fed')
-	`).Scan(&noIrrigation)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND (f.SOURCE_WATER_IRRIGATION IS NULL
+		    OR f.SOURCE_WATER_IRRIGATION = ''
+		    OR f.SOURCE_WATER_IRRIGATION = 'None'
+		    OR f.SOURCE_WATER_IRRIGATION = 'Rain Fed')
+		  AND %s
+	`, where), args...).Scan(&noIrrigation)
 	result["farmersWithoutIrrigation"] = noIrrigation
 
 	// Land size distribution (SELECT with CASE bucketing — read-only)
-	landRows, err := h.DB.Query(`
+	landRows, err := h.DB.Query(fmt.Sprintf(`
 		SELECT
 			CASE
-				WHEN CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) = 0 THEN 'Landless'
-				WHEN CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 1 THEN 'Marginal (0-1 acre)'
-				WHEN CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 2.5 THEN 'Small (1-2.5 acres)'
-				WHEN CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 5 THEN 'Semi-Medium (2.5-5 acres)'
-				WHEN CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 10 THEN 'Medium (5-10 acres)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) = 0 THEN 'Landless'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 1 THEN 'Marginal (0-1 acre)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 2.5 THEN 'Small (1-2.5 acres)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 5 THEN 'Semi-Medium (2.5-5 acres)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 10 THEN 'Medium (5-10 acres)'
 				ELSE 'Large (>10 acres)'
 			END as category,
 			COUNT(*) as cnt
-		FROM FAMILY
-		WHERE OWN_AGRICULTURE_LAND = 'Yes'
+		FROM FAMILY f
+		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND %s
 		GROUP BY category
 		ORDER BY cnt DESC
-	`)
+	`, where), args...)
 	if err == nil {
 		defer landRows.Close()
 		var items []CountItem
@@ -154,11 +197,12 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 		result["landDistribution"] = items
 	}
 
-	waterRows, err := h.DB.Query(`
-		SELECT COALESCE(SOURCE_WATER_IRRIGATION, 'Unknown') as label, COUNT(*) as cnt
-		FROM FAMILY WHERE OWN_AGRICULTURE_LAND = 'Yes'
-		GROUP BY SOURCE_WATER_IRRIGATION ORDER BY cnt DESC LIMIT 10
-	`)
+	waterRows, err := h.DB.Query(fmt.Sprintf(`
+		SELECT COALESCE(f.SOURCE_WATER_IRRIGATION, 'Unknown') as label, COUNT(*) as cnt
+		FROM FAMILY f WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND %s
+		GROUP BY f.SOURCE_WATER_IRRIGATION ORDER BY cnt DESC LIMIT 10
+	`, where), args...)
 	if err == nil {
 		defer waterRows.Close()
 		var items []CountItem
@@ -177,7 +221,7 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 		var validRecords int64
 		var invalidRecords int64
 
-		err := h.DB.QueryRow(`
+		err := h.DB.QueryRow(fmt.Sprintf(`
 			SELECT
 				COALESCE(ROUND(SUM(total_land), 2), 0) AS total_land,
 				COALESCE(ROUND(SUM(cultivated_land), 2), 0) AS cultivated_land,
@@ -187,35 +231,37 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 				SELECT
 					CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) AS total_land,
 					CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) AS cultivated_land
-				FROM FAMILY
-				WHERE OWN_AGRICULTURE_LAND = 'Yes'
-				  AND AREA_AGRICULTURE_LAND_ACRES IS NOT NULL
-				  AND LAND_UNDER_CULTIVATION_ACRES IS NOT NULL
-				  AND TRIM(AREA_AGRICULTURE_LAND_ACRES) <> ''
-				  AND TRIM(LAND_UNDER_CULTIVATION_ACRES) <> ''
-				  AND AREA_AGRICULTURE_LAND_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
-				  AND LAND_UNDER_CULTIVATION_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
-				  AND CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) <= CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
-				  AND CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) BETWEEN 0 AND 500
+				FROM FAMILY f
+				WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+				  AND %s
+				  AND f.AREA_AGRICULTURE_LAND_ACRES IS NOT NULL
+				  AND f.LAND_UNDER_CULTIVATION_ACRES IS NOT NULL
+				  AND TRIM(f.AREA_AGRICULTURE_LAND_ACRES) <> ''
+				  AND TRIM(f.LAND_UNDER_CULTIVATION_ACRES) <> ''
+				  AND f.AREA_AGRICULTURE_LAND_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+				  AND f.LAND_UNDER_CULTIVATION_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+				  AND CAST(f.LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) <= CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+				  AND CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) BETWEEN 0 AND 500
 			) t
-		`).Scan(&totalLand, &cultivatedLand, &unusedLand, &validRecords)
+		`, where), args...).Scan(&totalLand, &cultivatedLand, &unusedLand, &validRecords)
 
 		if err == nil {
-			err = h.DB.QueryRow(`
+			err = h.DB.QueryRow(fmt.Sprintf(`
 				SELECT COUNT(*) AS invalid_records
-				FROM FAMILY
-				WHERE OWN_AGRICULTURE_LAND = 'Yes'
+				FROM FAMILY f
+				WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+				  AND %s
 				  AND (
-					AREA_AGRICULTURE_LAND_ACRES IS NULL
-					OR LAND_UNDER_CULTIVATION_ACRES IS NULL
-					OR TRIM(AREA_AGRICULTURE_LAND_ACRES) = ''
-					OR TRIM(LAND_UNDER_CULTIVATION_ACRES) = ''
-					OR AREA_AGRICULTURE_LAND_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
-					OR LAND_UNDER_CULTIVATION_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
-					OR CAST(LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) > CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
-					OR CAST(AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) > 500
+					f.AREA_AGRICULTURE_LAND_ACRES IS NULL
+					OR f.LAND_UNDER_CULTIVATION_ACRES IS NULL
+					OR TRIM(f.AREA_AGRICULTURE_LAND_ACRES) = ''
+					OR TRIM(f.LAND_UNDER_CULTIVATION_ACRES) = ''
+					OR f.AREA_AGRICULTURE_LAND_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+					OR f.LAND_UNDER_CULTIVATION_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+					OR CAST(f.LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) > CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+					OR CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) > 500
 				  )
-			`).Scan(&invalidRecords)
+			`, where), args...).Scan(&invalidRecords)
 		}
 
 		if err == nil {
@@ -264,42 +310,47 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 
 	if h.CC.Has("CULTIVATING_DURING_KHARIF_SEASON") || rabiColumn != "" {
 		queryParts := []string{}
+		cropArgs := []interface{}{}
 
 		if h.CC.Has("CULTIVATING_DURING_KHARIF_SEASON") {
 			queryParts = append(queryParts, `
-				SELECT 'Kharif' AS season, TRIM(CULTIVATING_DURING_KHARIF_SEASON) AS crop, COUNT(*) AS cnt
-				FROM FAMILY
-				WHERE OWN_AGRICULTURE_LAND = 'Yes'
-				  AND CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
-				  AND TRIM(CULTIVATING_DURING_KHARIF_SEASON) != ''
-				GROUP BY TRIM(CULTIVATING_DURING_KHARIF_SEASON)
+				SELECT 'Kharif' AS season, TRIM(f.CULTIVATING_DURING_KHARIF_SEASON) AS crop, COUNT(*) AS cnt
+				FROM FAMILY f
+				WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+				  AND `+where+`
+				  AND f.CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
+				  AND TRIM(f.CULTIVATING_DURING_KHARIF_SEASON) != ''
+				GROUP BY TRIM(f.CULTIVATING_DURING_KHARIF_SEASON)
 			`)
+			cropArgs = append(cropArgs, args...)
 		}
 
 		if rabiColumn != "" {
 			queryParts = append(queryParts, `
-				SELECT 'Rabi' AS season, TRIM(`+rabiColumn+`) AS crop, COUNT(*) AS cnt
-				FROM FAMILY
-				WHERE OWN_AGRICULTURE_LAND = 'Yes'
-				  AND `+rabiColumn+` IS NOT NULL
-				  AND TRIM(`+rabiColumn+`) != ''
-				GROUP BY TRIM(`+rabiColumn+`)
+				SELECT 'Rabi' AS season, TRIM(f.`+rabiColumn+`) AS crop, COUNT(*) AS cnt
+				FROM FAMILY f
+				WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+				  AND `+where+`
+				  AND f.`+rabiColumn+` IS NOT NULL
+				  AND TRIM(f.`+rabiColumn+`) != ''
+				GROUP BY TRIM(f.`+rabiColumn+`)
 			`)
+			cropArgs = append(cropArgs, args...)
 		}
 
 		if len(queryParts) > 0 {
 			cropRows, err := h.DB.Query(`
 				SELECT season, crop, cnt
 				FROM (
-					` + queryParts[0] + func() string {
+					`+queryParts[0]+func() string {
 				if len(queryParts) > 1 {
 					return ` UNION ALL ` + queryParts[1]
 				}
 				return ``
-			}() + `
+			}()+`
 				) merged
 				ORDER BY cnt DESC
-			`)
+			`, cropArgs...)
 
 			if err == nil {
 				defer cropRows.Close()
@@ -322,21 +373,23 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 	}
 
 	var kharifCount int
-	h.DB.QueryRow(`
-		SELECT COUNT(*) FROM FAMILY
-		WHERE CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
-		  AND CULTIVATING_DURING_KHARIF_SEASON != ''
-		  AND CULTIVATING_DURING_KHARIF_SEASON != 'No'
-	`).Scan(&kharifCount)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
+		  AND f.CULTIVATING_DURING_KHARIF_SEASON != ''
+		  AND f.CULTIVATING_DURING_KHARIF_SEASON != 'No'
+		  AND %s
+	`, where), args...).Scan(&kharifCount)
 	result["kharifFarmers"] = kharifCount
 
 	var rabiCount int
-	h.DB.QueryRow(`
-		SELECT COUNT(*) FROM FAMILY
-		WHERE TAKING_CROPS_RABI_SEASON IS NOT NULL
-		  AND TAKING_CROPS_RABI_SEASON != ''
-		  AND TAKING_CROPS_RABI_SEASON != 'No'
-	`).Scan(&rabiCount)
+	h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.TAKING_CROPS_RABI_SEASON IS NOT NULL
+		  AND f.TAKING_CROPS_RABI_SEASON != ''
+		  AND f.TAKING_CROPS_RABI_SEASON != 'No'
+		  AND %s
+	`, where), args...).Scan(&rabiCount)
 	result["rabiFarmers"] = rabiCount
 
 	c.JSON(http.StatusOK, result)

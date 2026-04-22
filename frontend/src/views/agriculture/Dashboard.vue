@@ -11,6 +11,46 @@
       </div>
     </header>
 
+    <section class="card dashboard-filter">
+      <div class="dashboard-filter-head">Location Filter</div>
+      <div class="dashboard-filter-grid">
+        <select v-model="selectedDistrict" class="dashboard-filter-select" @change="onDistrictChange">
+          <option value="">Select District</option>
+          <option v-for="district in districtOptions" :key="district.id" :value="String(district.id)">
+            {{ district.name }}
+          </option>
+        </select>
+
+        <select
+          v-model="selectedTaluka"
+          class="dashboard-filter-select"
+          :disabled="!selectedDistrict"
+          @change="onTalukaChange"
+        >
+          <option value="">Select Taluka</option>
+          <option v-for="taluka in talukaOptions" :key="taluka.id" :value="String(taluka.id)">
+            {{ taluka.name }}
+          </option>
+        </select>
+
+        <select
+          v-model="selectedVillage"
+          class="dashboard-filter-select"
+          :disabled="!selectedTaluka"
+        >
+          <option value="">Select Village</option>
+          <option v-for="village in villageOptions" :key="village.id" :value="String(village.id)">
+            {{ village.name }}
+          </option>
+        </select>
+
+        <div class="dashboard-filter-actions">
+          <button type="button" class="dashboard-apply-btn" @click="applyLocationFilters">Apply</button>
+          <button type="button" class="dashboard-reset-btn" @click="resetLocationFilters">Reset</button>
+        </div>
+      </div>
+    </section>
+
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
       <span>Loading intelligence data...</span>
@@ -277,7 +317,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h } from 'vue'
-import { getAgricultureInsights } from '../../api/index.js'
+import { getAgricultureInsights, getLocationOptions } from '../../api/index.js'
 import { getPopulationDashboard, getPopulationDemographics, getPopulationEducation, getPopulationEmployment, getPopulationMapInsights } from '../population/api.js'
 
 const loading = ref(true)
@@ -321,6 +361,12 @@ const employment = ref({
   },
 })
 const bplDistribution = ref({ bpl: 0, non_bpl: 0, total_households: 0 })
+const selectedDistrict = ref('')
+const selectedTaluka = ref('')
+const selectedVillage = ref('')
+const districtOptions = ref([])
+const talukaOptions = ref([])
+const villageOptions = ref([])
 let isActive = true
 
 onUnmounted(() => {
@@ -340,16 +386,40 @@ function applyDemographicsData(data) {
     : []
 }
 
-onMounted(async () => {
+function buildLocationParams() {
+  return {
+    district_id: selectedDistrict.value || null,
+    taluka_id: selectedTaluka.value || null,
+    village_id: selectedVillage.value || null,
+  }
+}
+
+async function loadLocationOptions() {
+  try {
+    const options = await getLocationOptions({
+      district_id: selectedDistrict.value || undefined,
+      taluka_id: selectedTaluka.value || undefined,
+    })
+
+    if (!isActive) return
+    districtOptions.value = options?.districts || []
+    talukaOptions.value = options?.talukas || []
+    villageOptions.value = options?.villages || []
+  } catch (error) {
+    console.warn('Dashboard location options unavailable:', error?.message || error)
+  }
+}
+
+async function fetchDashboardData(params = {}) {
   loading.value = true
 
   const coreResults = await Promise.allSettled([
-    getAgricultureInsights(),
-    getPopulationDashboard(),
-    getPopulationDemographics(),
-    getPopulationEducation(),
-    getPopulationEmployment(),
-    getPopulationMapInsights(),
+    getAgricultureInsights(params),
+    getPopulationDashboard(params),
+    getPopulationDemographics(params),
+    getPopulationEducation(params),
+    getPopulationEmployment(params),
+    getPopulationMapInsights(params),
   ])
 
   if (!isActive) return
@@ -364,6 +434,36 @@ onMounted(async () => {
   }
 
   loading.value = false
+}
+
+async function onDistrictChange() {
+  selectedTaluka.value = ''
+  selectedVillage.value = ''
+  await loadLocationOptions()
+}
+
+async function onTalukaChange() {
+  selectedVillage.value = ''
+  await loadLocationOptions()
+}
+
+async function applyLocationFilters() {
+  await fetchDashboardData(buildLocationParams())
+}
+
+async function resetLocationFilters() {
+  selectedDistrict.value = ''
+  selectedTaluka.value = ''
+  selectedVillage.value = ''
+  const dashboardPromise = fetchDashboardData()
+  const optionsPromise = loadLocationOptions()
+  await Promise.allSettled([dashboardPromise, optionsPromise])
+}
+
+onMounted(async () => {
+  const dashboardPromise = fetchDashboardData()
+  const optionsPromise = loadLocationOptions()
+  await Promise.allSettled([dashboardPromise, optionsPromise])
 })
 
 const GroupIcon = {
@@ -1203,6 +1303,69 @@ function landPct(count) {
   animation: spin 0.8s linear infinite;
 }
 
+.dashboard-filter {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.dashboard-filter-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+
+.dashboard-filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.dashboard-filter-select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-body);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.dashboard-filter-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.dashboard-filter-actions {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.dashboard-apply-btn,
+.dashboard-reset-btn {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.53rem 0.9rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-apply-btn {
+  background: var(--teal);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.dashboard-reset-btn {
+  background: var(--bg-surface);
+  color: var(--text-body);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -1462,6 +1625,15 @@ function landPct(count) {
 }
 
 @media (max-width: 1100px) {
+  .dashboard-filter-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .metrics-row {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1488,6 +1660,10 @@ function landPct(count) {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+  }
+
+  .dashboard-filter-grid {
+    grid-template-columns: 1fr;
   }
 
   .metrics-row,

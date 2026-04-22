@@ -70,8 +70,9 @@ export function getGovernanceInsights() {
   return fetchJSON('/insights/governance')
 }
 
-export function getAgricultureInsights() {
-  return fetchJSON('/insights/agriculture')
+export function getAgricultureInsights(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/insights/agriculture?${qs}` : '/insights/agriculture')
 }
 
 export function getWelfareInsights() {

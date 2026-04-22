@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -15,6 +16,11 @@ func Connect() *sql.DB {
 	if err != nil {
 		log.Fatalf("Failed to open DB connection: %v", err)
 	}
+
+	conn.SetMaxOpenConns(25)
+	conn.SetMaxIdleConns(10)
+	conn.SetConnMaxLifetime(5 * time.Minute)
+	conn.SetConnMaxIdleTime(2 * time.Minute)
 
 	if err := conn.Ping(); err != nil {
 		log.Fatalf("Failed to reach DB: %v", err)

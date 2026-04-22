@@ -48,38 +48,51 @@ async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
   throw new Error('Request failed after retries')
 }
 
-export function getPopulationDashboard() {
-  return fetchJSON('/population/dashboard')
+function toQueryString(params = {}) {
+  const cleaned = Object.entries(params).filter(([, value]) => {
+    if (value === undefined || value === null) return false
+    if (typeof value === 'string' && value.trim() === '') return false
+    return true
+  })
+  return new URLSearchParams(cleaned).toString()
 }
 
-export function getPopulationDemographics() {
-  return fetchJSON('/population/demographics', 15000)
+export function getPopulationDashboard(params = {}) {
+  const query = toQueryString(params)
+  return fetchJSON(`/population/dashboard${query ? `?${query}` : ''}`)
 }
 
-export function getPopulationEducation() {
-  return fetchJSON('/population/education', 15000)
+export function getPopulationDemographics(params = {}) {
+  const query = toQueryString(params)
+  return fetchJSON(`/population/demographics${query ? `?${query}` : ''}`, 15000)
 }
 
-export function getPopulationEmployment() {
-  return fetchJSON('/population/employment', 15000)
+export function getPopulationEducation(params = {}) {
+  const query = toQueryString(params)
+  return fetchJSON(`/population/education${query ? `?${query}` : ''}`, 15000)
+}
+
+export function getPopulationEmployment(params = {}) {
+  const query = toQueryString(params)
+  return fetchJSON(`/population/employment${query ? `?${query}` : ''}`, 15000)
 }
 
 export function getPopulationRegistry(params = {}) {
-  const query = new URLSearchParams(params).toString()
+  const query = toQueryString(params)
   return fetchJSON(`/population/registry${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)
 }
 
 export function getPopulationMapData(params = {}) {
-  const query = new URLSearchParams(params).toString()
+  const query = toQueryString(params)
   return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)
 }
 
 export function getPopulationMapSummary(params = {}) {
-  const query = new URLSearchParams(params).toString()
+  const query = toQueryString(params)
   return fetchJSON(`/population/map-summary${query ? `?${query}` : ''}`)
 }
 
 export function getPopulationMapInsights(params = {}) {
-  const query = new URLSearchParams(params).toString()
+  const query = toQueryString(params)
   return fetchJSON(`/population/map-insights${query ? `?${query}` : ''}`)
 }
