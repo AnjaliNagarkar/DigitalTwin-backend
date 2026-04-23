@@ -55,6 +55,7 @@ type UnifiedRecord struct {
 	CaretakerName     string `json:"caretakerName"`
 	GovtPensionAmount string `json:"govtPensionAmount"`
 
+	MaritalStatus string `json:"maritalStatus"` // New field
 	// ── Housewife-specific ───────────────────────────────────────────────────
 	SourceOfIncome string `json:"sourceOfIncome"`
 }
@@ -119,6 +120,7 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 		"TYPE_INSTITUTION",
 		"DIVYANG",
 		"DISABILITY",
+		"MARITAL_STATUS", // Add this
 		"DISABILITY_PERCENTAGE",
 	})
 	fam := colsExist(h.DB, "FAMILY", []string{
@@ -174,6 +176,7 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 	divyangExpr := opt("DIVYANG", "COALESCE(fm.DIVYANG,'')")
 	disabilityExpr := opt("DISABILITY", "COALESCE(fm.DISABILITY,'')")
 	disabilityPctExpr := opt("DISABILITY_PERCENTAGE", "COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR),'')")
+	maritalStatusExpr := opt("MARITAL_STATUS", "COALESCE(fm.MARITAL_STATUS,'')") // New expression
 
 	// ORDER BY removed — no index on name columns; frontend handles sorting.
 	return fmt.Sprintf(`
@@ -198,12 +201,13 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 			%s                                                AS school_name,
 			%s                                                AS divyang,
 			%s                                                AS disability_type,
-			%s                                                AS disability_pct
+			%s                                                AS disability_pct,
+			%s                                                AS marital_status_raw
 		FROM FAMILY_MEMBER fm
 		LEFT JOIN FAMILY f ON f.FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 	`, dobExpr, educExpr, workExpr, sanitExpr,
-		pursueExpr, stdExpr, instExpr,
-		divyangExpr, disabilityExpr, disabilityPctExpr)
+		pursueExpr, stdExpr, instExpr, divyangExpr, disabilityExpr, disabilityPctExpr,
+		maritalStatusExpr) // Add this
 }
 
 // GetUnifiedRegistry handles GET /unified-registry.
@@ -221,27 +225,28 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 	childrenByFamily := map[int]int{}
 	for rows.Next() {
 		var (
-			firstName      string
-			lastName       string
-			gender         string
-			dobRaw         string
-			education      string
-			occupation     string
-			familyID       int
-			totalLand      string
-			ownAgriLand    string
-			waterSource    string
-			kharifCrop     string
-			rabiCrop       string
-			annualIncome   string
-			sanitation     string
-			children       int
-			pursuing       string
-			gradeStd       string
-			schoolName     string
-			divyang        string
-			disabilityType string
-			disabilityPct  string
+			firstName        string
+			lastName         string
+			gender           string
+			dobRaw           string
+			education        string
+			occupation       string
+			familyID         int
+			totalLand        string
+			ownAgriLand      string
+			waterSource      string
+			kharifCrop       string
+			rabiCrop         string
+			annualIncome     string
+			sanitation       string
+			children         int
+			pursuing         string
+			gradeStd         string
+			schoolName       string
+			divyang          string
+			disabilityType   string
+			maritalStatusRaw string // New variable
+			disabilityPct    string
 		)
 
 		if err := rows.Scan(
@@ -252,8 +257,9 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			&sanitation, &children,
 			&pursuing, &gradeStd, &schoolName,
 			&divyang, &disabilityType, &disabilityPct,
+			&maritalStatusRaw,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan unified registry record", "detail": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan unified registry record", "detail": err.Error(), "query": h.query})
 			return
 		}
 
@@ -345,6 +351,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			CaretakerName:     "Not Available",
 			GovtPensionAmount: govtPensionAmt,
 
+			MaritalStatus:  strings.TrimSpace(maritalStatusRaw), // Populate new field
 			SourceOfIncome: sourceOfIncome,
 		})
 	}

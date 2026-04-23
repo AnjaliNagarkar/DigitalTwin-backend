@@ -208,6 +208,7 @@ const CATEGORY_CONFIG = {
       { key: 'age',          label: 'Age',            tdClass: 'td-num' },
       { key: 'gender',       label: 'Gender' },
       { key: 'occupation',   label: 'Occupation' },
+      { key: 'maritalStatus', label: 'Marital Status' },
       { key: 'annualIncome', label: 'Annual Income',  tdClass: 'td-num' },
     ],
     subFilters: [
@@ -226,6 +227,28 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',      value: 'high'   },
         ],
       },
+      
+      {
+        key: 'occupationType', label: 'Occupation',
+        options: [
+          { label: 'Farmer',        value: 'Farmer'        },
+          { label: 'Student',       value: 'Student'       },
+          { label: 'Housewife',     value: 'Housewife'     },
+          { label: 'Salaried Job',  value: 'Salaried Job'  },
+          { label: 'Wage Work',     value: 'Wage Work'     },
+          { label: 'Unemployed',    value: 'Unemployed'    },
+          { label: 'Not Working',   value: 'Not Working'   },
+        ],
+      },
+      
+      {
+        key: 'isDivyang', label: 'Divyang',
+        options: [
+          { label: 'Yes', value: 'true'  },
+          { label: 'No',  value: 'false' },
+        ],
+      },
+      
     ],
   },
 
@@ -276,6 +299,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -292,7 +325,6 @@ const CATEGORY_CONFIG = {
       { key: 'educationLevel', label: 'Education Level' },
       { key: 'schoolName',     label: 'School / College' },
       { key: 'scholarship',    label: 'Scholarship' },
-      { key: 'annualIncome',   label: 'Annual Income',     tdClass: 'td-num' },
     ],
     subFilters: [
       {
@@ -318,11 +350,11 @@ const CATEGORY_CONFIG = {
         ],
       },
       {
-        key: 'incomeRange', label: 'Income Range',
+        key: 'ageGroup', label: 'Age Group',
         options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
+          { label: '0-10',  value: '0-10'  },
+          { label: '11-17', value: '11-17' },
+          { label: '18+',   value: '18+'   },
         ],
       },
     ],
@@ -382,6 +414,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -397,6 +439,7 @@ const CATEGORY_CONFIG = {
       { key: 'gender',         label: 'Gender' },
       { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
+      { key: 'maritalStatus',  label: 'Marital Status' },
     ],
     subFilters: [
       {
@@ -423,16 +466,6 @@ const CATEGORY_CONFIG = {
         ],
       },
       {
-        key: 'sourceOfIncome', label: 'Income Source',
-        options: [
-          { label: 'Tailoring',              value: 'Tailoring' },
-          { label: 'Poultry',                value: 'Poultry' },
-          { label: 'Small Business/SHG',     value: 'Small Business/SHG' },
-          { label: 'Remittance from family', value: 'Remittance from family' },
-          { label: 'None',                   value: 'None' },
-        ],
-      },
-      {
         key: 'incomeRange', label: 'Income Range',
         options: [
           { label: 'Low  (<₹21k)',    value: 'low'    },
@@ -440,6 +473,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -466,6 +509,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 }
@@ -557,6 +610,7 @@ function mapLegacyCitizenToUnified(row) {
     pensionStatus: 'Not Eligible',
     caretakerName: 'Not Available',
     govtPensionAmount: 'N/A',
+    maritalStatus: '', // New field
     sourceOfIncome: 'None',
   }
 }
@@ -828,10 +882,76 @@ const filteredRecords = computed(() => {
     list = list.filter(r => sourceSet.has(r.sourceOfIncome))
   }
 
+  // Education level sub-filter (All Citizens category)
+  if (hasAny('educationLevel')) {
+    const eduSet = new Set(selected('educationLevel'))
+    list = list.filter(r => eduSet.has(r.educationLevel))
+  }
+
+  // Sanitation status sub-filter (All Citizens category)
+  if (hasAny('sanitationStatus')) {
+    const sanitSet = new Set(selected('sanitationStatus'))
+    list = list.filter(r => {
+      const status = String(r.sanitationStatus || '').trim()
+      if (sanitSet.has('Has Toilet') && (status !== 'No Latrine' && status !== 'Not Available' && status !== '')) return true
+      if (sanitSet.has('No Toilet') && status === 'No Latrine') return true
+      if (sanitSet.has('Not Available') && (status === 'Not Available' || status === '')) return true
+      return false
+    })
+  }
+
+  // Occupation type sub-filter (All Citizens category)
+  if (hasAny('occupationType')) {
+    const occSet = new Set(selected('occupationType').map(v => String(v).toLowerCase()))
+    list = list.filter(r => occSet.has(String(r.occupation || '').toLowerCase()))
+  }
+
+  // IsFarmer sub-filter (All Citizens category)
+  if (hasAny('isFarmer')) {
+    const farmerSet = new Set(selected('isFarmer'))
+    list = list.filter(r => (farmerSet.has('true') && r.isFarmer) || (farmerSet.has('false') && !r.isFarmer))
+  }
+
+  // IsStudent sub-filter (All Citizens category)
+  if (hasAny('isStudent')) {
+    const studentSet = new Set(selected('isStudent'))
+    list = list.filter(r => (studentSet.has('true') && r.isStudent) || (studentSet.has('false') && !r.isStudent))
+  }
+
+  // IsDivyang sub-filter (All Citizens category)
+  if (hasAny('isDivyang')) {
+    const divyangSet = new Set(selected('isDivyang'))
+    list = list.filter(r => (divyangSet.has('true') && r.isDivyang) || (divyangSet.has('false') && !r.isDivyang))
+  }
+
+  // IsHousewife sub-filter (All Citizens category)
+  if (hasAny('isHousewife')) {
+    const housewifeSet = new Set(selected('isHousewife'))
+    list = list.filter(r => (housewifeSet.has('true') && r.isHousewife) || (housewifeSet.has('false') && !r.isHousewife))
+  }
+
+  // IsSenior sub-filter (All Citizens category)
+  if (hasAny('isSenior')) {
+    const seniorSet = new Set(selected('isSenior'))
+    list = list.filter(r => (seniorSet.has('true') && r.isSenior) || (seniorSet.has('false') && !r.isSenior))
+  }
+
+  // Age group sub-filter (student category)
+  if (hasAny('ageGroup') && activeCategoryConfig.value.label === 'Student') {
+    const ageSet = new Set(selected('ageGroup'))
+    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
+  }
+
   // Income range — global, works across ALL categories
   if (hasAny('incomeRange')) {
     const incomeSet = new Set(selected('incomeRange'))
     list = list.filter(r => incomeSet.has(classifyIncome(r.annualIncome)))
+  }
+
+  // Marital Status sub-filter (All Citizens and Housewives categories)
+  if (hasAny('maritalStatus')) {
+    const maritalSet = new Set(selected('maritalStatus').map(v => String(v).toLowerCase()))
+    list = list.filter(r => maritalSet.has(String(r.maritalStatus || '').toLowerCase()))
   }
 
   // Sort
@@ -979,6 +1099,10 @@ function renderCell(r, col) {
       const rangeLabel = { low: 'Low', medium: 'Mid', high: 'High' }[classifyIncome(v)] || ''
       const rangePill = rangeCls ? `<span class="badge ${rangeCls}" style="margin-left:0.35rem;font-size:0.62rem">${rangeLabel}</span>` : ''
       return `<span>${esc(v)}</span>${rangePill}`
+    }
+    
+    case 'maritalStatus': {
+      return v ? `<span class="badge badge-blue">${esc(v)}</span>` : `<span class="text-dim-sm">—</span>`
     }
 
     case 'childrenCount':
