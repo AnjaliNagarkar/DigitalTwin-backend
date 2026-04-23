@@ -345,6 +345,36 @@ const CATEGORY_CONFIG = {
     ],
     subFilters: [
       {
+        key: 'gender', label: 'Gender',
+        options: [
+          { label: 'Male',   value: 'Male'   },
+          { label: 'Female', value: 'Female' },
+        ],
+      },
+      {
+        key: 'pensionStatus', label: 'Pension',
+        options: [
+          { label: 'Eligible',     value: 'Eligible'     },
+          { label: 'Not Eligible', value: 'Not Eligible' },
+        ],
+      },
+      {
+        key: 'disabilitySeverity', label: 'Disability %',
+        options: [
+          { label: 'Low (<40%)',      value: 'low'      },
+          { label: 'Moderate (40-70%)', value: 'moderate' },
+          { label: 'High (>70%)',     value: 'high'     },
+          { label: 'Not Recorded',    value: 'unknown'  },
+        ],
+      },
+      {
+        key: 'divyangCertificate', label: 'Certificate',
+        options: [
+          { label: 'Available',     value: 'yes' },
+          { label: 'Not Available', value: 'no'  },
+        ],
+      },
+      {
         key: 'incomeRange', label: 'Income Range',
         options: [
           { label: 'Low  (<₹21k)',    value: 'low'    },
@@ -365,11 +395,43 @@ const CATEGORY_CONFIG = {
       { key: 'fullName',       label: 'Full Name',       minWidth: true, tdClass: 'td-name' },
       { key: 'age',            label: 'Age',              tdClass: 'td-num' },
       { key: 'gender',         label: 'Gender' },
-      { key: 'sourceOfIncome', label: 'Source of Income' },
       { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
     ],
     subFilters: [
+      {
+        key: 'gender', label: 'Gender',
+        options: [
+          { label: 'Male',   value: 'Male'   },
+          { label: 'Female', value: 'Female' },
+        ],
+      },
+      {
+        key: 'ageGroup', label: 'Age Group',
+        options: [
+          { label: '18-35', value: 'young'  },
+          { label: '36-55', value: 'middle' },
+          { label: '56+',   value: 'senior' },
+        ],
+      },
+      {
+        key: 'childrenGroup', label: 'Children',
+        options: [
+          { label: 'No Children', value: 'none'     },
+          { label: '1-2',         value: 'oneToTwo' },
+          { label: '3+',          value: 'threePlus' },
+        ],
+      },
+      {
+        key: 'sourceOfIncome', label: 'Income Source',
+        options: [
+          { label: 'Tailoring',              value: 'Tailoring' },
+          { label: 'Poultry',                value: 'Poultry' },
+          { label: 'Small Business/SHG',     value: 'Small Business/SHG' },
+          { label: 'Remittance from family', value: 'Remittance from family' },
+          { label: 'None',                   value: 'None' },
+        ],
+      },
       {
         key: 'incomeRange', label: 'Income Range',
         options: [
@@ -582,6 +644,35 @@ function classifyIncome(v) {
   return 'high'
 }
 
+function classifyDisabilitySeverity(v) {
+  const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, ''))
+  if (!Number.isFinite(n)) return 'unknown'
+  if (n < 40) return 'low'
+  if (n <= 70) return 'moderate'
+  return 'high'
+}
+
+function hasDivyangCertificate(r) {
+  return (r.isDivyang === true) ||
+    (String(r.disabilityType || '').trim() !== '' && String(r.disabilityType || '').trim().toLowerCase() !== 'not recorded') ||
+    (String(r.disabilityPercent || '').trim() !== '' && String(r.disabilityPercent || '').trim() !== '0')
+}
+
+function classifyAgeGroup(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n <= 35) return 'young'
+  if (n <= 55) return 'middle'
+  return 'senior'
+}
+
+function classifyChildrenGroup(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return 'none'
+  if (n <= 2) return 'oneToTwo'
+  return 'threePlus'
+}
+
 function toggleSort(key) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
   else { sortKey.value = key; sortDir.value = 'asc' }
@@ -696,6 +787,39 @@ const filteredRecords = computed(() => {
   if (hasAny('scholarship')) {
     const scholSet = new Set(selected('scholarship'))
     list = list.filter(r => scholSet.has(r.scholarship))
+  }
+
+  // Pension status sub-filter (divyang/senior categories)
+  if (hasAny('pensionStatus')) {
+    const pensionSet = new Set(selected('pensionStatus').map(v => String(v).toLowerCase()))
+    list = list.filter(r => pensionSet.has(String(r.pensionStatus || '').toLowerCase()))
+  }
+
+  // Disability severity sub-filter (divyang category)
+  if (hasAny('disabilitySeverity')) {
+    const severitySet = new Set(selected('disabilitySeverity'))
+    list = list.filter(r => severitySet.has(classifyDisabilitySeverity(r.disabilityPercent)))
+  }
+
+  // Divyang certificate sub-filter (divyang category)
+  if (hasAny('divyangCertificate')) {
+    const certSet = new Set(selected('divyangCertificate'))
+    list = list.filter(r => {
+      const hasCert = hasDivyangCertificate(r)
+      return (certSet.has('yes') && hasCert) || (certSet.has('no') && !hasCert)
+    })
+  }
+
+  // Age-group sub-filter (housewife category)
+  if (hasAny('ageGroup')) {
+    const ageSet = new Set(selected('ageGroup'))
+    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
+  }
+
+  // Children-group sub-filter (housewife category)
+  if (hasAny('childrenGroup')) {
+    const childrenSet = new Set(selected('childrenGroup'))
+    list = list.filter(r => childrenSet.has(classifyChildrenGroup(r.childrenCount)))
   }
 
   // Source-of-income sub-filter (housewife category)
@@ -813,9 +937,7 @@ function renderCell(r, col) {
       return v && v !== '0' ? `<span class="badge badge-orange">${esc(v)}%</span>` : `<span class="text-dim-sm">—</span>`
 
     case 'divyangCertificate': {
-      const hasDisabilityMarker = (r.isDivyang === true) ||
-        (String(r.disabilityType || '').trim() !== '' && String(r.disabilityType || '').trim().toLowerCase() !== 'not recorded') ||
-        (String(r.disabilityPercent || '').trim() !== '' && String(r.disabilityPercent || '').trim() !== '0')
+      const hasDisabilityMarker = hasDivyangCertificate(r)
       const cls = hasDisabilityMarker ? 'badge-green' : 'badge-muted'
       const label = hasDisabilityMarker ? 'Available' : 'Not Available'
       return `<span class="badge ${cls}">${label}</span>`
