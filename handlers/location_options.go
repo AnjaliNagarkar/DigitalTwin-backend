@@ -16,6 +16,45 @@ type LocationHandler struct {
 	DB *sql.DB
 }
 
+type DistrictMasterOption struct {
+	PklDistrictId  int    `json:"pklDistrictId"`
+	VsDistrictName string `json:"vsDistrictName"`
+}
+
+// GetDistricts returns the district master list used for district-id mapping.
+func (h *LocationHandler) GetDistricts(c *gin.Context) {
+	rows, err := h.DB.Query(`
+		SELECT
+			dm.pklDistrictId,
+			COALESCE(dm.vsDistrictName, '')
+		FROM district_master dm
+		WHERE dm.bEnabled = 1
+		ORDER BY dm.pklDistrictId
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch districts", "detail": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	districts := []DistrictMasterOption{}
+	for rows.Next() {
+		var item DistrictMasterOption
+		if scanErr := rows.Scan(&item.PklDistrictId, &item.VsDistrictName); scanErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan districts", "detail": scanErr.Error()})
+			return
+		}
+		districts = append(districts, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read districts", "detail": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, districts)
+}
+
 // GetLocationOptions returns district/taluka/village dropdown options.
 // Optional filters:
 // - district_id: narrows taluka/village options

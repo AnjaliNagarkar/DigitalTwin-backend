@@ -159,10 +159,7 @@
               <h3 class="chart-title">Age-wise Income & Gender</h3>
             </div>
 
-            <div v-if="ageIncomeGenderSegments.length === 0" class="empty-state">
-              No age-wise data available.
-            </div>
-            <div v-else class="age-mixed-chart">
+            <div class="age-mixed-chart">
               <apexchart
                 height="260"
                 type="line"
@@ -317,8 +314,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h } from 'vue'
-import { getAgricultureInsights, getLocationOptions } from '../../api/index.js'
-import { getPopulationDashboard, getPopulationDemographics, getPopulationEducation, getPopulationEmployment, getPopulationMapInsights } from '../population/api.js'
+import { getDashboardSummary, getLocationOptions } from '../../api/index.js'
 
 const loading = ref(true)
 const agriculture = ref({})
@@ -368,6 +364,7 @@ const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
 let isActive = true
+const AGE_GROUP_ORDER = ['0-18', '19-30', '31-45', '46-60', '60+']
 
 onUnmounted(() => {
   isActive = false
@@ -376,30 +373,66 @@ onUnmounted(() => {
 function applyDemographicsData(data) {
   demographics.value = data
   const distribution = demographics.value?.age_income_gender_distribution || []
-  ageIncomeGenderSegments.value = Array.isArray(distribution)
-    ? distribution.map(item => ({
-        age_group: item.age_group || item.age_range || '',
-        avg_income: Number(item.avg_income ?? item.average_income ?? 0),
-        male_count: Number(item.male_count || 0),
-        female_count: Number(item.female_count || 0),
+  const mapped = Array.isArray(distribution)
+    ? distribution.map(d => ({
+        age_group: d.age_group,
+        male: d.male,
+        female: d.female,
+        income: Number(d.income) || 0,
       }))
     : []
+
+  const grouped = {}
+
+  AGE_GROUP_ORDER.forEach(ageGroup => {
+    grouped[ageGroup] = { age_group: ageGroup, male: 0, female: 0, income: 0 }
+  })
+
+  mapped.forEach(item => {
+    const ageGroup = item?.age_group || ''
+    if (!grouped[ageGroup]) return
+
+    grouped[ageGroup].male += Number(item?.male ?? 0)
+    grouped[ageGroup].female += Number(item?.female ?? 0)
+    grouped[ageGroup].income = Number(item?.income ?? 0)
+  })
+
+  ageIncomeGenderSegments.value = AGE_GROUP_ORDER.map(ageGroup => grouped[ageGroup])
+}
+
+function isValidFilterValue(value) {
+  if (value === null || value === undefined) return false
+  const normalized = String(value).trim().toLowerCase()
+  return normalized !== '' && normalized !== '0' && normalized !== 'null' && normalized !== 'undefined'
 }
 
 function buildLocationParams() {
-  return {
-    district_id: selectedDistrict.value || null,
-    taluka_id: selectedTaluka.value || null,
-    village_id: selectedVillage.value || null,
+  const params = {}
+
+  if (isValidFilterValue(selectedDistrict.value)) {
+    params.district_id = String(selectedDistrict.value).trim()
   }
+  if (isValidFilterValue(selectedTaluka.value)) {
+    params.taluka_id = String(selectedTaluka.value).trim()
+  }
+  if (isValidFilterValue(selectedVillage.value)) {
+    params.village_id = String(selectedVillage.value).trim()
+  }
+
+  return params
 }
 
 async function loadLocationOptions() {
   try {
-    const options = await getLocationOptions({
-      district_id: selectedDistrict.value || undefined,
-      taluka_id: selectedTaluka.value || undefined,
-    })
+    const optionParams = {}
+    if (isValidFilterValue(selectedDistrict.value)) {
+      optionParams.district_id = String(selectedDistrict.value).trim()
+    }
+    if (isValidFilterValue(selectedTaluka.value)) {
+      optionParams.taluka_id = String(selectedTaluka.value).trim()
+    }
+
+    const options = await getLocationOptions(optionParams)
 
     if (!isActive) return
     districtOptions.value = options?.districts || []
@@ -414,23 +447,19 @@ async function fetchDashboardData(params = {}) {
   loading.value = true
 
   const coreResults = await Promise.allSettled([
-    getAgricultureInsights(params),
-    getPopulationDashboard(params),
-    getPopulationDemographics(params),
-    getPopulationEducation(params),
-    getPopulationEmployment(params),
-    getPopulationMapInsights(params),
+    getDashboardSummary(params),
   ])
 
   if (!isActive) return
 
-  if (coreResults[0].status === 'fulfilled') agriculture.value = coreResults[0].value
-  if (coreResults[1].status === 'fulfilled') populationStats.value = coreResults[1].value
-  if (coreResults[2].status === 'fulfilled') applyDemographicsData(coreResults[2].value)
-  if (coreResults[3].status === 'fulfilled') education.value = coreResults[3].value
-  if (coreResults[4].status === 'fulfilled') employment.value = coreResults[4].value
-  if (coreResults[5].status === 'fulfilled') {
-    bplDistribution.value = coreResults[5].value?.bpl_distribution || { bpl: 0, non_bpl: 0, total_households: 0 }
+  if (coreResults[0].status === 'fulfilled') {
+    const payload = coreResults[0].value || {}
+    agriculture.value = payload.agriculture || {}
+    populationStats.value = payload.population || populationStats.value
+    applyDemographicsData(payload.demographics || {})
+    education.value = payload.education || education.value
+    employment.value = payload.employment || employment.value
+    bplDistribution.value = payload.demographics?.bpl_distribution || payload.population?.bpl_distribution || { bpl: 0, non_bpl: 0, total_households: Number((payload.population || {}).total_households || 0) }
   }
 
   loading.value = false
@@ -527,23 +556,24 @@ const ageIncomeGenderCategories = computed(() =>
 )
 
 const ageIncomeGenderSeries = computed(() => {
-  if (!ageIncomeGenderSegments.value.length) return []
-
   return [
     {
-      name: 'Income',
-      type: 'column',
-      data: ageIncomeGenderSegments.value.map(item => item.avg_income),
-    },
-    {
       name: 'Male',
-      type: 'line',
-      data: ageIncomeGenderSegments.value.map(item => item.male_count),
+      type: 'column',
+      yAxisIndex: 0,
+      data: ageIncomeGenderSegments.value.map(d => Number(d.male) || 0),
     },
     {
       name: 'Female',
+      type: 'column',
+      yAxisIndex: 0,
+      data: ageIncomeGenderSegments.value.map(d => Number(d.female) || 0),
+    },
+    {
+      name: 'Income',
       type: 'line',
-      data: ageIncomeGenderSegments.value.map(item => item.female_count),
+      yAxisIndex: 1,
+      data: ageIncomeGenderSegments.value.map(d => Number(d.income) || 0),
     },
   ]
 })
@@ -552,18 +582,31 @@ const ageIncomeGenderOptions = computed(() => ({
   chart: {
     type: 'line',
     height: 260,
+    stacked: false,
     toolbar: { show: false },
-  },
-  stroke: {
-    width: [0, 3, 3],
   },
   plotOptions: {
     bar: {
-      columnWidth: '40%',
-      borderRadius: 4,
+      horizontal: false,
+      columnWidth: '30%',
+      distributed: false,
+      borderRadius: 2,
     },
   },
-  colors: ['#f59e0b', '#2563eb', '#ec4899'],
+  dataLabels: {
+    enabled: false,
+  },
+  colors: ['#3b82f6', '#ec4899', '#10b981'],
+  stroke: {
+    width: [1, 1, 3],
+    curve: 'smooth',
+  },
+  markers: {
+    size: [0, 0, 4],
+  },
+  fill: {
+    opacity: 1,
+  },
   xaxis: {
     categories: ageIncomeGenderCategories.value,
     title: {
@@ -573,16 +616,20 @@ const ageIncomeGenderOptions = computed(() => ({
   yaxis: [
     {
       title: {
-        text: 'Income (₹)',
+        text: 'Population',
       },
     },
     {
       opposite: true,
       title: {
-        text: 'Population',
+        text: 'Income',
       },
     },
   ],
+  tooltip: {
+    shared: true,
+    intersect: false,
+  },
   legend: {
     position: 'top',
   },

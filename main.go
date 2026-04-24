@@ -31,7 +31,10 @@ func main() {
 	farmerHandler := &handlers.FarmerHandler{DB: conn}
 	houseHandler := &handlers.HouseHandler{DB: conn, CC: cc}
 	insightHandler := &handlers.InsightHandler{DB: conn, CC: cc}
+	dashboardSummaryHandler := handlers.NewDashboardSummaryHandler(conn, cc)
 	locationHandler := &handlers.LocationHandler{DB: conn}
+	districtSurveyCountHandler := &handlers.DistrictSurveyCountHandler{DB: conn}
+	districtCentroidsHandler := &handlers.DistrictCentroidsHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
 	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
@@ -90,7 +93,10 @@ func main() {
 	// ── Digital Twin APIs (new) ───────────────────────────────────────────────
 	r.GET("/houses", houseHandler.GetHouses)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
+	r.GET("/districts", locationHandler.GetDistricts)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
+	r.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)
+	r.GET("/map/district-centroids", districtCentroidsHandler.GetDistrictCentroids)
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	r.POST("/pdf/report", pdfHandler.GeneratePDF)
@@ -100,6 +106,7 @@ func main() {
 	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
 	r.GET("/insights/agriculture", insightHandler.GetAgricultureInsights)
 	r.GET("/insights/welfare", insightHandler.GetWelfareInsights)
+	r.GET("/dashboard/summary", dashboardSummaryHandler.GetDashboardSummary)
 	routes.RegisterPopulationRoutes(r, populationHandler)
 
 	// ── Existing agri data endpoints ──────────────────────────────────────────

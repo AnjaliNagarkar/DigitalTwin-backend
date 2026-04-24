@@ -75,6 +75,11 @@ export function getAgricultureInsights(params = {}) {
   return fetchJSON(qs ? `/insights/agriculture?${qs}` : '/insights/agriculture')
 }
 
+export function getDashboardSummary(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/dashboard/summary?${qs}` : '/dashboard/summary', TIMEOUT_DATA)
+}
+
 export function getWelfareInsights() {
   return fetchJSON('/insights/welfare')
 }
@@ -110,4 +115,18 @@ export function getGeoClusters() {
 export function getLocationOptions(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/location-options?${qs}` : '/location-options', TIMEOUT_DATA)
+}
+
+export function getDistricts() {
+  return fetchJSON('/districts', TIMEOUT_DATA)
+}
+
+export function getDistrictSurveyCounts(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/district-survey-counts?${qs}` : '/map/district-survey-counts', TIMEOUT_DATA)
+}
+
+export function getDistrictCentroids(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/district-centroids?${qs}` : '/map/district-centroids', TIMEOUT_DATA)
 }

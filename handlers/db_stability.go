@@ -24,19 +24,22 @@ func isInvalidDBConnection(err error) bool {
 }
 
 func ensureDBReady(c *gin.Context, db *sql.DB, endpoint string) (context.Context, context.CancelFunc, bool) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 
 	if err := db.PingContext(ctx); err == nil {
 		return ctx, cancel, true
 	} else {
 		log.Printf("[DB] ping failed before %s: %v", endpoint, err)
-		if retryErr := db.PingContext(ctx); retryErr == nil {
-			return ctx, cancel, true
-		} else {
-			log.Printf("[DB] ping retry failed before %s: %v", endpoint, retryErr)
-		}
-	}
+		cancel()
 
-	cancel()
-	return nil, nil, false
+		retryCtx, retryCancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+		retryErr := db.PingContext(retryCtx)
+		if retryErr == nil {
+			return retryCtx, retryCancel, true
+		}
+
+		log.Printf("[DB] ping retry failed before %s: %v", endpoint, retryErr)
+		retryCancel()
+		return nil, nil, false
+	}
 }

@@ -1,0 +1,1057 @@
+package handlers
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+type dashboardCacheItem struct {
+	Data      gin.H
+	ExpiresAt time.Time
+}
+
+const dashboardSummaryCacheTTL = 5 * time.Minute
+
+var dashboardSummaryIndexInit sync.Once
+
+type DashboardSummaryHandler struct {
+	DB       *sql.DB
+	CC       *ColumnChecker
+	cache    map[string]dashboardCacheItem
+	cacheMux sync.RWMutex
+}
+
+func NewDashboardSummaryHandler(db *sql.DB, cc *ColumnChecker) *DashboardSummaryHandler {
+	h := &DashboardSummaryHandler{
+		DB:    db,
+		CC:    cc,
+		cache: map[string]dashboardCacheItem{},
+	}
+
+	dashboardSummaryIndexInit.Do(func() {
+		h.ensureSummaryIndexes()
+	})
+
+	return h
+}
+
+func (h *DashboardSummaryHandler) ensureSummaryIndexes() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const targetIndex = "idx_family_member_location"
+
+	var existing int
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'FAMILY_MEMBER'
+		  AND INDEX_NAME = ?
+	`, targetIndex).Scan(&existing); err != nil {
+		log.Printf("[dashboard/summary] index check failed: %v", err)
+		return
+	}
+
+	if existing > 0 {
+		return
+	}
+
+	var columnCount int
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'FAMILY_MEMBER'
+		  AND COLUMN_NAME IN ('DISTRICT_ID', 'TALUKA_ID', 'VILLAGE_ID')
+	`).Scan(&columnCount); err != nil {
+		log.Printf("[dashboard/summary] FAMILY_MEMBER column check failed: %v", err)
+		return
+	}
+
+	if columnCount != 3 {
+		log.Printf("[dashboard/summary] skipping index creation: FAMILY_MEMBER location columns not found")
+		return
+	}
+
+	if _, err := h.DB.ExecContext(ctx, `CREATE INDEX idx_family_member_location ON FAMILY_MEMBER (DISTRICT_ID, TALUKA_ID, VILLAGE_ID)`); err != nil {
+		log.Printf("[dashboard/summary] index creation failed: %v", err)
+		return
+	}
+
+	log.Printf("[dashboard/summary] created index idx_family_member_location")
+}
+
+func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
+	started := time.Now()
+	districtID := normalizeFilterValue(c.Query("district_id"))
+	talukaID := normalizeFilterValue(c.Query("taluka_id"))
+	villageID := normalizeFilterValue(c.Query("village_id"))
+	log.Printf("[dashboard/summary] request district=%q taluka=%q village=%q", districtID, talukaID, villageID)
+
+	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s", nonEmpty(districtID, "all"), nonEmpty(talukaID, "all"), nonEmpty(villageID, "all"))
+
+	h.cacheMux.RLock()
+	if item, ok := h.cache[cacheKey]; ok && time.Now().Before(item.ExpiresAt) {
+		h.cacheMux.RUnlock()
+		log.Printf("[dashboard/summary] cache hit key=%s served_in=%s", cacheKey, time.Since(started))
+		c.JSON(http.StatusOK, item.Data)
+		return
+	}
+	h.cacheMux.RUnlock()
+	log.Printf("[dashboard/summary] cache miss key=%s", cacheKey)
+
+	_, pingCancel, ok := ensureDBReady(c, h.DB, "/dashboard/summary")
+	if !ok {
+		result := defaultDashboardSummaryResponse()
+		result["partial_errors"] = gin.H{"database": "database connection unavailable"}
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	defer pingCancel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	whereF, args := buildOptionalLocationFilter("f", districtID, talukaID, villageID)
+
+	result := defaultDashboardSummaryResponse()
+	resultMux := sync.Mutex{}
+
+	errorsBySection := map[string]string{}
+	errMux := sync.Mutex{}
+
+	setSectionError := func(section string, err error) {
+		if err == nil {
+			return
+		}
+		errMux.Lock()
+		errorsBySection[section] = err.Error()
+		errMux.Unlock()
+		log.Printf("[dashboard/summary] %s failed: %v", section, err)
+	}
+
+	setSectionResult := func(section string, data gin.H) {
+		resultMux.Lock()
+		result[section] = data
+		resultMux.Unlock()
+		log.Printf("[dashboard/summary] %s done", section)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go func() {
+		defer wg.Done()
+		section, err := h.fetchPopulationSection(ctx, whereF, args)
+		setSectionResult("population", section)
+		if err != nil {
+			setSectionError("population", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		section, err := h.fetchDemographicsSection(ctx, whereF, args)
+		setSectionResult("demographics", section)
+		if err != nil {
+			setSectionError("demographics", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		section, err := h.fetchEducationSection(ctx, whereF, args)
+		setSectionResult("education", section)
+		if err != nil {
+			setSectionError("education", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		section, err := h.fetchEmploymentSection(ctx, whereF, args)
+		setSectionResult("employment", section)
+		if err != nil {
+			setSectionError("employment", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		section, err := h.fetchAgricultureSection(ctx, whereF, args)
+		setSectionResult("agriculture", section)
+		if err != nil {
+			setSectionError("agriculture", err)
+		}
+	}()
+
+	wg.Wait()
+
+	if len(errorsBySection) > 0 {
+		result["partial_errors"] = errorsBySection
+	}
+
+	h.cacheMux.Lock()
+	h.cache[cacheKey] = dashboardCacheItem{Data: result, ExpiresAt: time.Now().Add(dashboardSummaryCacheTTL)}
+	h.cacheMux.Unlock()
+	log.Printf("[dashboard/summary] complete in=%s", time.Since(started))
+
+	c.JSON(http.StatusOK, result)
+}
+
+func buildOptionalLocationFilter(alias, districtID, talukaID, villageID string) (string, []interface{}) {
+	where := "1=1"
+	args := []interface{}{}
+
+	if district := normalizeFilterValue(districtID); district != "" {
+		where += fmt.Sprintf(" AND %s.DISTRICT_ID = ?", alias)
+		args = append(args, district)
+	}
+
+	if taluka := normalizeFilterValue(talukaID); taluka != "" {
+		where += fmt.Sprintf(" AND %s.TALUKA_ID = ?", alias)
+		args = append(args, taluka)
+	}
+
+	if village := normalizeFilterValue(villageID); village != "" {
+		where += fmt.Sprintf(" AND %s.VILLAGE_ID = ?", alias)
+		args = append(args, village)
+	}
+
+	return where, args
+}
+
+func isValidFilterValue(val string) bool {
+	trimmed := strings.TrimSpace(val)
+	if trimmed == "" {
+		return false
+	}
+	if strings.EqualFold(trimmed, "0") || strings.EqualFold(trimmed, "null") || strings.EqualFold(trimmed, "undefined") {
+		return false
+	}
+	return true
+}
+
+func normalizeFilterValue(val string) string {
+	trimmed := strings.TrimSpace(val)
+	if !isValidFilterValue(trimmed) {
+		return ""
+	}
+	return trimmed
+}
+
+func nonEmpty(value, fallback string) string {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func withInvalidConnectionRetry(op func() error) error {
+	err := op()
+	if err == nil {
+		return nil
+	}
+	if !isInvalidDBConnection(err) {
+		return err
+	}
+	return op()
+}
+
+func queryRowsWithRetry(ctx context.Context, db *sql.DB, query string, args ...interface{}) (*sql.Rows, error) {
+	if strings.Contains(query, "__WHERE_CLAUSE__") {
+		return nil, fmt.Errorf("unresolved SQL placeholder __WHERE_CLAUSE__")
+	}
+
+	var rows *sql.Rows
+	err := withInvalidConnectionRetry(func() error {
+		var opErr error
+		rows, opErr = db.QueryContext(ctx, query, args...)
+		return opErr
+	})
+	return rows, err
+}
+
+func queryRowWithRetry(ctx context.Context, db *sql.DB, query string, args []interface{}, dest ...interface{}) error {
+	if strings.Contains(query, "__WHERE_CLAUSE__") {
+		return fmt.Errorf("unresolved SQL placeholder __WHERE_CLAUSE__")
+	}
+
+	return withInvalidConnectionRetry(func() error {
+		return db.QueryRowContext(ctx, query, args...).Scan(dest...)
+	})
+}
+
+func injectWhere(template, whereClause string) string {
+	return strings.ReplaceAll(template, "__WHERE_CLAUSE__", whereClause)
+}
+
+func defaultDashboardSummaryResponse() gin.H {
+	return gin.H{
+		"population":   defaultPopulationSummary(),
+		"demographics": defaultDemographicsSummary(),
+		"education":    defaultEducationSummary(),
+		"employment":   defaultEmploymentSummary(),
+		"agriculture":  defaultAgricultureSummary(),
+	}
+}
+
+func defaultPopulationSummary() gin.H {
+	return gin.H{
+		"total_population":     0,
+		"total_households":     0,
+		"working_population":   0,
+		"dependent_population": 0,
+		"bpl_distribution":     gin.H{"bpl": 0, "non_bpl": 0, "total_households": 0},
+	}
+}
+
+func defaultDemographicsSummary() gin.H {
+	return gin.H{
+		"gender_distribution":            gin.H{"male": 0, "female": 0, "other": 0},
+		"age_distribution":               gin.H{"age_0_5": 0, "age_6_18": 0, "age_19_35": 0, "age_36_60": 0, "age_60_plus": 0},
+		"age_income_gender_distribution": defaultAgeIncomeGenderDistribution(),
+		"total_divyang":                  0,
+		"disability_distribution":        []gin.H{},
+	}
+}
+
+func defaultAgeIncomeGenderDistribution() []gin.H {
+	ageGroups := []string{"0-18", "19-30", "31-45", "46-60", "60+"}
+	rows := make([]gin.H, 0, len(ageGroups))
+	for _, ageGroup := range ageGroups {
+		rows = append(rows, gin.H{"age_group": ageGroup, "male": 0, "female": 0, "other": 0})
+	}
+	return rows
+}
+
+func defaultEducationSummary() gin.H {
+	return gin.H{
+		"literate_population":   0,
+		"illiterate_population": 0,
+		"students_count":        0,
+		"dropout_count":         0,
+		"graduate_population":   0,
+		"literacy_rate":         0,
+		"qualification_distribution": gin.H{
+			"below_10th": 0, "tenth": 0, "twelfth": 0, "graduate_above": 0,
+		},
+	}
+}
+
+func defaultEmploymentSummary() gin.H {
+	return gin.H{
+		"employed_members":   0,
+		"unemployed_members": 0,
+		"daily_wage_workers": 0,
+		"skilled_workers":    0,
+		"occupation_distribution": gin.H{
+			"farm_based": 0, "agri_allied": 0, "non_farm": 0, "salaried": 0,
+			"wage_workers": 0, "housewife": 0, "students": 0, "unemployed": 0, "other": 0,
+		},
+	}
+}
+
+func defaultAgricultureSummary() gin.H {
+	return gin.H{
+		"totalFarmers":             0,
+		"farmersWithoutIrrigation": 0,
+		"landDistribution":         []gin.H{},
+		"landUtilizationRows":      []gin.H{},
+		"landUtilizationSummary":   gin.H{"total_land": 0, "cultivated_land": 0, "unused_land": 0, "valid_records": 0, "invalid_records": 0, "cultivated_percent": 0, "unused_percent": 0},
+		"seasonCropRows":           []gin.H{},
+		"kharifFarmers":            0,
+		"rabiFarmers":              0,
+	}
+}
+
+func (h *DashboardSummaryHandler) fetchPopulationSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
+	section := defaultPopulationSummary()
+
+	populationQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+	householdsQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY f
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+	workingQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE fm.OCCUPATION IS NOT NULL
+		  AND TRIM(fm.OCCUPATION) != ''
+		  AND UPPER(TRIM(fm.OCCUPATION)) NOT IN ('HOUSEWIFE','STUDYING','STUDENT','UNEMPLOYED','NOT APPLICABLE','NA')
+		  AND __WHERE_CLAUSE__
+	`, whereF)
+	dependentQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE (
+			(STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL AND (TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) < 18 OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) > 60))
+			OR
+			(STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) BETWEEN 18 AND 60 AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN ('HOUSEWIFE','STUDYING','STUDENT','UNEMPLOYED','NOT APPLICABLE'))
+		)
+		AND __WHERE_CLAUSE__
+	`, whereF)
+	bplConditions := []string{}
+	if h.CC != nil && h.CC.Has("FAMILY_BELONG_BPL_CATEGORY") {
+		bplConditions = append(bplConditions, "UPPER(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, ''))) = 'YES'")
+	}
+	if h.CC != nil && h.CC.Has("RATION_CARD_TYPE") {
+		bplConditions = append(bplConditions, "UPPER(TRIM(COALESCE(f.RATION_CARD_TYPE, ''))) IN ('BPL', 'AAY')")
+	}
+
+	var totalPop, totalHouseholds, working, dependent, bplHouseholds int
+	var firstErr error
+	errMux := sync.Mutex{}
+	recordErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMux.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMux.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, populationQuery, args, &totalPop); err != nil {
+			recordErr(fmt.Errorf("population total query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, householdsQuery, args, &totalHouseholds); err != nil {
+			recordErr(fmt.Errorf("households query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, workingQuery, args, &working); err != nil {
+			recordErr(fmt.Errorf("working query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, dependentQuery, args, &dependent); err != nil {
+			recordErr(fmt.Errorf("dependent query failed: %w", err))
+		}
+	}()
+
+	wg.Wait()
+
+	if len(bplConditions) > 0 {
+		bplHouseholdQuery := injectWhere(fmt.Sprintf(`
+			SELECT COUNT(*)
+			FROM FAMILY f
+			WHERE __WHERE_CLAUSE__
+			  AND (%s)
+		`, strings.Join(bplConditions, " OR ")), whereF)
+		if err := queryRowWithRetry(ctx, h.DB, bplHouseholdQuery, args, &bplHouseholds); err != nil {
+			recordErr(fmt.Errorf("bpl query failed: %w", err))
+		}
+	}
+
+	section["total_population"] = totalPop
+	section["total_households"] = totalHouseholds
+	section["working_population"] = working
+	section["dependent_population"] = dependent
+	nonBplHouseholds := totalHouseholds - bplHouseholds
+	if nonBplHouseholds < 0 {
+		nonBplHouseholds = 0
+	}
+	section["bpl_distribution"] = gin.H{"bpl": bplHouseholds, "non_bpl": nonBplHouseholds, "total_households": totalHouseholds}
+	return section, firstErr
+}
+
+func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
+	section := defaultDemographicsSummary()
+
+	genderQuery := injectWhere(`
+		SELECT
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END) AS other
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+	ageQuery := injectWhere(`
+		SELECT
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 6 AND 18 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 19 AND 35 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 36 AND 60 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60 THEN 1 ELSE 0 END)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+	divyangQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+		  AND __WHERE_CLAUSE__
+	`, whereF)
+	ageIncomeQuery := injectWhere(`
+		SELECT
+			age_group,
+			gender,
+			COUNT(*) AS total,
+			AVG(income) AS avg_income
+		FROM (
+			SELECT
+				CASE
+					WHEN age BETWEEN 0 AND 18 THEN '0-18'
+					WHEN age BETWEEN 19 AND 30 THEN '19-30'
+					WHEN age BETWEEN 31 AND 45 THEN '31-45'
+					WHEN age BETWEEN 46 AND 60 THEN '46-60'
+					ELSE '60+'
+				END AS age_group,
+				gender,
+				income
+			FROM (
+				SELECT
+					YEAR(CURDATE()) - CAST(SUBSTRING_INDEX(fm.DOB, '-', -1) AS UNSIGNED) AS age,
+					LOWER(TRIM(COALESCE(fm.GENDER, ''))) AS gender,
+					CASE
+						WHEN f.ANNUAL_INCOME = 'Less than 21000' THEN 15000
+						WHEN f.ANNUAL_INCOME = '21001 to 50000' THEN 35000
+						WHEN f.ANNUAL_INCOME = '50001 to 100000' THEN 75000
+						WHEN f.ANNUAL_INCOME = '100001 to 180000' THEN 140000
+						WHEN f.ANNUAL_INCOME = '180001 to 250000' THEN 215000
+						WHEN f.ANNUAL_INCOME = 'Above 2.5 Lakhs' THEN 300000
+						ELSE NULL
+					END AS income
+				FROM FAMILY_MEMBER fm
+				JOIN FAMILY f
+					ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+				WHERE fm.DOB IS NOT NULL
+				  AND TRIM(fm.DOB) != ''
+				  AND fm.DOB LIKE '%-%-%'
+				  AND __WHERE_CLAUSE__
+			) base
+		) base
+		GROUP BY age_group, gender
+	`, whereF)
+	disabilityQuery := injectWhere(`
+		SELECT
+			CASE
+				WHEN DISABILITY_CATEGORY LIKE '%%Blind%%' OR DISABILITY_CATEGORY LIKE '%%Low vision%%' THEN 'Visual Disability'
+				WHEN DISABILITY_CATEGORY LIKE '%%Locomotor%%' OR DISABILITY_CATEGORY LIKE '%%Cerebral%%' OR DISABILITY_CATEGORY LIKE '%%Muscular%%' OR DISABILITY_CATEGORY LIKE '%%Dwarf%%' THEN 'Locomotor Disability'
+				WHEN DISABILITY_CATEGORY LIKE '%%Mental%%' OR DISABILITY_CATEGORY LIKE '%%Autism%%' OR DISABILITY_CATEGORY LIKE '%%Intellectual%%' OR DISABILITY_CATEGORY LIKE '%%Learning%%' THEN 'Intellectual Disability'
+				WHEN DISABILITY_CATEGORY LIKE '%%Hearing%%' THEN 'Hearing Disability'
+				WHEN DISABILITY_CATEGORY LIKE '%%Speech%%' THEN 'Speech Disability'
+				WHEN DISABILITY_CATEGORY LIKE '%%Multiple%%' THEN 'Multiple Disabilities'
+				WHEN DISABILITY_CATEGORY LIKE '%%Parkinson%%' OR DISABILITY_CATEGORY LIKE '%%Sclerosis%%' OR DISABILITY_CATEGORY LIKE '%%Sickle%%' OR DISABILITY_CATEGORY LIKE '%%Thalassemia%%' THEN 'Chronic Conditions'
+				ELSE 'Other'
+			END AS disability_group,
+			COUNT(*) AS total
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
+		  AND __WHERE_CLAUSE__
+		GROUP BY disability_group
+		ORDER BY total DESC
+		LIMIT 8
+	`, whereF)
+
+	var firstErr error
+	errMux := sync.Mutex{}
+	sectionMux := sync.Mutex{}
+	recordErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMux.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMux.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go func() {
+		defer wg.Done()
+		var male, female, other int
+		if err := queryRowWithRetry(ctx, h.DB, genderQuery, args, &male, &female, &other); err != nil {
+			recordErr(fmt.Errorf("gender query failed: %w", err))
+			return
+		}
+		sectionMux.Lock()
+		section["gender_distribution"] = gin.H{"male": male, "female": female, "other": other}
+		sectionMux.Unlock()
+	}()
+
+	go func() {
+		defer wg.Done()
+		var age0_5, age6_18, age19_35, age36_60, age60Plus int
+		if err := queryRowWithRetry(ctx, h.DB, ageQuery, args, &age0_5, &age6_18, &age19_35, &age36_60, &age60Plus); err != nil {
+			recordErr(fmt.Errorf("age query failed: %w", err))
+			return
+		}
+		sectionMux.Lock()
+		section["age_distribution"] = gin.H{"age_0_5": age0_5, "age_6_18": age6_18, "age_19_35": age19_35, "age_36_60": age36_60, "age_60_plus": age60Plus}
+		sectionMux.Unlock()
+	}()
+
+	go func() {
+		defer wg.Done()
+		var totalDivyang int
+		if err := queryRowWithRetry(ctx, h.DB, divyangQuery, args, &totalDivyang); err != nil {
+			recordErr(fmt.Errorf("divyang query failed: %w", err))
+			return
+		}
+		sectionMux.Lock()
+		section["total_divyang"] = totalDivyang
+		sectionMux.Unlock()
+	}()
+
+	go func() {
+		defer wg.Done()
+		rows, err := queryRowsWithRetry(ctx, h.DB, ageIncomeQuery, args...)
+		if err != nil {
+			recordErr(fmt.Errorf("age-income query failed: %w", err))
+			return
+		}
+		defer rows.Close()
+
+		ageGroupOrder := []string{"0-18", "19-30", "31-45", "46-60", "60+"}
+		pivot := map[string]map[string]interface{}{}
+		for _, ageGroup := range ageGroupOrder {
+			pivot[ageGroup] = map[string]interface{}{"male": 0, "female": 0, "other": 0, "income": 0.0}
+		}
+
+		for rows.Next() {
+			var ageGroup string
+			var gender string
+			var total int
+			var avgIncome sql.NullFloat64
+			if scanErr := rows.Scan(&ageGroup, &gender, &total, &avgIncome); scanErr != nil {
+				recordErr(fmt.Errorf("age-income scan failed: %w", scanErr))
+				return
+			}
+
+			bucket, ok := pivot[ageGroup]
+			if !ok {
+				continue
+			}
+
+			normalizedGender := strings.ToLower(strings.TrimSpace(gender))
+			switch normalizedGender {
+			case "male":
+				bucket["male"] = bucket["male"].(int) + total
+			case "female":
+				bucket["female"] = bucket["female"].(int) + total
+			default:
+				bucket["other"] = bucket["other"].(int) + total
+			}
+
+			if avgIncome.Valid {
+				bucket["income"] = avgIncome.Float64
+			}
+		}
+
+		if err := rows.Err(); err != nil {
+			recordErr(fmt.Errorf("age-income rows failed: %w", err))
+			return
+		}
+
+		ageIncome := make([]gin.H, 0, len(ageGroupOrder))
+		for _, ageGroup := range ageGroupOrder {
+			bucket := pivot[ageGroup]
+			ageIncome = append(ageIncome, gin.H{
+				"age_group": ageGroup,
+				"male":      bucket["male"],
+				"female":    bucket["female"],
+				"other":     bucket["other"],
+				"income":    bucket["income"],
+			})
+		}
+		sectionMux.Lock()
+		section["age_income_gender_distribution"] = ageIncome
+		sectionMux.Unlock()
+	}()
+
+	go func() {
+		defer wg.Done()
+		dRows, err := queryRowsWithRetry(ctx, h.DB, disabilityQuery, args...)
+		if err != nil {
+			recordErr(fmt.Errorf("disability query failed: %w", err))
+			return
+		}
+		defer dRows.Close()
+
+		disability := []gin.H{}
+		for dRows.Next() {
+			var name string
+			var value int
+			if scanErr := dRows.Scan(&name, &value); scanErr != nil {
+				recordErr(fmt.Errorf("disability scan failed: %w", scanErr))
+				return
+			}
+			disability = append(disability, gin.H{"name": name, "value": value})
+		}
+		sectionMux.Lock()
+		section["disability_distribution"] = disability
+		sectionMux.Unlock()
+	}()
+
+	wg.Wait()
+	return section, firstErr
+}
+
+func (h *DashboardSummaryHandler) fetchEducationSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
+	section := defaultEducationSummary()
+
+	query := injectWhere(`
+		SELECT
+			COUNT(*) AS total_population,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' THEN 1 ELSE 0 END) AS literate_population,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO' OR fm.EVER_ATTENDED_SCHOOL IS NULL THEN 1 ELSE 0 END) AS illiterate_population,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES' THEN 1 ELSE 0 END) AS students_count,
+			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'YES' AND fm.DROP_OUT IS NOT NULL AND TRIM(fm.DROP_OUT) != '' THEN 1 ELSE 0 END) AS dropout_count,
+			SUM(CASE WHEN TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_population,
+			SUM(CASE WHEN fm.QUALIFICATION IS NULL OR TRIM(fm.QUALIFICATION) = '' THEN 1 ELSE 0 END) AS below_10th,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '10th' THEN 1 ELSE 0 END) AS tenth,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '12th' THEN 1 ELSE 0 END) AS twelfth,
+			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_above
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+
+	var totalPopulation, literate, illiterate, students, dropout, graduate, below10th, tenth, twelfth, graduateAbove int
+	if err := queryRowWithRetry(ctx, h.DB, query, args, &totalPopulation, &literate, &illiterate, &students, &dropout, &graduate, &below10th, &tenth, &twelfth, &graduateAbove); err != nil {
+		return section, err
+	}
+
+	literacyRate := 0.0
+	if totalPopulation > 0 {
+		literacyRate = (float64(literate) / float64(totalPopulation)) * 100
+	}
+
+	section["literate_population"] = literate
+	section["illiterate_population"] = illiterate
+	section["students_count"] = students
+	section["dropout_count"] = dropout
+	section["graduate_population"] = graduate
+	section["literacy_rate"] = literacyRate
+	section["qualification_distribution"] = gin.H{"below_10th": below10th, "tenth": tenth, "twelfth": twelfth, "graduate_above": graduateAbove}
+
+	return section, nil
+}
+
+func (h *DashboardSummaryHandler) fetchEmploymentSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
+	section := defaultEmploymentSummary()
+
+	query := injectWhere(`
+		SELECT
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Salaried Job','Self Employed - Farm based','Self Employed- Non-farm based','Self Employed-Agri allied','Wage Work') THEN 1 ELSE 0 END) AS employed_members,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Unemployed','Not Applicable') THEN 1 ELSE 0 END) AS unemployed_members,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' OR fm.NATURE_WAGE_WORK IS NOT NULL THEN 1 ELSE 0 END) AS daily_wage_workers,
+			SUM(CASE WHEN LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%driver%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%electric%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%mechanic%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%tailor%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%carpenter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%computer%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%bank%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%shop%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%company worker%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%security%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%painter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%civil%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%technician%%' THEN 1 ELSE 0 END) AS skilled_workers,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed - Farm based' THEN 1 ELSE 0 END) AS farm_based,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed-Agri allied' THEN 1 ELSE 0 END) AS agri_allied,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed- Non-farm based' THEN 1 ELSE 0 END) AS non_farm,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Salaried Job' THEN 1 ELSE 0 END) AS salaried,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' THEN 1 ELSE 0 END) AS wage_workers,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Housewife' THEN 1 ELSE 0 END) AS housewife,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Studying' THEN 1 ELSE 0 END) AS students,
+			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Unemployed' THEN 1 ELSE 0 END) AS unemployed,
+			SUM(CASE WHEN fm.OCCUPATION IS NULL OR TRIM(COALESCE(fm.OCCUPATION, '')) = '' THEN 1 ELSE 0 END) AS other
+		FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE __WHERE_CLAUSE__
+	`, whereF)
+
+	var employed, unemployed, dailyWage, skilled int
+	var farmBased, agriAllied, nonFarm, salaried, wageWorkers, housewife, students, unemployedDist, other int
+	if err := queryRowWithRetry(ctx, h.DB, query, args, &employed, &unemployed, &dailyWage, &skilled, &farmBased, &agriAllied, &nonFarm, &salaried, &wageWorkers, &housewife, &students, &unemployedDist, &other); err != nil {
+		return section, err
+	}
+
+	section["employed_members"] = employed
+	section["unemployed_members"] = unemployed
+	section["daily_wage_workers"] = dailyWage
+	section["skilled_workers"] = skilled
+	section["occupation_distribution"] = gin.H{
+		"farm_based": farmBased, "agri_allied": agriAllied, "non_farm": nonFarm, "salaried": salaried,
+		"wage_workers": wageWorkers, "housewife": housewife, "students": students, "unemployed": unemployedDist, "other": other,
+	}
+
+	return section, nil
+}
+
+func (h *DashboardSummaryHandler) fetchAgricultureSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
+	section := defaultAgricultureSummary()
+
+	totalFarmersQuery := injectWhere(`
+		SELECT COUNT(*) FROM FAMILY f WHERE f.OWN_AGRICULTURE_LAND = 'Yes' AND __WHERE_CLAUSE__
+	`, whereF)
+	noIrrigationQuery := injectWhere(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND (f.SOURCE_WATER_IRRIGATION IS NULL OR f.SOURCE_WATER_IRRIGATION = '' OR f.SOURCE_WATER_IRRIGATION = 'None' OR f.SOURCE_WATER_IRRIGATION = 'Rain Fed')
+		  AND __WHERE_CLAUSE__
+	`, whereF)
+	landUtilQuery := injectWhere(`
+		SELECT
+			COALESCE(ROUND(SUM(t.total_land), 2), 0) AS total_land,
+			COALESCE(ROUND(SUM(t.cultivated_land), 2), 0) AS cultivated_land,
+			COALESCE(ROUND(SUM(t.total_land - t.cultivated_land), 2), 0) AS unused_land,
+			COUNT(*) AS valid_records
+		FROM (
+			SELECT
+				CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) AS total_land,
+				CAST(f.LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) AS cultivated_land,
+				f.DISTRICT_ID,
+				f.TALUKA_ID,
+				f.VILLAGE_ID
+			FROM FAMILY f
+			WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+			  AND f.AREA_AGRICULTURE_LAND_ACRES IS NOT NULL
+			  AND f.LAND_UNDER_CULTIVATION_ACRES IS NOT NULL
+			  AND TRIM(f.AREA_AGRICULTURE_LAND_ACRES) <> ''
+			  AND TRIM(f.LAND_UNDER_CULTIVATION_ACRES) <> ''
+			  AND f.AREA_AGRICULTURE_LAND_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+			  AND f.LAND_UNDER_CULTIVATION_ACRES REGEXP '^[0-9]*\\.?[0-9]+$'
+			  AND CAST(f.LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) <= CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+			  AND CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) BETWEEN 0 AND 500
+			  AND __WHERE_CLAUSE__
+		) t
+	`, whereF)
+	invalidQuery := injectWhere(`
+		SELECT COUNT(*)
+		FROM FAMILY f
+		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND __WHERE_CLAUSE__
+		  AND (
+			f.AREA_AGRICULTURE_LAND_ACRES IS NULL
+			OR f.LAND_UNDER_CULTIVATION_ACRES IS NULL
+			OR TRIM(f.AREA_AGRICULTURE_LAND_ACRES) = ''
+			OR TRIM(f.LAND_UNDER_CULTIVATION_ACRES) = ''
+			OR f.AREA_AGRICULTURE_LAND_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+			OR f.LAND_UNDER_CULTIVATION_ACRES NOT REGEXP '^[0-9]*\\.?[0-9]+$'
+			OR CAST(f.LAND_UNDER_CULTIVATION_ACRES AS DECIMAL(12,2)) > CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2))
+			OR CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(12,2)) > 500
+		  )
+	`, whereF)
+	landDistributionQuery := injectWhere(`
+		SELECT
+			CASE
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) = 0 THEN 'Landless'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 1 THEN 'Marginal (0-1 acre)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 2.5 THEN 'Small (1-2.5 acres)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 5 THEN 'Semi-Medium (2.5-5 acres)'
+				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 10 THEN 'Medium (5-10 acres)'
+				ELSE 'Large (>10 acres)'
+			END AS category,
+			COUNT(*) AS cnt
+		FROM FAMILY f
+		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND __WHERE_CLAUSE__
+		GROUP BY category
+		ORDER BY cnt DESC
+		LIMIT 6
+	`, whereF)
+	cropQuery := injectWhere(`
+		SELECT season, crop, SUM(cnt) AS cnt
+		FROM (
+			SELECT 'Kharif' AS season, TRIM(f.CULTIVATING_DURING_KHARIF_SEASON) AS crop, COUNT(*) AS cnt
+			FROM FAMILY f
+			WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+			  AND f.CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
+			  AND TRIM(f.CULTIVATING_DURING_KHARIF_SEASON) != ''
+			  AND __WHERE_CLAUSE__
+			GROUP BY TRIM(f.CULTIVATING_DURING_KHARIF_SEASON)
+			UNION ALL
+			SELECT 'Rabi' AS season, TRIM(f.TAKING_CROPS_RABI_SEASON) AS crop, COUNT(*) AS cnt
+			FROM FAMILY f
+			WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+			  AND f.TAKING_CROPS_RABI_SEASON IS NOT NULL
+			  AND TRIM(f.TAKING_CROPS_RABI_SEASON) != ''
+			  AND __WHERE_CLAUSE__
+			GROUP BY TRIM(f.TAKING_CROPS_RABI_SEASON)
+		) merged
+		GROUP BY season, crop
+		ORDER BY cnt DESC
+		LIMIT 5
+	`, whereF)
+	kharifCountQuery := injectWhere(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.CULTIVATING_DURING_KHARIF_SEASON IS NOT NULL
+		  AND f.CULTIVATING_DURING_KHARIF_SEASON != ''
+		  AND f.CULTIVATING_DURING_KHARIF_SEASON != 'No'
+		  AND __WHERE_CLAUSE__
+	`, whereF)
+	rabiCountQuery := injectWhere(`
+		SELECT COUNT(*) FROM FAMILY f
+		WHERE f.TAKING_CROPS_RABI_SEASON IS NOT NULL
+		  AND f.TAKING_CROPS_RABI_SEASON != ''
+		  AND f.TAKING_CROPS_RABI_SEASON != 'No'
+		  AND __WHERE_CLAUSE__
+	`, whereF)
+
+	var totalFarmers, noIrrigation int
+	var totalLand, cultivatedLand, unusedLand float64
+	var validRecords, invalidRecords int64
+	var landDistribution []gin.H
+	var seasonRows []gin.H
+	var kharifCount, rabiCount int
+
+	var firstErr error
+	errMux := sync.Mutex{}
+	recordErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMux.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMux.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(7)
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, totalFarmersQuery, args, &totalFarmers); err != nil {
+			recordErr(fmt.Errorf("total farmers query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, noIrrigationQuery, args, &noIrrigation); err != nil {
+			recordErr(fmt.Errorf("irrigation query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, landUtilQuery, args, &totalLand, &cultivatedLand, &unusedLand, &validRecords); err != nil {
+			recordErr(fmt.Errorf("land utilization query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, invalidQuery, args, &invalidRecords); err != nil {
+			recordErr(fmt.Errorf("invalid records query failed: %w", err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		landRows, err := queryRowsWithRetry(ctx, h.DB, landDistributionQuery, args...)
+		if err != nil {
+			recordErr(fmt.Errorf("land distribution query failed: %w", err))
+			return
+		}
+		defer landRows.Close()
+
+		tmp := []gin.H{}
+		for landRows.Next() {
+			var category string
+			var cnt int
+			if scanErr := landRows.Scan(&category, &cnt); scanErr != nil {
+				recordErr(fmt.Errorf("land distribution scan failed: %w", scanErr))
+				return
+			}
+			tmp = append(tmp, gin.H{"label": category, "count": cnt})
+		}
+		landDistribution = tmp
+	}()
+
+	go func() {
+		defer wg.Done()
+		cropRows, err := queryRowsWithRetry(ctx, h.DB, cropQuery, append(args, args...)...)
+		if err != nil {
+			recordErr(fmt.Errorf("season crop query failed: %w", err))
+			return
+		}
+		defer cropRows.Close()
+
+		tmp := []gin.H{}
+		for cropRows.Next() {
+			var season, crop string
+			var cnt int
+			if scanErr := cropRows.Scan(&season, &crop, &cnt); scanErr != nil {
+				recordErr(fmt.Errorf("season crop scan failed: %w", scanErr))
+				return
+			}
+			tmp = append(tmp, gin.H{"season": season, "crop": crop, "count": cnt})
+		}
+		seasonRows = tmp
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := queryRowWithRetry(ctx, h.DB, kharifCountQuery, args, &kharifCount); err != nil {
+			recordErr(fmt.Errorf("kharif count query failed: %w", err))
+		}
+		if err := queryRowWithRetry(ctx, h.DB, rabiCountQuery, args, &rabiCount); err != nil {
+			recordErr(fmt.Errorf("rabi count query failed: %w", err))
+		}
+	}()
+
+	wg.Wait()
+
+	cultivatedPercent := 0.0
+	unusedPercent := 0.0
+	if totalLand > 0 {
+		cultivatedPercent = (cultivatedLand * 100) / totalLand
+		unusedPercent = (unusedLand * 100) / totalLand
+	}
+
+	section["totalFarmers"] = totalFarmers
+	section["farmersWithoutIrrigation"] = noIrrigation
+	section["landUtilizationSummary"] = gin.H{
+		"total_land": totalLand, "cultivated_land": cultivatedLand, "unused_land": unusedLand,
+		"valid_records": validRecords, "invalid_records": invalidRecords,
+		"cultivated_percent": cultivatedPercent, "unused_percent": unusedPercent,
+	}
+	section["landUtilizationRows"] = []gin.H{{
+		"AREA_AGRICULTURE_LAND_ACRES":  totalLand,
+		"LAND_UNDER_CULTIVATION_ACRES": cultivatedLand,
+		"unused_land_acres":            unusedLand,
+		"valid_records":                validRecords,
+		"invalid_records":              invalidRecords,
+	}}
+	section["landDistribution"] = landDistribution
+	section["seasonCropRows"] = seasonRows
+	section["kharifFarmers"] = kharifCount
+	section["rabiFarmers"] = rabiCount
+
+	return section, firstErr
+}

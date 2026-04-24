@@ -138,7 +138,7 @@
 
       <div class="map-content" ref="mapContentRef">
         <div class="map-stage">
-          <div class="map-container" ref="mapContainer"></div>
+          <div class="map-container" :class="{ 'map-container--hidden': !isMapVisualReady }" ref="mapContainer"></div>
 
           <div class="map-floating-controls">
             <button
@@ -502,7 +502,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getHouses, getLocationOptions } from '../../api/index.js'
+import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
@@ -516,6 +516,7 @@ const selectedHouse  = ref(null)
 const selectedCluster = ref(null)
 const mapContainer  = ref(null)
 const mapContentRef = ref(null)
+const isMapVisualReady = ref(false)
 const colorMode     = ref('irrigation')
 const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
@@ -1050,6 +1051,69 @@ let highlightCircle = null // currently highlighted village circle
 let retryTimer      = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
 let activeHouseLoadToken = 0
+let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
+
+function clearDistrictCentroids() {
+  if (map && districtCentroidMarkerLayer) {
+    map.removeLayer(districtCentroidMarkerLayer)
+  }
+  districtCentroidMarkerLayer = null
+}
+
+function renderDistrictCentroids(centroidRows) {
+  clearDistrictCentroids()
+  districtCentroidMarkerLayer = L.layerGroup()
+  console.log('District count:', Array.isArray(centroidRows) ? centroidRows.length : 0)
+
+  if (Array.isArray(centroidRows) && centroidRows.length < 30) {
+    console.warn('District count lower than expected for Maharashtra (~36):', centroidRows.length)
+  }
+
+  centroidRows.forEach((d) => {
+    if (!d.lat || !d.lng) {
+      return
+    }
+
+    const lat = d.lat + (Math.random() * 0.02)
+    const lng = d.lng + (Math.random() * 0.02)
+
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'district-marker',
+        html: `<div class="marker-count">${d.count}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      }),
+    })
+
+    marker.bindTooltip(`District ID: ${d.district_id} | Count: ${d.count}`, {
+      permanent: false,
+      direction: 'top',
+    })
+
+    marker.bindPopup(`District ID: ${d.district_id}<br/>Count: ${d.count}`)
+
+    marker.addTo(districtCentroidMarkerLayer)
+  })
+
+  if (districtCentroidMarkerLayer.getLayers().length > 0) {
+    districtCentroidMarkerLayer.addTo(map)
+  } else {
+    districtCentroidMarkerLayer = null
+  }
+}
+
+async function refreshDistrictCentroids() {
+  if (!map) return
+
+  try {
+    const centroidRows = await getDistrictCentroids(getActiveLocationParams())
+    renderDistrictCentroids(Array.isArray(centroidRows) ? centroidRows : [])
+  } catch (error) {
+    console.warn('District centroids unavailable:', error?.message || error)
+  }
+}
+
 function handleFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
   handleMapResize()
@@ -1131,6 +1195,14 @@ function getHouseFilters() {
   }
 }
 
+function getActiveLocationParams() {
+  return {
+    district_id: selectedDistrict.value || undefined,
+    taluka_id: selectedTaluka.value || undefined,
+    village_id: selectedVillage.value || undefined,
+  }
+}
+
 async function fetchAllHouses() {
   // Family members already loaded on mount without filters.
   // Do NOT reload here with filters — would lose members outside current filter scope.
@@ -1180,6 +1252,12 @@ function applyFilters(autoZoomToResults = true) {
     fitAfterLoad = autoZoomToResults
     loading.value = true
     loadLiveHouseData(0, requestToken)
+    // Hide district markers if any location filter is applied
+    if (selectedDistrict.value || selectedTaluka.value || selectedVillage.value) {
+      clearDistrictCentroids()
+    } else {
+      refreshDistrictCentroids()
+    }
   }
 }
 
@@ -1198,6 +1276,7 @@ async function resetFilters() {
   if (map) {
     loading.value = true
     loadLiveHouseData(0, requestToken)
+    refreshDistrictCentroids()
     fitToMaharashtra()
   }
 }
@@ -1935,6 +2014,9 @@ async function addDistrictBorders(mapInstance) {
       )
     })
 
+    // Note: GeoJSON data is no longer cached since district centroids are now
+    // calculated from the database (FAMILY table LATITUDE/LONGITUDE columns)
+
     mhDistricts.forEach((feature, i) => {
       const color = DISTRICT_PALETTE[i % DISTRICT_PALETTE.length]
       const props = feature.properties || {}
@@ -2048,7 +2130,7 @@ function plotMarkers(data) {
   data.forEach(house => {
     const color  = getMarkerColor(house)
     const marker = L.circleMarker([house.latitude, house.longitude], {
-      radius: 6, fillColor: color, color: '#fff',
+      radius: 5, fillColor: color, color: '#fff',
       weight: 1.5, opacity: 1, fillOpacity: 0.88,
     }).addTo(map)
     markerRefs.push({ marker, house })
@@ -2169,6 +2251,7 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
 
 onMounted(async () => {
   await nextTick()
+  isMapVisualReady.value = false
 
   if (mapContainer.value) {
     // Ensure container has proper dimensions before map init
@@ -2192,9 +2275,17 @@ onMounted(async () => {
     map.options.maxBoundsViscosity = 1.0
     L.control.zoom({ position: 'topleft' }).addTo(map)
     addTiles(map)
-    addDistrictBorders(map)
-    addMaharashtraHighlight(map)
+
+    // Ensure first visible frame is the final composed state.
+    await Promise.allSettled([
+      addDistrictBorders(map),
+      addMaharashtraHighlight(map),
+      refreshDistrictCentroids(),
+    ])
+
     fitToMaharashtra()
+    isMapVisualReady.value = true
+
     // More aggressive size invalidation for reliable rendering
     setTimeout(() => ensureMapReady(), 50)
     setTimeout(() => ensureMapReady(), 150)
@@ -2213,6 +2304,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearRetryTimer()
   clearAnomalyLayer()
+  clearDistrictCentroids()
   window.removeEventListener('resize', handleMapResize)
   window.removeEventListener('click', closeDropdowns)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -2223,11 +2315,17 @@ watch(selectedDistrict, async () => {
   selectedTaluka.value = ''
   selectedVillage.value = ''
   await loadLocationDropdowns()
+  refreshDistrictCentroids()
 })
 
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
   await loadLocationDropdowns()
+  refreshDistrictCentroids()
+})
+
+watch(selectedVillage, () => {
+  refreshDistrictCentroids()
 })
 
 watch(analyticsPanelOpen, async () => {
@@ -2557,6 +2655,10 @@ watch(analyticsPanelOpen, async () => {
   position: absolute;
   inset: 0;
   z-index: 1;
+}
+
+.map-container--hidden {
+  opacity: 0;
 }
 
 .analytics-toggle {
@@ -3140,6 +3242,47 @@ watch(analyticsPanelOpen, async () => {
   font-size: 0.6rem;
   font-weight: 400;
   color: #94a3b8;
+}
+
+.district-survey-marker {
+  background: #ff9800;
+  color: #ffffff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(255, 152, 0, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.92);
+}
+
+.district-marker {
+	background: transparent;
+	border: 0;
+}
+
+.marker-count {
+  background: #ea580c;
+  color: #ffffff;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.42);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.district-survey-popup {
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 /* ── Anomaly toggle button — purple theme ────────────────────────────────── */
