@@ -154,18 +154,15 @@
             </div>
           </article>
 
-          <article class="card insight-panel age-panel">
+          <article class="card insight-panel">
             <div class="panel-header">
               <h3 class="chart-title">Age-wise Income & Gender</h3>
             </div>
 
             <div class="age-mixed-chart">
-              <apexchart
-                height="260"
-                type="line"
-                :options="ageIncomeGenderOptions"
-                :series="ageIncomeGenderSeries"
-              />
+              <div class="age-income-gender-canvas-wrap chart-container">
+                <canvas ref="ageIncomeGenderCanvas" class="age-income-gender-canvas"></canvas>
+              </div>
             </div>
           </article>
         </div>
@@ -278,7 +275,7 @@
                   <h3 class="dist-title">Land Utilization</h3>
                   <div v-if="landUtilizationHasData" class="agri-apex-wrap">
                     <apexchart
-                      height="280"
+                      height="220"
                       type="donut"
                       :options="landUtilizationOptions"
                       :series="landUtilizationSeries"
@@ -291,9 +288,9 @@
                   <div v-else class="empty-state">No land utilization records available.</div>
                 </article>
 
-                <article class="agri-chart-card">
-                  <h3 class="dist-title">Season-wise Crops</h3>
-                  <div v-if="seasonCropHasData" class="agri-apex-wrap">
+                <article class="agri-chart-card season-crops-card">
+                  <h3 class="dist-title chart-header">Season-wise Crops</h3>
+                  <div v-if="seasonCropHasData" class="agri-apex-wrap agri-chart chart-container">
                     <apexchart
                       height="280"
                       type="bar"
@@ -313,8 +310,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, watch, nextTick } from 'vue'
+import { Chart, registerables } from 'chart.js'
+import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { getDashboardSummary, getLocationOptions } from '../../api/index.js'
+
+Chart.register(...registerables, ChartDataLabels)
+Chart.defaults.font.family = 'inherit'
 
 const loading = ref(true)
 const agriculture = ref({})
@@ -363,11 +365,14 @@ const selectedVillage = ref('')
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
+const ageIncomeGenderCanvas = ref(null)
 let isActive = true
+let ageIncomeGenderChart = null
 const AGE_GROUP_ORDER = ['0-18', '19-30', '31-45', '46-60', '60+']
 
 onUnmounted(() => {
   isActive = false
+  destroyAgeIncomeGenderChart()
 })
 
 function applyDemographicsData(data) {
@@ -398,6 +403,189 @@ function applyDemographicsData(data) {
   })
 
   ageIncomeGenderSegments.value = AGE_GROUP_ORDER.map(ageGroup => grouped[ageGroup])
+}
+
+function formatIncome(value) {
+  const amount = Number(value || 0)
+  if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`
+  return `₹${amount}`
+}
+
+function destroyAgeIncomeGenderChart() {
+  if (ageIncomeGenderChart) {
+    ageIncomeGenderChart.destroy()
+    ageIncomeGenderChart = null
+  }
+}
+
+function syncAgeIncomeGenderChart() {
+  const canvas = ageIncomeGenderCanvas.value
+  if (!canvas) return
+
+  const data = ageIncomeGenderSegments.value || []
+  const chartData = {
+    labels: data.map(item => item.age_group),
+    datasets: [
+      {
+        label: 'Male',
+        data: data.map(item => Number(item.male) || 0),
+        backgroundColor: '#3b82f6',
+        stack: 'population',
+        borderRadius: 4,
+        barPercentage: 0.6,
+        categoryPercentage: 0.7,
+      },
+      {
+        label: 'Female',
+        data: data.map(item => Number(item.female) || 0),
+        backgroundColor: '#ec4899',
+        stack: 'population',
+        borderRadius: 4,
+        barPercentage: 0.6,
+        categoryPercentage: 0.7,
+      },
+    ],
+  }
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    layout: {
+      padding: {
+        top: 30,
+        right: 10,
+        left: 10,
+        bottom: 10,
+      },
+    },
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          boxWidth: 8,
+          padding: 15,
+          color: '#6b7280',
+        },
+      },
+      tooltip: {
+        enabled: true,
+        backgroundColor: '#ffffff',
+        titleColor: '#111827',
+        bodyColor: '#374151',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        cornerRadius: 8,
+        padding: 10,
+        displayColors: true,
+        callbacks: {
+          title(items) {
+            return `Age group: ${items?.[0]?.label || ''}`
+          },
+          label(context) {
+            const value = Number(context.parsed?.y || 0)
+            return `${context.dataset.label}: ${value.toLocaleString()}`
+          },
+          afterBody(items) {
+            const index = items?.[0]?.dataIndex ?? 0
+            const row = data[index] || {}
+            const total = Number(row.male || 0) + Number(row.female || 0)
+            return [
+              `Total population: ${total.toLocaleString()}`,
+              `Income: ${formatIncome(row.income)}`,
+            ]
+          },
+        },
+      },
+      datalabels: {
+        display: context => context.datasetIndex === 1,
+        anchor: 'end',
+        align: 'end',
+        offset: 6,
+        clamp: true,
+        clip: false,
+        color: '#374151',
+        formatter: (value, context) => formatIncome(data[context.dataIndex]?.income),
+        font: {
+          weight: '600',
+          size: 11,
+        },
+      },
+    },
+    scales: {
+      x: {
+        stacked: true,
+        border: {
+          color: '#e5e7eb',
+        },
+        grid: {
+          color: '#f3f4f6',
+          drawBorder: false,
+        },
+        ticks: {
+          color: '#6b7280',
+          autoSkip: false,
+          maxRotation: 0,
+        },
+        title: {
+          display: true,
+          text: 'Age group',
+        },
+      },
+      y: {
+        stacked: true,
+        beginAtZero: true,
+        grace: '20%',
+        border: {
+          color: '#e5e7eb',
+        },
+        grid: {
+          color: '#f3f4f6',
+          drawBorder: false,
+        },
+        title: {
+          display: true,
+          text: 'Population count',
+        },
+        ticks: {
+          color: '#6b7280',
+          precision: 0,
+        },
+      },
+    },
+    datasets: {
+      bar: {
+        barPercentage: 0.6,
+        categoryPercentage: 0.7,
+      },
+    },
+    layout: {
+      padding: {
+        top: 30,
+        right: 10,
+        left: 10,
+        bottom: 10,
+      },
+    },
+  }
+
+  if (!ageIncomeGenderChart) {
+    ageIncomeGenderChart = new Chart(canvas, {
+      type: 'bar',
+      data: chartData,
+      options: chartOptions,
+    })
+    return
+  }
+
+  ageIncomeGenderChart.data = chartData
+  ageIncomeGenderChart.options = chartOptions
+  ageIncomeGenderChart.update()
 }
 
 function isValidFilterValue(value) {
@@ -495,6 +683,20 @@ onMounted(async () => {
   await Promise.allSettled([dashboardPromise, optionsPromise])
 })
 
+watch(
+  [loading, ageIncomeGenderSegments],
+  async ([isLoading]) => {
+    if (isLoading) {
+      destroyAgeIncomeGenderChart()
+      return
+    }
+
+    await nextTick()
+    syncAgeIncomeGenderChart()
+  },
+  { deep: true, immediate: true }
+)
+
 const GroupIcon = {
   render: () => h('svg', { viewBox: '0 0 24 24', fill: 'currentColor' }, [
     h('path', { d: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zM8 11c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zM8 13c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5C23 14.17 18.33 13 16 13z' }),
@@ -550,90 +752,6 @@ const genderPieStyle = computed(() => {
     background: `conic-gradient(var(--teal) 0 ${malePct}%, var(--amber) ${malePct}% ${malePct + femalePct}%, var(--text-dim) ${malePct + femalePct}% ${malePct + femalePct + otherPct}%)`,
   }
 })
-
-const ageIncomeGenderCategories = computed(() =>
-  ageIncomeGenderSegments.value.map(item => item.age_group)
-)
-
-const ageIncomeGenderSeries = computed(() => {
-  return [
-    {
-      name: 'Male',
-      type: 'column',
-      yAxisIndex: 0,
-      data: ageIncomeGenderSegments.value.map(d => Number(d.male) || 0),
-    },
-    {
-      name: 'Female',
-      type: 'column',
-      yAxisIndex: 0,
-      data: ageIncomeGenderSegments.value.map(d => Number(d.female) || 0),
-    },
-    {
-      name: 'Income',
-      type: 'line',
-      yAxisIndex: 1,
-      data: ageIncomeGenderSegments.value.map(d => Number(d.income) || 0),
-    },
-  ]
-})
-
-const ageIncomeGenderOptions = computed(() => ({
-  chart: {
-    type: 'line',
-    height: 260,
-    stacked: false,
-    toolbar: { show: false },
-  },
-  plotOptions: {
-    bar: {
-      horizontal: false,
-      columnWidth: '30%',
-      distributed: false,
-      borderRadius: 2,
-    },
-  },
-  dataLabels: {
-    enabled: false,
-  },
-  colors: ['#3b82f6', '#ec4899', '#10b981'],
-  stroke: {
-    width: [1, 1, 3],
-    curve: 'smooth',
-  },
-  markers: {
-    size: [0, 0, 4],
-  },
-  fill: {
-    opacity: 1,
-  },
-  xaxis: {
-    categories: ageIncomeGenderCategories.value,
-    title: {
-      text: 'Age Group',
-    },
-  },
-  yaxis: [
-    {
-      title: {
-        text: 'Population',
-      },
-    },
-    {
-      opposite: true,
-      title: {
-        text: 'Income',
-      },
-    },
-  ],
-  tooltip: {
-    shared: true,
-    intersect: false,
-  },
-  legend: {
-    position: 'top',
-  },
-}))
 
 const bplSegments = computed(() => {
   const bpl = Number(bplDistribution.value?.bpl || 0)
@@ -991,25 +1109,81 @@ const seasonCropHasData = computed(() => seasonCropCounts.value.length > 0)
 const seasonCropOptions = computed(() => ({
   chart: {
     type: 'bar',
+    height: 280,
     stacked: false,
     toolbar: { show: false },
   },
   plotOptions: {
     bar: {
-      columnWidth: '58%',
-      borderRadius: 4,
+      columnWidth: '50%',
+      borderRadius: 6,
     },
   },
   colors: ['#0ea5e9', '#14b8a6'],
+  grid: {
+    borderColor: '#e5e7eb',
+    strokeDashArray: 3,
+    row: {
+      colors: ['transparent'],
+      opacity: 0.5,
+    },
+    padding: {
+      left: 20,
+      right: 10,
+      top: 10,
+      bottom: 10,
+    },
+  },
   xaxis: {
     categories: seasonCropCounts.value.map(item => item.crop),
-    title: { text: 'Crop Name' },
+    labels: {
+      rotate: -30,
+      offsetY: 5,
+      formatter: (value) => String(value || '')
+        .toLowerCase()
+        .replace(/\b\w/g, (char) => char.toUpperCase()),
+      style: {
+        fontSize: '12px',
+        colors: '#475569',
+      },
+    },
+    title: {
+      text: 'Crop name',
+      offsetY: -5,
+      style: {
+        fontSize: '13px',
+        fontWeight: 500,
+        color: '#475569',
+      },
+    },
   },
   yaxis: {
-    title: { text: 'Count' },
+    tickAmount: 4,
+    min: 0,
+    forceNiceScale: true,
+    labels: {
+      offsetX: -8,
+      formatter: (val) => Math.round(val),
+      style: {
+        fontSize: '12px',
+        colors: '#475569',
+      },
+    },
+    title: {
+      text: 'Count',
+      offsetX: -10,
+      style: {
+        color: '#475569',
+      },
+    },
   },
   legend: {
     position: 'top',
+    horizontalAlign: 'center',
+    offsetY: 5,
+    labels: {
+      colors: '#475569',
+    },
   },
   dataLabels: {
     enabled: false,
@@ -1159,7 +1333,6 @@ function landPct(count) {
 .insight-panel { padding: 1.1rem; }
 .welfare-panel { grid-column: 1 / -1; }
 .agriculture-panel { grid-column: 1 / -1; }
-
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -1453,19 +1626,65 @@ function landPct(count) {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.9rem;
-  min-height: 338px;
+  padding: 12px 16px;
+  min-height: 300px;
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.season-crops-card {
+  padding: 16px 20px;
+}
+
+.chart-header {
+  margin-bottom: 12px;
 }
 
 .agri-apex-wrap {
   margin-top: 0.15rem;
+  margin-bottom: 0;
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.agri-chart {
+  height: 280px;
+  width: 100%;
+}
+
+.season-crops-card .chart-container {
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.labels {
+  color: #475569;
+  text-transform: none;
+}
+
+.season-crops-card :deep(.apexcharts-xaxis-label) {
+  text-transform: none;
+}
+
+.season-crops-card :deep(.apexcharts-legend) {
+  margin-bottom: 10px !important;
 }
 
 .agri-land-bars {
   margin-top: 0.15rem;
-  max-height: 280px;
+  max-height: 220px;
   overflow-y: auto;
   padding-right: 0.2rem;
+}
+
+.agri-chart-card .empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .land-utilization-footnote {
@@ -1498,6 +1717,22 @@ function landPct(count) {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.age-income-gender-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  overflow: visible;
+}
+
+.chart-container {
+  overflow: visible;
+}
+
+.age-income-gender-canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .chart-legend-row {

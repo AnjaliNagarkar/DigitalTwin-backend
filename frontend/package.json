@@ -11,6 +11,8 @@
   "dependencies": {
     "apexcharts": "^5.10.6",
     "cesium": "^1.140.0",
+    "chart.js": "^4.5.1",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "leaflet": "^1.9.4",
     "three": "^0.170.0",
     "vite-plugin-cesium": "^1.2.23",
