@@ -2,28 +2,39 @@
   <div class="registry-wrap" :class="{ 'registry-embedded': embedded }">
 
     <!-- ── Page header (full-page mode only) ─────────────────────────── -->
-    <header v-if="!embedded" class="page-header">
-      <div class="header-title-row">
-        <div>
+    <header v-if="!embedded" class="page-header" @click="categoryDropdownOpen = false">
+
+      <!-- Row 1: Title + CATEGORY custom dropdown -->
+      <div class="header-row header-row-1">
+        <div class="title-block">
           <h1 class="page-title">Citizen Registry</h1>
           <p class="page-subtitle">{{ activeCategoryConfig.subtitle }}</p>
         </div>
-        <!-- Category dropdown — the master controller -->
-        <div class="category-select-wrap">
-          <label class="category-label">Category</label>
-          <div class="category-select-box">
-            <select v-model="category" class="category-select" @change="onCategoryChange">
-              <option v-for="c in CATEGORIES" :key="c.value" :value="c.value">
-                {{ c.label }}
-              </option>
-            </select>
-            <span class="category-icon">{{ activeCategoryConfig.icon }}</span>
+
+        <div class="reg-filter-group" @click.stop>
+          <span class="reg-filter-label">CATEGORY</span>
+          <div class="reg-custom-select" :class="{ open: categoryDropdownOpen }"
+               @click="categoryDropdownOpen = !categoryDropdownOpen">
+            <button class="reg-cs-trigger" type="button">
+              <span class="reg-cs-value">
+                {{ activeCategoryConfig.icon }} {{ activeCategoryConfig.label }}
+              </span>
+              <span class="reg-cs-arrow">▾</span>
+            </button>
+            <div class="reg-cs-dropdown" v-show="categoryDropdownOpen" @click.stop>
+              <div v-for="c in CATEGORIES" :key="c.value"
+                   class="reg-cs-option"
+                   :class="{ selected: category === c.value }"
+                   @click="selectCategory(c.value)">
+                <span class="reg-cs-opt-icon">{{ c.icon }}</span>{{ c.fullLabel }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Search + sub-filters row -->
-      <div class="header-controls">
+      <!-- Row 2: Search + Sub-filters -->
+      <div class="header-row header-row-2">
         <div class="search-box">
           <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
             <path fill-rule="evenodd"
@@ -33,29 +44,44 @@
           <input v-model="search" placeholder="Search by name…" class="search-input"/>
         </div>
 
-        <!-- Sub-filters — rendered dynamically per category -->
-        <div v-if="activeSubFilters.length" class="subfilter-bar">
-          <template v-for="sf in activeSubFilters" :key="sf.key">
-            <span class="subfilter-label">{{ sf.label }}:</span>
-            <button v-for="opt in sf.options" :key="opt.value"
-              class="chip"
-              :class="{ active: subFilters[sf.key] === opt.value }"
-              @click="toggleSubFilter(sf.key, opt.value)">
-              {{ opt.label }}
-            </button>
-            <div class="filter-divider"></div>
-          </template>
-        </div>
+        <template v-if="activeSubFilters.length">
+          <div class="subfilter-bar">
+            <template v-for="sf in activeSubFilters" :key="sf.key">
+              <span class="subfilter-label">{{ sf.label }}:</span>
+              <button v-for="opt in sf.options" :key="opt.value"
+                class="chip"
+                :class="{ active: isSubFilterActive(sf.key, opt.value) }"
+                @click="toggleSubFilter(sf.key, opt.value)">
+                {{ opt.label }}
+              </button>
+              <div class="filter-divider"></div>
+            </template>
+          </div>
+        </template>
 
-        <button class="reset-btn" @click="resetFilters">Reset</button>
+        <button class="reset-btn" @click="resetFilters">↺ Reset</button>
       </div>
+
     </header>
 
     <!-- ── Embedded compact toolbar ──────────────────────────────────── -->
-    <div v-if="embedded" class="embedded-toolbar">
-      <select v-model="category" class="category-select-inline" @change="onCategoryChange">
-        <option v-for="c in CATEGORIES" :key="c.value" :value="c.value">{{ c.label }}</option>
-      </select>
+    <div v-if="embedded" class="embedded-toolbar" @click="categoryDropdownOpen = false">
+      <div class="reg-custom-select reg-custom-select--sm"
+           :class="{ open: categoryDropdownOpen }"
+           @click.stop="categoryDropdownOpen = !categoryDropdownOpen">
+        <button class="reg-cs-trigger reg-cs-trigger--sm" type="button">
+          <span class="reg-cs-value">{{ activeCategoryConfig.icon }} {{ activeCategoryConfig.label }}</span>
+          <span class="reg-cs-arrow">▾</span>
+        </button>
+        <div class="reg-cs-dropdown" v-show="categoryDropdownOpen" @click.stop>
+          <div v-for="c in CATEGORIES" :key="c.value"
+               class="reg-cs-option"
+               :class="{ selected: category === c.value }"
+               @click="selectCategory(c.value)">
+            {{ c.icon }} {{ c.fullLabel }}
+          </div>
+        </div>
+      </div>
       <div class="search-box search-box-sm">
         <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
           <path fill-rule="evenodd"
@@ -67,12 +93,12 @@
       <template v-for="sf in activeSubFilters" :key="sf.key">
         <button v-for="opt in sf.options" :key="opt.value"
           class="chip"
-          :class="{ active: subFilters[sf.key] === opt.value }"
+          :class="{ active: isSubFilterActive(sf.key, opt.value) }"
           @click="toggleSubFilter(sf.key, opt.value)">
           {{ opt.label }}
         </button>
       </template>
-      <button class="reset-btn" @click="resetFilters">Reset</button>
+      <button class="reset-btn" @click="resetFilters">↺ Reset</button>
     </div>
 
     <!-- ── Loading ────────────────────────────────────────────────────── -->
@@ -140,8 +166,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { getUnifiedRegistry } from '../api/index.js'
+defineOptions({ name: 'UnifiedRegistry' })
+
+import { ref, computed, onMounted, onActivated, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { getUnifiedRegistry, getCitizens } from '../api/index.js'
+import { getRegistryState } from '../state/registryStateCache.js'
 
 // ── Props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -149,17 +179,21 @@ const props = defineProps({
   maxRows:  { type: Number,  default: 0 },
 })
 
+const route = useRoute()
+const registryScope = computed(() => route.path.startsWith('/population') ? 'population' : 'agriculture')
+const registryState = computed(() => getRegistryState(registryScope.value))
+
 // ── Category definitions ───────────────────────────────────────────────────
 // Each category declares: icon, label, subtitle, color, which columns to show,
 // which sub-filters to expose, and how to pre-filter the rows.
 
 const CATEGORIES = [
-  { value: '',         label: 'All Citizens'   },
-  { value: 'farmer',  label: 'Farmer'          },
-  { value: 'student', label: 'Student'         },
-  { value: 'disabled',label: 'Disabled'        },
-  { value: 'housewife',label: 'Housewife'      },
-  { value: 'senior',  label: 'Senior Citizen'  },
+  { value: '',          label: 'All',             fullLabel: 'All Citizens',    icon: '👥' },
+  { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
+  { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
+  { value: 'disabled', label: 'Divyang',          fullLabel: 'Divyang',         icon: '♿' },
+  { value: 'housewife',label: 'Housewives',       fullLabel: 'Housewives',      icon: '🏠' },
+  { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
 ]
 
 const CATEGORY_CONFIG = {
@@ -174,6 +208,7 @@ const CATEGORY_CONFIG = {
       { key: 'age',          label: 'Age',            tdClass: 'td-num' },
       { key: 'gender',       label: 'Gender' },
       { key: 'occupation',   label: 'Occupation' },
+      { key: 'maritalStatus', label: 'Marital Status' },
       { key: 'annualIncome', label: 'Annual Income',  tdClass: 'td-num' },
     ],
     subFilters: [
@@ -192,18 +227,41 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',      value: 'high'   },
         ],
       },
+      
+      {
+        key: 'occupationType', label: 'Occupation',
+        options: [
+          { label: 'Farmer',        value: 'Farmer'        },
+          { label: 'Student',       value: 'Student'       },
+          { label: 'Housewife',     value: 'Housewife'     },
+          { label: 'Salaried Job',  value: 'Salaried Job'  },
+          { label: 'Wage Work',     value: 'Wage Work'     },
+          { label: 'Unemployed',    value: 'Unemployed'    },
+          { label: 'Not Working',   value: 'Not Working'   },
+        ],
+      },
+      
+      {
+        key: 'isDivyang', label: 'Divyang',
+        options: [
+          { label: 'Yes', value: 'true'  },
+          { label: 'No',  value: 'false' },
+        ],
+      },
+      
     ],
   },
 
   farmer: {
     label: 'Farmer',
-    subtitle: 'Agricultural land-owners with crop & irrigation data',
+    subtitle: 'Citizen-level records in land-owning households (count differs from 3D household total)',
     icon: '🌾',
     color: '#16a34a',
     rowFilter: r => r.isFarmer,
     columns: [
       { key: 'fullName',       label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
       { key: 'totalLand',      label: 'Land (Acre)',    tdClass: 'td-num' },
+      { key: 'crops',          label: 'Crops' },
       { key: 'irrigationType', label: 'Irrigation' },
       { key: 'waterSource',    label: 'Water Source' },
       { key: 'annualIncome',   label: 'Annual Income',  tdClass: 'td-num' },
@@ -241,6 +299,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -257,7 +325,6 @@ const CATEGORY_CONFIG = {
       { key: 'educationLevel', label: 'Education Level' },
       { key: 'schoolName',     label: 'School / College' },
       { key: 'scholarship',    label: 'Scholarship' },
-      { key: 'annualIncome',   label: 'Annual Income',     tdClass: 'td-num' },
     ],
     subFilters: [
       {
@@ -283,18 +350,18 @@ const CATEGORY_CONFIG = {
         ],
       },
       {
-        key: 'incomeRange', label: 'Income Range',
+        key: 'ageGroup', label: 'Age Group',
         options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
+          { label: '0-10',  value: '0-10'  },
+          { label: '11-17', value: '11-17' },
+          { label: '18+',   value: '18+'   },
         ],
       },
     ],
   },
 
   disabled: {
-    label: 'Disabled',
+    label: 'Divyang',
     subtitle: 'Citizens with reported disability (Divyang)',
     icon: '♿',
     color: '#d97706',
@@ -306,9 +373,39 @@ const CATEGORY_CONFIG = {
       { key: 'pensionStatus',     label: 'Pension Status' },
       { key: 'govtPensionAmount', label: 'Govt. Pension Amt', tdClass: 'td-num' },
       { key: 'caretakerName',     label: 'Caretaker' },
-      { key: 'annualIncome',      label: 'Annual Income',     tdClass: 'td-num' },
+      { key: 'divyangCertificate', label: 'Divyang Certificate' },
     ],
     subFilters: [
+      {
+        key: 'gender', label: 'Gender',
+        options: [
+          { label: 'Male',   value: 'Male'   },
+          { label: 'Female', value: 'Female' },
+        ],
+      },
+      {
+        key: 'pensionStatus', label: 'Pension',
+        options: [
+          { label: 'Eligible',     value: 'Eligible'     },
+          { label: 'Not Eligible', value: 'Not Eligible' },
+        ],
+      },
+      {
+        key: 'disabilitySeverity', label: 'Disability %',
+        options: [
+          { label: 'Low (<40%)',      value: 'low'      },
+          { label: 'Moderate (40-70%)', value: 'moderate' },
+          { label: 'High (>70%)',     value: 'high'     },
+          { label: 'Not Recorded',    value: 'unknown'  },
+        ],
+      },
+      {
+        key: 'divyangCertificate', label: 'Certificate',
+        options: [
+          { label: 'Available',     value: 'yes' },
+          { label: 'Not Available', value: 'no'  },
+        ],
+      },
       {
         key: 'incomeRange', label: 'Income Range',
         options: [
@@ -317,6 +414,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -330,19 +437,32 @@ const CATEGORY_CONFIG = {
       { key: 'fullName',       label: 'Full Name',       minWidth: true, tdClass: 'td-name' },
       { key: 'age',            label: 'Age',              tdClass: 'td-num' },
       { key: 'gender',         label: 'Gender' },
-      { key: 'sourceOfIncome', label: 'Source of Income' },
       { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
+      { key: 'maritalStatus',  label: 'Marital Status' },
     ],
     subFilters: [
       {
-        key: 'sourceOfIncome', label: 'Source of Income',
+        key: 'gender', label: 'Gender',
         options: [
-          { label: 'None',                   value: 'None'                   },
-          { label: 'Small Business/SHG',     value: 'Small Business/SHG'     },
-          { label: 'Tailoring',              value: 'Tailoring'              },
-          { label: 'Poultry',                value: 'Poultry'                },
-          { label: 'Remittance from family', value: 'Remittance from family' },
+          { label: 'Male',   value: 'Male'   },
+          { label: 'Female', value: 'Female' },
+        ],
+      },
+      {
+        key: 'ageGroup', label: 'Age Group',
+        options: [
+          { label: '18-35', value: 'young'  },
+          { label: '36-55', value: 'middle' },
+          { label: '56+',   value: 'senior' },
+        ],
+      },
+      {
+        key: 'childrenGroup', label: 'Children',
+        options: [
+          { label: 'No Children', value: 'none'     },
+          { label: '1-2',         value: 'oneToTwo' },
+          { label: '3+',          value: 'threePlus' },
         ],
       },
       {
@@ -353,6 +473,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 
@@ -379,6 +509,16 @@ const CATEGORY_CONFIG = {
           { label: 'High (>₹50k)',    value: 'high'   },
         ],
       },
+      {
+        key: 'maritalStatus', label: 'Marital Status',
+        options: [
+          { label: 'Married',  value: 'Married'  },
+          { label: 'Single',   value: 'Single'   },
+          { label: 'Widowed',  value: 'Widowed'  },
+          { label: 'Divorced', value: 'Divorced' },
+        ],
+      },
+
     ],
   },
 }
@@ -386,23 +526,148 @@ const CATEGORY_CONFIG = {
 // ── State ──────────────────────────────────────────────────────────────────
 const loading     = ref(true)
 const records     = ref([])
-const category    = ref('')
-const search      = ref('')
-const subFilters  = ref({})   // { [filterKey]: selectedValue }
+const category             = ref('')
+const categoryDropdownOpen = ref(false)
+const search               = ref('')
+const subFilters           = ref({})   // { [filterKey]: string[] }
+
+function selectCategory(val) {
+  category.value = val
+  categoryDropdownOpen.value = false
+  onCategoryChange()
+  persistToCache()
+}
 const sortKey     = ref('')
 const sortDir     = ref('asc')
 const currentPage = ref(1)
 const pageSize    = computed(() => props.maxRows > 0 ? props.maxRows : 50)
+
+function hydrateFromCache() {
+  const cached = registryState.value
+  if (!cached) return false
+
+  if (Array.isArray(cached.records) && cached.records.length > 0) {
+    records.value = cached.records
+  }
+  category.value = cached.category || ''
+  search.value = cached.search || ''
+  subFilters.value = cached.subFilters || {}
+  sortKey.value = cached.sortKey || ''
+  sortDir.value = cached.sortDir || 'asc'
+  currentPage.value = cached.currentPage || 1
+  return records.value.length > 0
+}
+
+function persistToCache() {
+  const cached = registryState.value
+  if (!cached) return
+  cached.records = records.value
+  cached.loadedAt = Date.now()
+  cached.category = category.value
+  cached.search = search.value
+  cached.subFilters = JSON.parse(JSON.stringify(subFilters.value || {}))
+  cached.sortKey = sortKey.value
+  cached.sortDir = sortDir.value
+  cached.currentPage = currentPage.value
+}
+
+function mapLegacyCitizenToUnified(row) {
+  const first = String(row?.firstName || '').trim()
+  const last = String(row?.lastName || '').trim()
+  const fullName = [first, last].filter(Boolean).join(' ').trim()
+  const occupation = String(row?.workDetails || row?.occupation || '').trim() || 'Not Working'
+  const annualIncome = String(row?.annualIncome || '').trim()
+  const totalLand = String(row?.totalLand || '').trim()
+  const irrigationType = String(row?.waterSource || '').toLowerCase().includes('rain') ? 'Rain-fed' : 'Irrigated'
+  return {
+    fullName,
+    firstName: first,
+    lastName: last,
+    age: 0,
+    gender: '',
+    education: 'Not Available',
+    familyId: 0,
+    totalLand,
+    irrigationType,
+    waterSource: String(row?.waterSource || '').trim(),
+    kharifCrop: '',
+    rabiCrop: '',
+    annualIncome,
+    occupation,
+    childrenCount: Number(row?.childrenCount || 0),
+    sanitationStatus: 'Not Available',
+    isFarmer: totalLand !== '' && totalLand !== '0',
+    isStudent: false,
+    isDivyang: false,
+    isHousewife: occupation.toLowerCase().includes('housewife') || occupation.toLowerCase().includes('homemaker'),
+    isSenior: false,
+    schoolName: '',
+    gradeStandard: '',
+    educationLevel: 'Not Available',
+    scholarship: 'No',
+    disabilityType: '',
+    disabilityPercent: '',
+    pensionStatus: 'Not Eligible',
+    caretakerName: 'Not Available',
+    govtPensionAmount: 'N/A',
+    maritalStatus: '', // New field
+    sourceOfIncome: 'None',
+  }
+}
+
+async function loadRegistryData() {
+  try {
+    const data = await getUnifiedRegistry()
+    records.value = Array.isArray(data) ? data : []
+    persistToCache()
+    return
+  } catch (e) {
+    const isAbort = e?.name === 'AbortError'
+    console.warn('Unified registry endpoint slow/unavailable, trying fallback:', isAbort ? 'timeout' : (e?.message || e))
+  }
+
+  try {
+    const legacy = await getCitizens()
+    records.value = (Array.isArray(legacy) ? legacy : []).map(mapLegacyCitizenToUnified)
+    persistToCache()
+  } catch (e2) {
+    console.error('Citizen registry load failed:', e2)
+    records.value = []
+  }
+}
 
 // ── Derived config ─────────────────────────────────────────────────────────
 const activeCategoryConfig = computed(() => CATEGORY_CONFIG[category.value] || CATEGORY_CONFIG[''])
 const activeSubFilters     = computed(() => activeCategoryConfig.value.subFilters || [])
 
 // ── Data loading ───────────────────────────────────────────────────────────
+async function ensureRegistryData() {
+  if (hydrateFromCache()) {
+    loading.value = false
+    return
+  }
+
+  loading.value = true
+  try {
+    await loadRegistryData()
+  } finally {
+    loading.value = false
+    persistToCache()
+  }
+}
+
 onMounted(async () => {
-  try { records.value = await getUnifiedRegistry() }
-  catch (e) { console.error('Citizen registry load failed:', e) }
-  finally { loading.value = false }
+  await ensureRegistryData()
+})
+
+onActivated(async () => {
+  if (!records.value.length) {
+    await ensureRegistryData()
+  }
+})
+
+onBeforeUnmount(() => {
+  persistToCache()
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -433,16 +698,60 @@ function classifyIncome(v) {
   return 'high'
 }
 
+function classifyDisabilitySeverity(v) {
+  const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, ''))
+  if (!Number.isFinite(n)) return 'unknown'
+  if (n < 40) return 'low'
+  if (n <= 70) return 'moderate'
+  return 'high'
+}
+
+function hasDivyangCertificate(r) {
+  return (r.isDivyang === true) ||
+    (String(r.disabilityType || '').trim() !== '' && String(r.disabilityType || '').trim().toLowerCase() !== 'not recorded') ||
+    (String(r.disabilityPercent || '').trim() !== '' && String(r.disabilityPercent || '').trim() !== '0')
+}
+
+function classifyAgeGroup(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n <= 35) return 'young'
+  if (n <= 55) return 'middle'
+  return 'senior'
+}
+
+function classifyChildrenGroup(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return 'none'
+  if (n <= 2) return 'oneToTwo'
+  return 'threePlus'
+}
+
 function toggleSort(key) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
   else { sortKey.value = key; sortDir.value = 'asc' }
 }
 
+function getSelectedValues(key) {
+  const values = subFilters.value[key]
+  return Array.isArray(values) ? values : []
+}
+
+function isSubFilterActive(key, value) {
+  return getSelectedValues(key).includes(value)
+}
+
 function toggleSubFilter(key, value) {
+  const current = getSelectedValues(key)
+  const next = current.includes(value)
+    ? current.filter((v) => v !== value)
+    : [...current, value]
+
   subFilters.value = {
     ...subFilters.value,
-    [key]: subFilters.value[key] === value ? '' : value,
+    [key]: next,
   }
+  persistToCache()
 }
 
 function onCategoryChange() {
@@ -451,6 +760,7 @@ function onCategoryChange() {
   sortKey.value = ''
   sortDir.value = 'asc'
   currentPage.value = 1
+  persistToCache()
 }
 
 function resetFilters() {
@@ -459,6 +769,7 @@ function resetFilters() {
   sortKey.value = ''
   sortDir.value = 'asc'
   currentPage.value = 1
+  persistToCache()
 }
 
 // ── Category-pre-filtered list ─────────────────────────────────────────────
@@ -478,58 +789,169 @@ const filteredRecords = computed(() => {
 
   // Apply active sub-filters
   const sf = subFilters.value
+  const selected = (key) => Array.isArray(sf[key]) ? sf[key] : []
+  const hasAny = (key) => selected(key).length > 0
 
   // Gender sub-filter
-  if (sf.gender) {
-    list = list.filter(r => String(r.gender || '').toLowerCase() === sf.gender.toLowerCase())
+  if (hasAny('gender')) {
+    const genderSet = new Set(selected('gender').map(v => String(v).toLowerCase()))
+    list = list.filter(r => genderSet.has(String(r.gender || '').toLowerCase()))
   }
 
   // Land size sub-filter (farmer category)
-  if (sf.landSize) {
+  if (hasAny('landSize')) {
+    const sizeSet = new Set(selected('landSize'))
     list = list.filter(r => {
       const ac = parseLand(r.totalLand)
-      if (sf.landSize === 'large')    return ac > 2
-      if (sf.landSize === 'medium')   return ac >= 1 && ac <= 2
-      if (sf.landSize === 'marginal') return ac > 0 && ac < 1
-      return true
+      const matchesLarge = sizeSet.has('large') && ac > 2
+      const matchesMedium = sizeSet.has('medium') && ac >= 1 && ac <= 2
+      const matchesMarginal = sizeSet.has('marginal') && ac > 0 && ac < 1
+      if (matchesLarge || matchesMedium || matchesMarginal) return true
+      return false
     })
   }
 
   // Irrigation type sub-filter (farmer category)
-  if (sf.irrigationType) {
-    list = list.filter(r => r.irrigationType === sf.irrigationType)
+  if (hasAny('irrigationType')) {
+    const irrigSet = new Set(selected('irrigationType'))
+    list = list.filter(r => irrigSet.has(r.irrigationType))
   }
 
   // Crop type sub-filter (farmer category)
-  if (sf.cropType) {
+  if (hasAny('cropType')) {
+    const cropSet = new Set(selected('cropType'))
     list = list.filter(r => {
       const hasKharif = r.kharifCrop && r.kharifCrop !== 'N/A'
       const hasRabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A'
-      if (sf.cropType === 'kharif') return hasKharif
-      if (sf.cropType === 'rabi')   return hasRabi
-      if (sf.cropType === 'both')   return hasKharif && hasRabi
-      return true
+      const matchesKharif = cropSet.has('kharif') && hasKharif
+      const matchesRabi = cropSet.has('rabi') && hasRabi
+      const matchesBoth = cropSet.has('both') && hasKharif && hasRabi
+      if (matchesKharif || matchesRabi || matchesBoth) return true
+      return false
     })
   }
 
   // Education level sub-filter (student category)
-  if (sf.educationLevel) {
-    list = list.filter(r => r.educationLevel === sf.educationLevel)
+  if (hasAny('educationLevel')) {
+    const eduSet = new Set(selected('educationLevel'))
+    list = list.filter(r => eduSet.has(r.educationLevel))
   }
 
   // Scholarship sub-filter (student category)
-  if (sf.scholarship) {
-    list = list.filter(r => r.scholarship === sf.scholarship)
+  if (hasAny('scholarship')) {
+    const scholSet = new Set(selected('scholarship'))
+    list = list.filter(r => scholSet.has(r.scholarship))
+  }
+
+  // Pension status sub-filter (divyang/senior categories)
+  if (hasAny('pensionStatus')) {
+    const pensionSet = new Set(selected('pensionStatus').map(v => String(v).toLowerCase()))
+    list = list.filter(r => pensionSet.has(String(r.pensionStatus || '').toLowerCase()))
+  }
+
+  // Disability severity sub-filter (divyang category)
+  if (hasAny('disabilitySeverity')) {
+    const severitySet = new Set(selected('disabilitySeverity'))
+    list = list.filter(r => severitySet.has(classifyDisabilitySeverity(r.disabilityPercent)))
+  }
+
+  // Divyang certificate sub-filter (divyang category)
+  if (hasAny('divyangCertificate')) {
+    const certSet = new Set(selected('divyangCertificate'))
+    list = list.filter(r => {
+      const hasCert = hasDivyangCertificate(r)
+      return (certSet.has('yes') && hasCert) || (certSet.has('no') && !hasCert)
+    })
+  }
+
+  // Age-group sub-filter (housewife category)
+  if (hasAny('ageGroup')) {
+    const ageSet = new Set(selected('ageGroup'))
+    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
+  }
+
+  // Children-group sub-filter (housewife category)
+  if (hasAny('childrenGroup')) {
+    const childrenSet = new Set(selected('childrenGroup'))
+    list = list.filter(r => childrenSet.has(classifyChildrenGroup(r.childrenCount)))
   }
 
   // Source-of-income sub-filter (housewife category)
-  if (sf.sourceOfIncome) {
-    list = list.filter(r => r.sourceOfIncome === sf.sourceOfIncome)
+  if (hasAny('sourceOfIncome')) {
+    const sourceSet = new Set(selected('sourceOfIncome'))
+    list = list.filter(r => sourceSet.has(r.sourceOfIncome))
+  }
+
+  // Education level sub-filter (All Citizens category)
+  if (hasAny('educationLevel')) {
+    const eduSet = new Set(selected('educationLevel'))
+    list = list.filter(r => eduSet.has(r.educationLevel))
+  }
+
+  // Sanitation status sub-filter (All Citizens category)
+  if (hasAny('sanitationStatus')) {
+    const sanitSet = new Set(selected('sanitationStatus'))
+    list = list.filter(r => {
+      const status = String(r.sanitationStatus || '').trim()
+      if (sanitSet.has('Has Toilet') && (status !== 'No Latrine' && status !== 'Not Available' && status !== '')) return true
+      if (sanitSet.has('No Toilet') && status === 'No Latrine') return true
+      if (sanitSet.has('Not Available') && (status === 'Not Available' || status === '')) return true
+      return false
+    })
+  }
+
+  // Occupation type sub-filter (All Citizens category)
+  if (hasAny('occupationType')) {
+    const occSet = new Set(selected('occupationType').map(v => String(v).toLowerCase()))
+    list = list.filter(r => occSet.has(String(r.occupation || '').toLowerCase()))
+  }
+
+  // IsFarmer sub-filter (All Citizens category)
+  if (hasAny('isFarmer')) {
+    const farmerSet = new Set(selected('isFarmer'))
+    list = list.filter(r => (farmerSet.has('true') && r.isFarmer) || (farmerSet.has('false') && !r.isFarmer))
+  }
+
+  // IsStudent sub-filter (All Citizens category)
+  if (hasAny('isStudent')) {
+    const studentSet = new Set(selected('isStudent'))
+    list = list.filter(r => (studentSet.has('true') && r.isStudent) || (studentSet.has('false') && !r.isStudent))
+  }
+
+  // IsDivyang sub-filter (All Citizens category)
+  if (hasAny('isDivyang')) {
+    const divyangSet = new Set(selected('isDivyang'))
+    list = list.filter(r => (divyangSet.has('true') && r.isDivyang) || (divyangSet.has('false') && !r.isDivyang))
+  }
+
+  // IsHousewife sub-filter (All Citizens category)
+  if (hasAny('isHousewife')) {
+    const housewifeSet = new Set(selected('isHousewife'))
+    list = list.filter(r => (housewifeSet.has('true') && r.isHousewife) || (housewifeSet.has('false') && !r.isHousewife))
+  }
+
+  // IsSenior sub-filter (All Citizens category)
+  if (hasAny('isSenior')) {
+    const seniorSet = new Set(selected('isSenior'))
+    list = list.filter(r => (seniorSet.has('true') && r.isSenior) || (seniorSet.has('false') && !r.isSenior))
+  }
+
+  // Age group sub-filter (student category)
+  if (hasAny('ageGroup') && activeCategoryConfig.value.label === 'Student') {
+    const ageSet = new Set(selected('ageGroup'))
+    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
   }
 
   // Income range — global, works across ALL categories
-  if (sf.incomeRange) {
-    list = list.filter(r => classifyIncome(r.annualIncome) === sf.incomeRange)
+  if (hasAny('incomeRange')) {
+    const incomeSet = new Set(selected('incomeRange'))
+    list = list.filter(r => incomeSet.has(classifyIncome(r.annualIncome)))
+  }
+
+  // Marital Status sub-filter (All Citizens and Housewives categories)
+  if (hasAny('maritalStatus')) {
+    const maritalSet = new Set(selected('maritalStatus').map(v => String(v).toLowerCase()))
+    list = list.filter(r => maritalSet.has(String(r.maritalStatus || '').toLowerCase()))
   }
 
   // Sort
@@ -563,7 +985,14 @@ const paginatedRecords = computed(() => {
   return filteredRecords.value.slice(start, start + pageSize.value)
 })
 
-watch([search, subFilters, category], () => { currentPage.value = 1 }, { deep: true })
+watch([search, subFilters, category], () => {
+  currentPage.value = 1
+  persistToCache()
+}, { deep: true })
+
+watch([records, sortKey, sortDir, currentPage], () => {
+  persistToCache()
+}, { deep: true })
 
 // ── Cell renderer ──────────────────────────────────────────────────────────
 // Returns an HTML string so the template can use v-html for badge rendering.
@@ -580,6 +1009,16 @@ function renderCell(r, col) {
       const ac = parseLand(v)
       if (ac === 0) return `<span class="badge badge-muted">No Land</span>`
       return `<span class="badge badge-green">${esc(v)} ac</span>`
+    }
+
+    case 'crops': {
+      const kharif = r.kharifCrop && r.kharifCrop !== 'N/A' ? r.kharifCrop : null
+      const rabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A' ? r.rabiCrop   : null
+      if (!kharif && !rabi) return `<span class="text-dim-sm">—</span>`
+      const parts = []
+      if (kharif) parts.push(`<span class="badge badge-kharif" title="Kharif">☀ ${esc(kharif)}</span>`)
+      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="Rabi">❄ ${esc(rabi)}</span>`)
+      return parts.join(' ')
     }
 
     case 'irrigationType': {
@@ -616,6 +1055,13 @@ function renderCell(r, col) {
 
     case 'disabilityPercent':
       return v && v !== '0' ? `<span class="badge badge-orange">${esc(v)}%</span>` : `<span class="text-dim-sm">—</span>`
+
+    case 'divyangCertificate': {
+      const hasDisabilityMarker = hasDivyangCertificate(r)
+      const cls = hasDisabilityMarker ? 'badge-green' : 'badge-muted'
+      const label = hasDisabilityMarker ? 'Available' : 'Not Available'
+      return `<span class="badge ${cls}">${label}</span>`
+    }
 
     case 'govtPensionAmount': {
       if (!v || v === 'N/A' || v === '0') return `<span class="text-dim-sm">N/A</span>`
@@ -654,6 +1100,10 @@ function renderCell(r, col) {
       const rangePill = rangeCls ? `<span class="badge ${rangeCls}" style="margin-left:0.35rem;font-size:0.62rem">${rangeLabel}</span>` : ''
       return `<span>${esc(v)}</span>${rangePill}`
     }
+    
+    case 'maritalStatus': {
+      return v ? `<span class="badge badge-blue">${esc(v)}</span>` : `<span class="text-dim-sm">—</span>`
+    }
 
     case 'childrenCount':
       return String(r.childrenCount ?? 0)
@@ -686,88 +1136,134 @@ function esc(s) {
 .registry-embedded { padding: 0.75rem 1rem; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
-.page-header { margin-bottom: 1.5rem; }
-
-.header-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+.page-header {
+  margin-bottom: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  overflow: visible;   /* allow dropdown to escape */
 }
 
+/* Row 1 — Title + CATEGORY dropdown */
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  flex-wrap: wrap;
+}
+.header-row-1 {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  gap: 1.25rem;
+}
+/* Row 2 — search + sub-filters */
+.header-row-2 {
+  gap: 0.55rem;
+  padding: 0.65rem 1.5rem;
+}
+
+.title-block { flex-shrink: 0; }
 .page-title {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: 1.6rem;
   color: var(--text-primary);
   font-weight: 400;
+  line-height: 1.2;
 }
-.page-subtitle { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.35rem; }
+.page-subtitle { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.2rem; }
 
-/* ── Category selector ───────────────────────────────────────────────────── */
-.category-select-wrap {
+/* ── CATEGORY custom dropdown (mirrors 3D Twin "View By") ─────────────────── */
+.reg-filter-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  min-width: 200px;
+  gap: 0.25rem;
+  margin-left: auto;  /* push to right side of Row 1 */
 }
-.category-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
+.reg-filter-label {
+  font-size: 0.63rem;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--text-dim);
-  font-weight: 600;
+  user-select: none;
 }
-.category-select-box {
+
+.reg-custom-select {
   position: relative;
+  min-width: 190px;
+}
+
+.reg-cs-trigger {
   display: flex;
   align-items: center;
-}
-.category-select {
+  justify-content: space-between;
+  gap: 0.4rem;
   width: 100%;
-  height: 38px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--amber);
-  border-radius: 8px;
-  color: var(--text-body);
-  font-family: var(--font-body);
-  font-size: 0.88rem;
+  background: #ffffff;
+  border: 1.5px solid #9ca3af;
+  border-radius: 7px;
+  color: #111827;
+  font-size: 0.82rem;
   font-weight: 500;
-  padding: 0 2rem 0 0.75rem;
-  appearance: none;
+  padding: 0.38rem 0.65rem;
   cursor: pointer;
-  transition: box-shadow 0.2s;
+  outline: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+  white-space: nowrap;
 }
-.category-select:focus { outline: none; box-shadow: 0 0 0 3px var(--amber-dim); }
-.category-icon {
+.reg-cs-trigger:hover          { border-color: #6b7280; }
+.reg-custom-select.open .reg-cs-trigger {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+}
+
+.reg-cs-trigger--sm { padding: 0.28rem 0.55rem; font-size: 0.76rem; }
+
+.reg-cs-value { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.reg-cs-arrow {
+  font-size: 0.6rem;
+  color: #6b7280;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.reg-custom-select.open .reg-cs-arrow { transform: rotate(180deg); }
+
+/* Dropdown panel — anchored right so it doesn't overlap Row 2 content */
+.reg-cs-dropdown {
   position: absolute;
-  right: 0.6rem;
-  font-size: 1rem;
-  pointer-events: none;
+  top: calc(100% + 5px);
+  right: 0;
+  left: auto;
+  min-width: 100%;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.13), 0 3px 8px rgba(0,0,0,0.08);
+  z-index: 9999;   /* float over row 2 and table */
+  overflow: hidden;
 }
 
-/* Inline category selector (embedded mode) */
-.category-select-inline {
-  height: 30px;
-  background: var(--bg-card);
-  border: 1px solid var(--amber);
-  border-radius: 6px;
-  color: var(--text-body);
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  padding: 0 0.6rem;
-  cursor: pointer;
-}
-
-/* ── Controls row ────────────────────────────────────────────────────────── */
-.header-controls {
+.reg-cs-option {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.46rem 0.8rem;
+  font-size: 0.8rem;
+  color: #111827;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
 }
+.reg-cs-option:hover    { background: #f0fdf4; color: #15803d; }
+.reg-cs-option.selected { background: #dcfce7; color: #15803d; font-weight: 600; }
+.reg-cs-opt-icon        { font-size: 0.9rem; line-height: 1; width: 1.1rem; flex-shrink: 0; }
 
+/* Compact variant for embedded mode */
+.reg-custom-select--sm { min-width: 150px; }
+
+/* ── Embedded toolbar ────────────────────────────────────────────────────── */
 .embedded-toolbar {
   display: flex;
   align-items: center;
@@ -780,20 +1276,21 @@ function esc(s) {
 .search-box {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border-light);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  padding: 0 0.75rem;
+  height: 36px;
   flex: 0 1 260px;
-  transition: border-color 0.2s;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
-.search-box-sm { flex: 0 1 200px; }
-.search-box:focus-within { border-color: var(--amber); }
-.search-icon { width: 16px; height: 16px; color: var(--text-dim); flex-shrink: 0; }
+.search-box-sm { flex: 0 1 200px; height: 32px; }
+.search-box:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-dim); }
+.search-icon { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
 .search-input {
   background: none; border: none; outline: none;
-  color: var(--text-body); font-family: var(--font-body); font-size: 0.85rem; width: 100%;
+  color: var(--text-body); font-family: var(--font-body); font-size: 0.84rem; width: 100%;
 }
 .search-input::placeholder { color: var(--text-dim); }
 
@@ -812,7 +1309,7 @@ function esc(s) {
   font-weight: 600;
   white-space: nowrap;
 }
-.filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 0.1rem; }
+.filter-divider { width: 1px; height: 20px; background: var(--border); margin: 0 0.1rem; flex-shrink: 0; }
 
 .chip {
   background: var(--bg-card);
@@ -830,25 +1327,26 @@ function esc(s) {
 .chip.active { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
 
 .reset-btn {
-  height: 30px;
+  height: 36px;
   padding: 0 0.9rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border-light);
   background: var(--bg-surface);
   color: var(--text-muted);
   font-family: var(--font-body);
   font-size: 0.76rem;
   cursor: pointer;
-  transition: all 0.18s;
+  transition: all 0.15s;
   white-space: nowrap;
 }
-.reset-btn:hover { border-color: var(--amber); color: var(--amber); }
+.reset-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
 
 /* ── Table container ─────────────────────────────────────────────────────── */
 .table-container {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
   overflow: hidden;
 }
 
@@ -939,6 +1437,8 @@ function esc(s) {
 :deep(.badge-orange)   { background: #ffedd5; color: #c2410c; }
 :deep(.badge-irrigated){ background: #dcfce7; color: #15803d; }
 :deep(.badge-rainfed)  { background: #fee2e2; color: #b91c1c; }
+:deep(.badge-kharif)   { background: #fef9c3; color: #854d0e; }
+:deep(.badge-rabi)     { background: #e0f2fe; color: #075985; }
 :deep(.badge-muted)    { background: var(--bg-surface); color: var(--text-dim); }
 
 :deep(.text-body-sm)   { font-size: 0.82rem; color: var(--text-body); }

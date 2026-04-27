@@ -152,6 +152,25 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 	result["landUtilizationRows"] = []gin.H{}
 	result["seasonCropRows"] = []gin.H{}
 
+	// ── DB-wide totals (all households, not just GPS-tagged ones) ─────────────
+	var totalHouseholds int
+	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY").Scan(&totalHouseholds)
+	result["totalHouseholds"] = totalHouseholds
+
+	var totalPopulation int
+	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY_MEMBER").Scan(&totalPopulation)
+	result["totalPopulation"] = totalPopulation
+
+	var totalMale int
+	h.DB.QueryRow(`SELECT COUNT(*) FROM FAMILY_MEMBER
+		WHERE LOWER(TRIM(COALESCE(GENDER,''))) IN ('male','m')`).Scan(&totalMale)
+	result["totalMale"] = totalMale
+
+	var totalFemale int
+	h.DB.QueryRow(`SELECT COUNT(*) FROM FAMILY_MEMBER
+		WHERE LOWER(TRIM(COALESCE(GENDER,''))) IN ('female','f')`).Scan(&totalFemale)
+	result["totalFemale"] = totalFemale
+
 	var totalFarmers int
 	h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f WHERE f.OWN_AGRICULTURE_LAND = 'Yes' AND %s", where), args...).Scan(&totalFarmers)
 	result["totalFarmers"] = totalFarmers

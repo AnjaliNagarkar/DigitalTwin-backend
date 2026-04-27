@@ -59,7 +59,22 @@ function toQueryString(params = {}) {
 
 export function getHouses(params = {}) {
   const qs = toQueryString(params)
-  return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA)
+  return fetchJSON(qs ? `/houses?${qs}` : '/houses', TIMEOUT_DATA, 1)
+}
+
+export function getHousesMapPoints(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/houses/map-points?${qs}` : '/houses/map-points', TIMEOUT_DATA, 1)
+}
+
+export function getHousesByViewport(bbox, params = {}) {
+  const qs = toQueryString({ ...bbox, ...params })
+  return fetchJSON(`/houses?${qs}`, TIMEOUT_DATA, 1)
+}
+
+export function getHousesSummary(bbox, grid) {
+  const qs = toQueryString({ ...bbox, ...(grid != null ? { grid } : {}) })
+  return fetchJSON(`/houses/summary?${qs}`, TIMEOUT_DATA, 1)
 }
 
 export function getHouseById(id) {
@@ -84,6 +99,10 @@ export function getWelfareInsights() {
   return fetchJSON('/insights/welfare')
 }
 
+export function getPopulationDashboard() {
+  return fetchJSON('/population/dashboard', TIMEOUT_DATA)
+}
+
 export function getFarmers() {
   return fetchJSON('/farmers')
 }
@@ -93,7 +112,7 @@ export function getCitizens() {
 }
 
 export function getUnifiedRegistry() {
-  return fetchJSON('/unified-registry', TIMEOUT_DATA)
+  return fetchJSON('/unified-registry', 180000, 1)
 }
 
 export function getCrops() {
@@ -129,4 +148,37 @@ export function getDistrictSurveyCounts(params = {}) {
 export function getDistrictCentroids(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/map/district-centroids?${qs}` : '/map/district-centroids', TIMEOUT_DATA)
+}
+/**
+ * Fetch farm advisory for a household's identified problems.
+ * @param {string[]} problems  - array of problem keys e.g. ['noIrrigation','singleSeason']
+ * @param {object}   profile   - { crop, land_size, bpl, family_id }
+ */
+export function getAdvisory(problems, profile = {}) {
+  if (!problems || !problems.length) return Promise.resolve({ issues: [] })
+  const params = { problems: problems.join(','), ...profile }
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/advisory?${qs}` : '/advisory')
+}
+
+/**
+ * Fetch scheme recommendations for a given problem key + optional citizen profile.
+ * @param {string} problemKey  - e.g. 'noIrrigation', 'bplFamilies'
+ * @param {object} profile     - { land_size, occupation, bpl }
+ */
+/**
+ * Fetch group advisory for a cluster of households.
+ * @param {Array<{key,count,total}>} problems - problem stats from cluster analysis
+ * @param {number} total - total households in cluster
+ */
+export function getClusterAdvisory(problems, total) {
+  if (!problems || !problems.length) return Promise.resolve({ actions: [] })
+  const problemsParam = problems.map(p => `${p.key}:${p.count}:${p.total}`).join(',')
+  return fetchJSON(`/advisory/cluster?problems=${encodeURIComponent(problemsParam)}&total=${total}`)
+}
+
+export function getSchemesForProblem(problemKey, profile = {}) {
+  const params = { problem: problemKey, ...profile }
+  const qs = toQueryString(params)
+  return fetchJSON(`/schemes/recommend?${qs}`)
 }

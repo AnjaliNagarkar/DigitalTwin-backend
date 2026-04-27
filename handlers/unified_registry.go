@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,179 +36,183 @@ type UnifiedRecord struct {
 	SanitationStatus string `json:"sanitationStatus"`
 
 	// ── Category membership flags (derived) ──────────────────────────────────
-	IsFarmer   bool `json:"isFarmer"`
-	IsStudent  bool `json:"isStudent"`
-	IsDivyang  bool `json:"isDivyang"`
+	IsFarmer    bool `json:"isFarmer"`
+	IsStudent   bool `json:"isStudent"`
+	IsDivyang   bool `json:"isDivyang"`
 	IsHousewife bool `json:"isHousewife"`
-	IsSenior   bool `json:"isSenior"`
+	IsSenior    bool `json:"isSenior"`
 
 	// ── Student-specific ─────────────────────────────────────────────────────
-	// SchoolName: institution type from DB (TYPE_INSTITUTION)
 	SchoolName     string `json:"schoolName"`
-	// GradeStandard: standard/grade being studied (STANDARD_WHICH_STUDYING)
 	GradeStandard  string `json:"gradeStandard"`
-	// EducationLevel: normalised bucket — "Graduate", "Undergraduate", "Anganwadi/Primary"
 	EducationLevel string `json:"educationLevel"`
-	// Scholarship: "Yes" when actively pursuing education AND has a recorded qualification, else "No"
 	Scholarship    string `json:"scholarship"`
 
 	// ── Disabled-specific ────────────────────────────────────────────────────
-	// DisabilityType: DISABILITY column value
 	DisabilityType    string `json:"disabilityType"`
-	// DisabilityPercent: DISABILITY_PERCENTAGE column value
 	DisabilityPercent string `json:"disabilityPercent"`
-	// PensionStatus: derived — "Eligible" when divyang=YES or senior citizen, else "Not Eligible"
 	PensionStatus     string `json:"pensionStatus"`
-	// CaretakerName: no DB column, always "Not Available"
 	CaretakerName     string `json:"caretakerName"`
-	// GovtPensionAmount: annual income reused as social-security proxy; "N/A" when not disabled/senior
 	GovtPensionAmount string `json:"govtPensionAmount"`
 
+	MaritalStatus string `json:"maritalStatus"` // New field
 	// ── Housewife-specific ───────────────────────────────────────────────────
-	// SourceOfIncome: derived from NATURE_WAGE_WORK / OCCUPATION keyword analysis
 	SourceOfIncome string `json:"sourceOfIncome"`
 }
 
 // UnifiedRegistryHandler handles GET /unified-registry.
+// Column detection happens once at construction (NewUnifiedRegistryHandler) so
+// every request just runs the pre-built SQL — no per-request INFORMATION_SCHEMA queries.
 type UnifiedRegistryHandler struct {
-	DB *sql.DB
+	DB    *sql.DB
+	query string
 }
 
-func (h *UnifiedRegistryHandler) colExists(table, col string) bool {
-	var n int
-	_ = h.DB.QueryRow(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
-	`, table, col).Scan(&n)
-	return n > 0
-}
-
-// GetUnifiedRegistry handles GET /unified-registry.
-// Merges FAMILY_MEMBER (demographic) with FAMILY (agri/social) — one row per citizen.
-func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
-	// ── Detect optional columns ───────────────────────────────────────────────
-	dobCol := ""
-	for _, col := range []string{"DOB", "D_O_B"} {
-		if h.colExists("FAMILY_MEMBER", col) {
-			dobCol = col
-			break
+// colsExist returns a set of columns that exist in table.
+// Uses a single INFORMATION_SCHEMA query for all columns at once.
+func colsExist(db *sql.DB, table string, cols []string) map[string]bool {
+	result := make(map[string]bool, len(cols))
+	if len(cols) == 0 {
+		return result
+	}
+	placeholders := make([]string, len(cols))
+	args := make([]any, len(cols)+1)
+	args[0] = table
+	for i, c := range cols {
+		placeholders[i] = "?"
+		args[i+1] = c
+	}
+	q := fmt.Sprintf(
+		`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+		   AND COLUMN_NAME IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if rows.Scan(&name) == nil {
+			result[name] = true
 		}
 	}
-	dobExpr := "NULL"
+	return result
+}
+
+// NewUnifiedRegistryHandler detects optional DB columns (2 round-trips total)
+// and pre-builds the query string once at startup.
+func NewUnifiedRegistryHandler(db *sql.DB) *UnifiedRegistryHandler {
+	h := &UnifiedRegistryHandler{DB: db}
+	h.query = h.buildQuery()
+	return h
+}
+
+func (h *UnifiedRegistryHandler) buildQuery() string {
+	// Two INFORMATION_SCHEMA queries — one per table — instead of 10+ individual ones.
+	fm := colsExist(h.DB, "FAMILY_MEMBER", []string{
+		"DOB", "D_O_B",
+		"NATURE_WAGE_WORK",
+		"CURRENTLY_PURSUING_EDUCATION",
+		"STANDARD_WHICH_STUDYING",
+		"TYPE_INSTITUTION",
+		"DIVYANG",
+		"DISABILITY",
+		"MARITAL_STATUS", // Add this
+		"DISABILITY_PERCENTAGE",
+	})
+	fam := colsExist(h.DB, "FAMILY", []string{
+		"SANITATION_TOILET_FACILITY",
+		"TYPE_OF_LATRINE",
+	})
+
+	// ── DOB raw value (age is computed in Go to avoid expensive SQL STR_TO_DATE) ──
+	dobCol := ""
+	if fm["DOB"] {
+		dobCol = "DOB"
+	} else if fm["D_O_B"] {
+		dobCol = "D_O_B"
+	}
+	dobExpr := "''"
 	if dobCol != "" {
-		dobExpr = "fm." + dobCol
+		dobExpr = fmt.Sprintf("COALESCE(fm.%s, '')", dobCol)
 	}
 
-	// ageExpr: single fmt.Sprintf — %%Y becomes %Y in the output, which is
-	// what MySQL's STR_TO_DATE expects.  dobExpr is already a safe SQL identifier.
-	ageExpr := "NULL"
-	if dobCol != "" {
-		ageExpr = fmt.Sprintf(`CASE
-			WHEN STR_TO_DATE(%[1]s, '%%Y-%%m-%%d') IS NOT NULL
-				THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%Y-%%m-%%d'), CURDATE())
-			WHEN STR_TO_DATE(%[1]s, '%%d-%%m-%%Y') IS NOT NULL
-				THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%d-%%m-%%Y'), CURDATE())
-			ELSE NULL END`, dobExpr)
-	}
-
-	workExpr := `COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working')`
-	if h.colExists("FAMILY_MEMBER", "NATURE_WAGE_WORK") {
+	// ── Occupation / work ─────────────────────────────────────────────────────
+	workExpr := `COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')), ''), 'Not Working')`
+	if fm["NATURE_WAGE_WORK"] {
 		workExpr = `COALESCE(
-			NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK, '')), ''),
-			NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')),       ''),
+			NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')), ''),
+			NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),       ''),
 			'Not Working')`
 	}
 
+	// ── Education ─────────────────────────────────────────────────────────────
 	educExpr := `COALESCE(
-		NULLIF(TRIM(COALESCE(fm.QUALIFICATION, '')), ''),
-		NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS, '')), ''),
+		NULLIF(TRIM(COALESCE(fm.QUALIFICATION,'')),      ''),
+		NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS,'')),   ''),
 		'Not Available')`
 
-	// sanitExpr: detect which column actually exists to avoid "Unknown column" SQL errors.
+	// ── Sanitation ────────────────────────────────────────────────────────────
 	sanitExpr := "'Not Available'"
-	switch {
-	case h.colExists("FAMILY", "SANITATION_TOILET_FACILITY"):
-		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.SANITATION_TOILET_FACILITY, '')), ''), 'Not Available')`
-	case h.colExists("FAMILY", "TYPE_OF_LATRINE"):
-		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.TYPE_OF_LATRINE, '')), ''), 'Not Available')`
+	if fam["SANITATION_TOILET_FACILITY"] {
+		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.SANITATION_TOILET_FACILITY,'')), ''), 'Not Available')`
+	} else if fam["TYPE_OF_LATRINE"] {
+		sanitExpr = `COALESCE(NULLIF(TRIM(COALESCE(f.TYPE_OF_LATRINE,'')), ''), 'Not Available')`
 	}
 
-	// Optional student columns
-	pursueExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "CURRENTLY_PURSUING_EDUCATION") {
-		pursueExpr = "COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, '')"
+	// ── Optional student / disability columns ─────────────────────────────────
+	opt := func(col, expr string) string {
+		if fm[col] {
+			return expr
+		}
+		return "''"
 	}
-	stdExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "STANDARD_WHICH_STUDYING") {
-		stdExpr = "COALESCE(fm.STANDARD_WHICH_STUDYING, '')"
-	}
-	instExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "TYPE_INSTITUTION") {
-		instExpr = "COALESCE(fm.TYPE_INSTITUTION, '')"
-	}
+	pursueExpr := opt("CURRENTLY_PURSUING_EDUCATION", "COALESCE(fm.CURRENTLY_PURSUING_EDUCATION,'')")
+	stdExpr := opt("STANDARD_WHICH_STUDYING", "COALESCE(fm.STANDARD_WHICH_STUDYING,'')")
+	instExpr := opt("TYPE_INSTITUTION", "COALESCE(fm.TYPE_INSTITUTION,'')")
+	divyangExpr := opt("DIVYANG", "COALESCE(fm.DIVYANG,'')")
+	disabilityExpr := opt("DISABILITY", "COALESCE(fm.DISABILITY,'')")
+	disabilityPctExpr := opt("DISABILITY_PERCENTAGE", "COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR),'')")
+	maritalStatusExpr := opt("MARITAL_STATUS", "COALESCE(fm.MARITAL_STATUS,'')") // New expression
 
-	// Optional disability columns
-	divyangExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "DIVYANG") {
-		divyangExpr = "COALESCE(fm.DIVYANG, '')"
-	}
-	disabilityExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "DISABILITY") {
-		disabilityExpr = "COALESCE(fm.DISABILITY, '')"
-	}
-	disabilityPctExpr := "''"
-	if h.colExists("FAMILY_MEMBER", "DISABILITY_PERCENTAGE") {
-		disabilityPctExpr = "COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR), '')"
-	}
-
-	// Children subquery
-	childrenSQL := `SELECT cm.EXTERNAL_FAMILY_ID, 0 AS children_count
-		FROM FAMILY_MEMBER cm GROUP BY cm.EXTERNAL_FAMILY_ID`
-	if dobCol != "" {
-		childrenSQL = fmt.Sprintf(`
-			SELECT cm.EXTERNAL_FAMILY_ID,
-				SUM(CASE
-					WHEN STR_TO_DATE(cm.%[1]s,'%%Y-%%m-%%d') IS NOT NULL
-						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%Y-%%m-%%d'), CURDATE()) < 18 THEN 1
-					WHEN STR_TO_DATE(cm.%[1]s,'%%d-%%m-%%Y') IS NOT NULL
-						AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.%[1]s,'%%d-%%m-%%Y'), CURDATE()) < 18 THEN 1
-					ELSE 0
-				END) AS children_count
-			FROM FAMILY_MEMBER cm
-			GROUP BY cm.EXTERNAL_FAMILY_ID`, dobCol)
-	}
-
-	query := fmt.Sprintf(`
+	// ORDER BY removed — no index on name columns; frontend handles sorting.
+	return fmt.Sprintf(`
 		SELECT
-			COALESCE(fm.FIRST_NAME, '')                      AS first_name,
-			COALESCE(fm.LAST_NAME,  '')                      AS last_name,
-			COALESCE(fm.GENDER, '')                          AS gender,
-			%s                                               AS age,
-			%s                                               AS education,
-			%s                                               AS occupation,
-			COALESCE(fm.EXTERNAL_FAMILY_ID, 0)              AS family_id,
-			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, '')     AS total_land,
-			COALESCE(f.OWN_AGRICULTURE_LAND, '')            AS own_agri_land,
-			COALESCE(f.SOURCE_WATER_IRRIGATION, '')         AS water_source,
-			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON,'') AS kharif_crop,
-			COALESCE(f.TAKING_CROPS_RABI_SEASON, '')        AS rabi_crop,
-			COALESCE(CAST(f.ANNUAL_INCOME AS CHAR), '')     AS annual_income,
-			%s                                               AS sanitation_status,
-			COALESCE(ch.children_count, 0)                  AS children_count,
-			%s                                               AS pursuing_education,
-			%s                                               AS grade_standard,
-			%s                                               AS school_name,
-			%s                                               AS divyang,
-			%s                                               AS disability_type,
-			%s                                               AS disability_pct
+			COALESCE(fm.FIRST_NAME, '')                       AS first_name,
+			COALESCE(fm.LAST_NAME,  '')                       AS last_name,
+			COALESCE(fm.GENDER, '')                           AS gender,
+			%s                                                AS dob_raw,
+			%s                                                AS education,
+			%s                                                AS occupation,
+			COALESCE(fm.EXTERNAL_FAMILY_ID, 0)               AS family_id,
+			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, '')      AS total_land,
+			COALESCE(f.OWN_AGRICULTURE_LAND, '')             AS own_agri_land,
+			COALESCE(f.SOURCE_WATER_IRRIGATION, '')          AS water_source,
+			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, '') AS kharif_crop,
+			COALESCE(f.TAKING_CROPS_RABI_SEASON, '')         AS rabi_crop,
+			COALESCE(CAST(f.ANNUAL_INCOME AS CHAR), '')      AS annual_income,
+			%s                                                AS sanitation_status,
+			0                                                 AS children_count,
+			%s                                                AS pursuing_education,
+			%s                                                AS grade_standard,
+			%s                                                AS school_name,
+			%s                                                AS divyang,
+			%s                                                AS disability_type,
+			%s                                                AS disability_pct,
+			%s                                                AS marital_status_raw
 		FROM FAMILY_MEMBER fm
 		LEFT JOIN FAMILY f ON f.FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		LEFT JOIN (%s) ch ON ch.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		ORDER BY fm.FIRST_NAME, fm.LAST_NAME
-	`, ageExpr, educExpr, workExpr, sanitExpr,
-		pursueExpr, stdExpr, instExpr,
-		divyangExpr, disabilityExpr, disabilityPctExpr,
-		childrenSQL)
+	`, dobExpr, educExpr, workExpr, sanitExpr,
+		pursueExpr, stdExpr, instExpr, divyangExpr, disabilityExpr, disabilityPctExpr,
+		maritalStatusExpr) // Add this
+}
+
+// GetUnifiedRegistry handles GET /unified-registry.
+func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
+	query := h.query
 
 	rows, err := h.DB.Query(query)
 	if err != nil {
@@ -217,47 +222,50 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 	defer rows.Close()
 
 	out := make([]UnifiedRecord, 0)
+	childrenByFamily := map[int]int{}
 	for rows.Next() {
 		var (
-			firstName      string
-			lastName       string
-			gender         string
-			age            sql.NullInt64
-			education      string
-			occupation     string
-			familyID       int
-			totalLand      string
-			ownAgriLand    string
-			waterSource    string
-			kharifCrop     string
-			rabiCrop       string
-			annualIncome   string
-			sanitation     string
-			children       int
-			pursuing       string
-			gradeStd       string
-			schoolName     string
-			divyang        string
-			disabilityType string
-			disabilityPct  string
+			firstName        string
+			lastName         string
+			gender           string
+			dobRaw           string
+			education        string
+			occupation       string
+			familyID         int
+			totalLand        string
+			ownAgriLand      string
+			waterSource      string
+			kharifCrop       string
+			rabiCrop         string
+			annualIncome     string
+			sanitation       string
+			children         int
+			pursuing         string
+			gradeStd         string
+			schoolName       string
+			divyang          string
+			disabilityType   string
+			maritalStatusRaw string // New variable
+			disabilityPct    string
 		)
 
 		if err := rows.Scan(
-			&firstName, &lastName, &gender, &age,
+			&firstName, &lastName, &gender, &dobRaw,
 			&education, &occupation, &familyID,
 			&totalLand, &ownAgriLand, &waterSource,
 			&kharifCrop, &rabiCrop, &annualIncome,
 			&sanitation, &children,
 			&pursuing, &gradeStd, &schoolName,
 			&divyang, &disabilityType, &disabilityPct,
+			&maritalStatusRaw,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan unified registry record", "detail": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan unified registry record", "detail": err.Error(), "query": h.query})
 			return
 		}
 
-		ageVal := 0
-		if age.Valid && age.Int64 >= 0 {
-			ageVal = int(age.Int64)
+		ageVal := parseDOBAge(dobRaw)
+		if ageVal >= 0 && ageVal < 18 {
+			childrenByFamily[familyID]++
 		}
 
 		// ── Agri normalisation ────────────────────────────────────────────────
@@ -284,7 +292,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 		// ── Education level bucket ────────────────────────────────────────────
 		educLevel := normaliseEducationLevel(strings.TrimSpace(education))
 
-		// ── Scholarship: Yes if actively studying, No otherwise ───────────────
+		// ── Scholarship: Yes if actively studying ─────────────────────────────
 		scholarship := "No"
 		if isStudent {
 			scholarship = "Yes"
@@ -303,7 +311,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			govtPensionAmt = incomeClean
 		}
 
-		// ── Source of Income: keyword-derived from occupation + work details ──
+		// ── Source of Income: keyword-derived from occupation ─────────────────
 		sourceOfIncome := deriveSourceOfIncome(strings.TrimSpace(occupation))
 
 		out = append(out, UnifiedRecord{
@@ -343,11 +351,46 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			CaretakerName:     "Not Available",
 			GovtPensionAmount: govtPensionAmt,
 
+			MaritalStatus:  strings.TrimSpace(maritalStatusRaw), // Populate new field
 			SourceOfIncome: sourceOfIncome,
 		})
 	}
 
+	for i := range out {
+		out[i].ChildrenCount = childrenByFamily[out[i].FamilyID]
+	}
+
 	c.JSON(http.StatusOK, out)
+}
+
+func parseDOBAge(raw string) int {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return 0
+	}
+	layouts := []string{"2006-01-02", "02-01-2006", "02/01/2006", "2006/01/02"}
+	var dob time.Time
+	parsed := false
+	for _, layout := range layouts {
+		t, err := time.Parse(layout, v)
+		if err == nil {
+			dob = t
+			parsed = true
+			break
+		}
+	}
+	if !parsed {
+		return 0
+	}
+	now := time.Now()
+	age := now.Year() - dob.Year()
+	if now.YearDay() < dob.YearDay() {
+		age--
+	}
+	if age < 0 {
+		return 0
+	}
+	return age
 }
 
 // normaliseEducationLevel maps raw qualification strings to display buckets.
@@ -398,7 +441,6 @@ func capitalizeFullName(first, last string) string {
 }
 
 // deriveSourceOfIncome maps occupation/work keywords to the canonical source-of-income options.
-// Options: None | Small Business/SHG | Tailoring | Poultry | Remittance from family
 func deriveSourceOfIncome(occupation string) string {
 	v := strings.ToLower(occupation)
 	if strings.Contains(v, "tailor") || strings.Contains(v, "stitching") || strings.Contains(v, "sewing") {

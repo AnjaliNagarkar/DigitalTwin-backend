@@ -37,7 +37,10 @@ func main() {
 	districtCentroidsHandler := &handlers.DistrictCentroidsHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
-	unifiedRegistryHandler := &handlers.UnifiedRegistryHandler{DB: conn}
+	unifiedRegistryHandler := handlers.NewUnifiedRegistryHandler(conn)
+	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
+	advisoryHandler := handlers.NewAdvisoryHandler(conn)
+	clusterAdvisoryHandler := handlers.NewClusterAdvisoryHandler(conn)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -92,6 +95,8 @@ func main() {
 
 	// ── Digital Twin APIs (new) ───────────────────────────────────────────────
 	r.GET("/houses", houseHandler.GetHouses)
+	r.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
+	r.GET("/houses/summary", houseHandler.GetHousesSummary)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
 	r.GET("/districts", locationHandler.GetDistricts)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
@@ -120,11 +125,16 @@ func main() {
 	// ── Static/in-memory modules ──────────────────────────────────────────────
 	r.GET("/soil", handlers.GetSoil)
 	r.GET("/schemes", handlers.GetSchemes)
+	r.GET("/schemes/recommend", schemeRecommendHandler.GetRecommendations)
+	r.GET("/advisory", advisoryHandler.GetAdvisory)
+	r.GET("/advisory/cluster", clusterAdvisoryHandler.GetClusterAdvisory)
 	r.GET("/market", handlers.GetMarket)
 
 	log.Println("[STARTUP] Routes registered:")
 	log.Println("  GET /ping")
 	log.Println("  GET /houses           — geo-mapped household data (2D map + 3D twin)")
+	log.Println("  GET /houses/map-points — lightweight map coordinates for client clustering")
+	log.Println("  GET /houses/summary   — grid-aggregated household counts (viewport clusters)")
 	log.Println("  GET /house/:id        — single household detail + family members")
 	log.Println("  GET /insights/governance  — sanitation, lighting, geo coverage")
 	log.Println("  GET /insights/agriculture — land distribution, irrigation, crops")

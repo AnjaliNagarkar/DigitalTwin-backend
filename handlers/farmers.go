@@ -56,24 +56,9 @@ func (h *FarmerHandler) GetFarmers(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
 			COALESCE(f.ANNUAL_INCOME, ''),
-			COALESCE(children.children_count, 0)
+			0 AS children_count
 		FROM FAMILY f
 		JOIN FAMILY_MEMBER fm ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
-		LEFT JOIN (
-			SELECT
-				cm.EXTERNAL_FAMILY_ID,
-				SUM(
-					CASE
-						WHEN STR_TO_DATE(cm.DOB, '%Y-%m-%d') IS NOT NULL
-							AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.DOB, '%Y-%m-%d'), CURDATE()) < 18 THEN 1
-						WHEN STR_TO_DATE(cm.DOB, '%d-%m-%Y') IS NOT NULL
-							AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(cm.DOB, '%d-%m-%Y'), CURDATE()) < 18 THEN 1
-						ELSE 0
-					END
-				) AS children_count
-			FROM FAMILY_MEMBER cm
-			GROUP BY cm.EXTERNAL_FAMILY_ID
-		) children ON children.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 	`, "__WORK_DETAILS_EXPR__", workExpr)
 
 	rows, err := h.DB.Query(query)
