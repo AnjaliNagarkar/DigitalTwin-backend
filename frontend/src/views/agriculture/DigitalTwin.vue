@@ -256,12 +256,12 @@
               <span class="cs-value">{{ selectedDistrictLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
-            <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
+            <div class="cs-dropdown" v-show="openDropdown === 'district'" :key="districtOptions.length" @click.stop>
               <div class="cs-option" :class="{ selected: !pendingDistrict }"
                    @click="selectDistrict('')">All Districts</div>
-              <div class="cs-option" v-for="d in districtOptions" :key="d.id"
-                   :class="{ selected: String(pendingDistrict) === String(d.id) }"
-                   @click="selectDistrict(d.id)">{{ d.name }}</div>
+                  <div class="cs-option" v-for="d in districtOptions" :key="d.id"
+                    :class="{ selected: String(pendingDistrict) === String(d.id) }"
+                    @click="selectDistrict(d.id)">{{ d.name }}</div>
             </div>
           </div>
         </div>
@@ -277,7 +277,7 @@
               <span class="cs-value">{{ selectedTalukaLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
-            <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
+            <div class="cs-dropdown" v-show="openDropdown === 'taluka'" :key="talukaOptions.length" @click.stop>
               <div class="cs-option" :class="{ selected: !pendingTaluka }"
                    @click="selectTaluka('')">All Talukas</div>
               <div class="cs-option" v-for="t in talukaOptions" :key="t.id"
@@ -298,9 +298,7 @@
               <span class="cs-value">{{ selectedVillageLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
-            <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
-              <div class="cs-option" :class="{ selected: !pendingVillage }"
-                   @click="selectVillage('')">All Villages</div>
+            <div class="cs-dropdown" v-show="openDropdown === 'village'" :key="villageOptions.length" @click.stop>
               <div class="cs-option" v-for="v in villageOptions" :key="v.id"
                    :class="{ selected: String(pendingVillage) === String(v.id) }"
                    @click="selectVillage(v.id)">{{ v.name }}</div>
@@ -319,26 +317,23 @@
       <!-- RIGHT CONTROLS -->
       <div class="topbar-right">
         <div class="ctrl-group">
-          <label class="filter-label">View by</label>
+          <label class="filter-label">VIEW BY</label>
           <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
                @click.stop="toggleDropdown('colorMode')">
-            <button class="cs-trigger" type="button" :class="{ 'cs-trigger-placeholder': !colorMode }">
-              <span class="cs-value">{{ selectedColorModeLabel }}</span>
+            <button class="cs-trigger view-by-btn" type="button" :class="{ 'cs-trigger-placeholder': !selectedView }">
+              <span class="cs-value">{{ selectedViewLabel || 'Select a view...' }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div class="cs-option-group-label">— Financial —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'income_bracket' }"     @click="selectColorMode('income_bracket')">Family Income Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }"         @click="selectColorMode('bpl_status')">BPL Status</div>
               <div class="cs-option-group-label">— Population —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectColorMode('education_level')">Education Level</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }"   @click="selectColorMode('divyang_presence')">Divyang Presence</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'occupation' }"         @click="selectColorMode('occupation')">Occupation</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'population_density' }" @click="selectView('population_density')">Population Density</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'education' }"          @click="selectView('education')">Education Level</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'divyang' }"            @click="selectView('divyang')">Divyang Presence</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'occupation' }"         @click="selectView('occupation')">Occupation</div>
               <div class="cs-option-group-label">— Agriculture —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'crops' }"              @click="selectColorMode('crops')">Crop Type</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'irrigation' }"         @click="selectColorMode('irrigation')">Irrigation</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'land' }"               @click="selectColorMode('land')">Land Holdings</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'crop' }"               @click="selectView('crop')">Crop Type</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'irrigation' }"         @click="selectView('irrigation')">Irrigation</div>
+              <div class="cs-option" :class="{ selected: selectedView === 'land' }"               @click="selectView('land')">Land Holdings</div>
             </div>
           </div>
         </div>
@@ -504,7 +499,7 @@
           <div class="card-title">Problem Filter
             <span class="card-title-sub">highlight on map</span>
           </div>
-          <div class="pf-context-label">Filters for {{ selectedColorModeLabel }}</div>
+          <div class="pf-context-label">Filters for {{ selectedViewLabel || 'Select a view...' }}</div>
           <transition-group name="pf-fade" tag="div" class="pf-list">
             <label class="pf-item" v-for="pf in availableProblemFilters" :key="pf.key">
               <input class="pf-check" type="checkbox" :value="pf.key" v-model="activeProblemFilters" />
@@ -528,7 +523,7 @@
 
         <!-- FIELD ISSUES — only shown when a mode is active -->
         <div class="panel-card" v-if="colorMode && issueList.length">
-          <div class="card-title">{{ selectedColorModeLabel }} Analysis
+          <div class="card-title">{{ selectedViewLabel || 'Select a view...' }} Analysis
             <span class="card-title-sub">tap to expand schemes</span>
           </div>
           <transition-group name="fi-fade" tag="div" class="fi-list">
@@ -792,6 +787,8 @@ const selectedHouse       = ref(null)
 const hoveredHouse        = ref(null)
 const mouseX              = ref(0)
 const mouseY              = ref(0)
+const selectedView        = ref('')
+const hasUserSelectedView = ref(false)
 const colorMode           = ref(null)
 const activeIssue         = ref(null)
 const agriOverviewOpen    = ref(false)
@@ -893,6 +890,10 @@ const pendingDistrict = ref('')
 const pendingTaluka   = ref('')
 const pendingVillage  = ref('')
 
+const allDistricts = ref([])
+const allTalukas = ref([])
+const allVillages = ref([])
+
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
@@ -980,14 +981,23 @@ const THRESHOLD_CLUSTER_HIDE = THRESHOLD_DOTS  // rings hidden only at taluka+ z
 async function loadLocationOptions() {
   try {
     const res = await getLocationOptions({
-      district_id: pendingDistrict.value || undefined,
-      taluka_id: pendingTaluka.value || undefined,
+      district_id: undefined,
+      taluka_id: undefined,
     })
-    districtOptions.value = Array.isArray(res?.districts) ? res.districts : []
-    talukaOptions.value = Array.isArray(res?.talukas) ? res.talukas : []
-    villageOptions.value = Array.isArray(res?.villages) ? res.villages : []
+    allDistricts.value = Array.isArray(res?.districts) ? res.districts : []
+    allTalukas.value = Array.isArray(res?.talukas) ? res.talukas : []
+    allVillages.value = Array.isArray(res?.villages) ? res.villages : []
+
+    districtOptions.value = [...allDistricts.value]
+    talukaOptions.value = []
+    villageOptions.value = []
+
+    console.log('districts loaded:', districtOptions.value.length)
   } catch (error) {
     console.warn('[location-options] failed:', error?.message || error)
+    allDistricts.value = []
+    allTalukas.value = []
+    allVillages.value = []
     districtOptions.value = []
     talukaOptions.value = []
     villageOptions.value = []
@@ -1045,19 +1055,50 @@ function onTalukaChange() {
 async function selectDistrict(id) {
   pendingDistrict.value = id
   onDistrictChange()
-  await loadLocationOptions()
 }
 
 async function selectTaluka(id) {
   pendingTaluka.value = id
   onTalukaChange()
-  await loadLocationOptions()
 }
 
 function selectVillage(id) {
   pendingVillage.value = id
   closeDropdowns()
 }
+function refreshTalukaOptions() {
+  const selectedDistrictId = String(pendingDistrict.value || '')
+  if (!selectedDistrictId) {
+    talukaOptions.value = []
+    villageOptions.value = []
+    return
+  }
+
+  talukaOptions.value = allTalukas.value.filter(option => {
+    const districtId = String(option?.districtId ?? option?.fklDistrictId ?? option?.pklDistrictId ?? option?.district_id ?? '')
+    return districtId === selectedDistrictId
+  })
+
+  villageOptions.value = []
+}
+function refreshVillageOptions() {
+  const selectedTalukaId = String(pendingTaluka.value || '')
+  if (!selectedTalukaId) {
+    villageOptions.value = []
+    return
+  }
+
+  villageOptions.value = allVillages.value.filter(option => {
+    const talukaId = String(option?.talukaId ?? option?.fklTalukaId ?? option?.pklTalukaId ?? option?.taluka_id ?? '')
+    return talukaId === selectedTalukaId
+  })
+}
+watch(pendingDistrict, () => {
+  refreshTalukaOptions()
+}, { immediate: true })
+watch(pendingTaluka, () => {
+  refreshVillageOptions()
+}, { immediate: true })
 
 // Apply: copy pending → applied, reload filtered map points, then focus camera.
 async function applyFilters() {
@@ -1081,7 +1122,6 @@ async function resetFilters() {
   filterTaluka.value = ''
   filterVillage.value = ''
   _forceNextFly = true
-  await loadLocationOptions()
   await loadInitialDataWithCleanup()
 }
 
@@ -1091,24 +1131,22 @@ const filtersDirty = computed(() =>
   pendingVillage.value !== filterVillage.value
 )
 
-const COLOR_MODE_LABELS = {
-  irrigation:          'Irrigation',
-  occupation:          'Occupation',
-  crops:               'Crop Type',
-  land:                'Land Holdings',
-  ration:              'Ration Card',
-  population_density:  'Population Density',
-  bpl_status:          'BPL Status',
-  education_level:     'Education Level',
-  divyang_presence:    'Divyang Presence',
-  income_bracket:      'Family Income Status',
+const VIEW_TO_COLOR_MODE = {
+  population_density: 'population_density',
+  education:          'education_level',
+  divyang:            'divyang_presence',
+  occupation:         'occupation',
+  crop:               'crops',
+  irrigation:         'irrigation',
+  land:               'land',
 }
+
+const COLOR_MODE_TO_VIEW = Object.fromEntries(
+  Object.entries(VIEW_TO_COLOR_MODE).map(([view, mode]) => [mode, view])
+)
 
 // Category group for each color mode — used to reset problem filters on category switch
 const COLOR_MODE_CATEGORY = {
-  income_bracket:     'financial',
-  bpl_status:         'financial',
-  ration:             'financial',
   population_density: 'population',
   education_level:    'population',
   divyang_presence:   'population',
@@ -1125,7 +1163,7 @@ function isColorModeEnabled(mode) {
   return !DISABLED_COLOR_MODES.has(String(mode)) && String(mode) !== 'ration'
 }
 
-function selectColorMode(mode) {
+function applyMappedColorMode(mode) {
   if (!isColorModeEnabled(mode)) {
     closeDropdowns()
     return
@@ -1138,6 +1176,45 @@ function selectColorMode(mode) {
   }
   colorMode.value = mode
   closeDropdowns()
+}
+
+function applyColorFilter(mode) {
+  if (!mode) {
+    colorMode.value = null
+    closeDropdowns()
+    return
+  }
+  applyMappedColorMode(mode)
+}
+
+const selectedViewLabel = computed(() => {
+  const map = {
+    population_density: 'Population Density',
+    education: 'Education Level',
+    divyang: 'Divyang Presence',
+    occupation: 'Occupation',
+    crop: 'Crop Type',
+    irrigation: 'Irrigation',
+    land: 'Land Holdings',
+  }
+  return map[selectedView.value] || ''
+})
+
+const selectView = (value) => {
+  hasUserSelectedView.value = true
+  selectedView.value = value
+
+  const mapping = {
+    population_density: 'population_density',
+    education: 'education_level',
+    divyang: 'divyang_presence',
+    occupation: 'occupation',
+    crop: 'crops',
+    irrigation: 'irrigation',
+    land: 'land',
+  }
+
+  applyColorFilter(mapping[value])
 }
 
 // Human-readable labels for current selections (shown in trigger button)
@@ -1153,7 +1230,10 @@ const selectedVillageLabel = computed(() => {
   if (!pendingVillage.value) return 'All Villages'
   return villageOptions.value.find(v => String(v.id) === String(pendingVillage.value))?.name || 'All Villages'
 })
-const selectedColorModeLabel = computed(() => colorMode.value ? (COLOR_MODE_LABELS[colorMode.value] || colorMode.value) : 'Select a view…')
+watch(colorMode, (mode) => {
+  if (!hasUserSelectedView.value) return
+  selectedView.value = COLOR_MODE_TO_VIEW[mode] || ''
+})
 
 // ── Problem Filter state ──────────────────────────────────────────────────────
 // Array of active problem keys; v-model on checkboxes drives buildEntities()
@@ -3632,6 +3712,8 @@ function handleResize() {
 }
 
 onMounted(async () => {
+  const locationOptionsPromise = loadLocationOptions()
+
   try {
     viewer = new Cesium.Viewer(cesiumContainer.value, {
       imageryProvider:      false,
@@ -3913,7 +3995,7 @@ onMounted(async () => {
   // Load insights in parallel (small, fast); initial house data fetched separately
   getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
   getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
-  await loadLocationOptions()
+  await locationOptionsPromise
   loadInitialDataWithCleanup()
 
   // Safety net: force-clear loading if still stuck after 30 s
@@ -4181,7 +4263,7 @@ onUnmounted(() => {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
-/* Right-aligned variant for "Color by" which sits near the right edge */
+/* Right-aligned variant for "View By" which sits near the right edge */
 .cs-dropdown-right {
   left: auto;
   right: 0;

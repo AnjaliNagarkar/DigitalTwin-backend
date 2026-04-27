@@ -156,7 +156,7 @@
 
           <article class="card insight-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Age-wise Income & Gender</h3>
+              <h3 class="chart-title">Age-wise Family Income Distribution</h3>
             </div>
 
             <div class="age-mixed-chart">
@@ -368,7 +368,7 @@ const villageOptions = ref([])
 const ageIncomeGenderCanvas = ref(null)
 let isActive = true
 let ageIncomeGenderChart = null
-const AGE_GROUP_ORDER = ['0-18', '19-30', '31-45', '46-60', '60+']
+const AGE_GROUP_ORDER = ['18-30', '31-45', '46-60', '60+']
 
 onUnmounted(() => {
   isActive = false
@@ -381,25 +381,23 @@ function applyDemographicsData(data) {
   const mapped = Array.isArray(distribution)
     ? distribution.map(d => ({
         age_group: d.age_group,
-        male: d.male,
-        female: d.female,
-        income: Number(d.income) || 0,
+        families: Number(d.families ?? 0),
+        avg_income: Number(d.avg_income ?? d.total_income ?? d.income) || 0,
       }))
     : []
 
   const grouped = {}
 
   AGE_GROUP_ORDER.forEach(ageGroup => {
-    grouped[ageGroup] = { age_group: ageGroup, male: 0, female: 0, income: 0 }
+    grouped[ageGroup] = { age_group: ageGroup, families: 0, avg_income: 0 }
   })
 
   mapped.forEach(item => {
     const ageGroup = item?.age_group || ''
     if (!grouped[ageGroup]) return
 
-    grouped[ageGroup].male += Number(item?.male ?? 0)
-    grouped[ageGroup].female += Number(item?.female ?? 0)
-    grouped[ageGroup].income = Number(item?.income ?? 0)
+    grouped[ageGroup].families += Number(item?.families ?? 0)
+    grouped[ageGroup].avg_income = Number(item?.avg_income ?? 0)
   })
 
   ageIncomeGenderSegments.value = AGE_GROUP_ORDER.map(ageGroup => grouped[ageGroup])
@@ -424,22 +422,15 @@ function syncAgeIncomeGenderChart() {
 
   const data = ageIncomeGenderSegments.value || []
   const chartData = {
-    labels: data.map(item => item.age_group),
     datasets: [
       {
-        label: 'Male',
-        data: data.map(item => Number(item.male) || 0),
+        data: data.map(item => ({
+          x: item.age_group,
+          y: Number(item.families) || 0,
+          families: Number(item.families) || 0,
+          avg_income: Number(item.avg_income) || 0,
+        })),
         backgroundColor: '#3b82f6',
-        stack: 'population',
-        borderRadius: 4,
-        barPercentage: 0.6,
-        categoryPercentage: 0.7,
-      },
-      {
-        label: 'Female',
-        data: data.map(item => Number(item.female) || 0),
-        backgroundColor: '#ec4899',
-        stack: 'population',
         borderRadius: 4,
         barPercentage: 0.6,
         categoryPercentage: 0.7,
@@ -465,6 +456,7 @@ function syncAgeIncomeGenderChart() {
     },
     plugins: {
       legend: {
+        display: false,
         position: 'top',
         labels: {
           usePointStyle: true,
@@ -485,32 +477,28 @@ function syncAgeIncomeGenderChart() {
         displayColors: true,
         callbacks: {
           title(items) {
-            return `Age group: ${items?.[0]?.label || ''}`
+            return `Age group: ${items?.[0]?.raw?.x || items?.[0]?.label || ''}`
           },
           label(context) {
-            const value = Number(context.parsed?.y || 0)
-            return `${context.dataset.label}: ${value.toLocaleString()}`
-          },
-          afterBody(items) {
-            const index = items?.[0]?.dataIndex ?? 0
-            const row = data[index] || {}
-            const total = Number(row.male || 0) + Number(row.female || 0)
+            const raw = context.raw || {}
+            const families = Number(raw.families || 0)
+            const avgIncome = Math.round(Number(raw.avg_income || 0))
             return [
-              `Total population: ${total.toLocaleString()}`,
-              `Income: ${formatIncome(row.income)}`,
+              `Families: ${families.toLocaleString()}`,
+              `Average Family Income: ₹${avgIncome.toLocaleString()}`,
             ]
           },
         },
       },
       datalabels: {
-        display: context => context.datasetIndex === 1,
+        display: false,
         anchor: 'end',
         align: 'end',
         offset: 6,
         clamp: true,
         clip: false,
         color: '#374151',
-        formatter: (value, context) => formatIncome(data[context.dataIndex]?.income),
+        formatter: value => Number(value || 0).toLocaleString(),
         font: {
           weight: '600',
           size: 11,
@@ -519,7 +507,6 @@ function syncAgeIncomeGenderChart() {
     },
     scales: {
       x: {
-        stacked: true,
         border: {
           color: '#e5e7eb',
         },
@@ -538,7 +525,6 @@ function syncAgeIncomeGenderChart() {
         },
       },
       y: {
-        stacked: true,
         beginAtZero: true,
         grace: '20%',
         border: {
@@ -550,7 +536,7 @@ function syncAgeIncomeGenderChart() {
         },
         title: {
           display: true,
-          text: 'Population count',
+          text: 'Families count',
         },
         ticks: {
           color: '#6b7280',

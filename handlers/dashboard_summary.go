@@ -118,7 +118,7 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	}
 	defer pingCancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	whereF, args := buildOptionalLocationFilter("f", districtID, talukaID, villageID)
@@ -327,10 +327,10 @@ func defaultDemographicsSummary() gin.H {
 }
 
 func defaultAgeIncomeGenderDistribution() []gin.H {
-	ageGroups := []string{"0-18", "19-30", "31-45", "46-60", "60+"}
+	ageGroups := []string{"18-30", "31-45", "46-60", "60+"}
 	rows := make([]gin.H, 0, len(ageGroups))
 	for _, ageGroup := range ageGroups {
-		rows = append(rows, gin.H{"age_group": ageGroup, "male": 0, "female": 0, "other": 0})
+		rows = append(rows, gin.H{"age_group": ageGroup, "families": 0, "avg_income": 0.0})
 	}
 	return rows
 }
@@ -521,43 +521,41 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 	ageIncomeQuery := injectWhere(`
 		SELECT
 			age_group,
-			gender,
-			COUNT(*) AS total,
+			COUNT(*) AS families,
 			AVG(income) AS avg_income
 		FROM (
 			SELECT
+				f.FAMILY_ID,
+				CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) AS income,
 				CASE
-					WHEN age BETWEEN 0 AND 18 THEN '0-18'
-					WHEN age BETWEEN 19 AND 30 THEN '19-30'
-					WHEN age BETWEEN 31 AND 45 THEN '31-45'
-					WHEN age BETWEEN 46 AND 60 THEN '46-60'
+					WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 18 AND 30 THEN '18-30'
+					WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
+					WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
 					ELSE '60+'
-				END AS age_group,
-				gender,
-				income
-			FROM (
+				END AS age_group
+			FROM FAMILY f
+			JOIN (
 				SELECT
-					YEAR(CURDATE()) - CAST(SUBSTRING_INDEX(fm.DOB, '-', -1) AS UNSIGNED) AS age,
-					LOWER(TRIM(COALESCE(fm.GENDER, ''))) AS gender,
-					CASE
-						WHEN f.ANNUAL_INCOME = 'Less than 21000' THEN 15000
-						WHEN f.ANNUAL_INCOME = '21001 to 50000' THEN 35000
-						WHEN f.ANNUAL_INCOME = '50001 to 100000' THEN 75000
-						WHEN f.ANNUAL_INCOME = '100001 to 180000' THEN 140000
-						WHEN f.ANNUAL_INCOME = '180001 to 250000' THEN 215000
-						WHEN f.ANNUAL_INCOME = 'Above 2.5 Lakhs' THEN 300000
-						ELSE NULL
-					END AS income
+					fm.EXTERNAL_FAMILY_ID,
+					COALESCE(
+						MIN(CASE
+							WHEN LOWER(TRIM(COALESCE(fm.RELATION_FAMILY_HEAD, ''))) IN ('head', 'self', 'head of family')
+							THEN STR_TO_DATE(fm.DOB, '%d-%m-%Y')
+						END),
+						MIN(STR_TO_DATE(fm.DOB, '%d-%m-%Y'))
+					) AS selected_dob
 				FROM FAMILY_MEMBER fm
-				JOIN FAMILY f
-					ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 				WHERE fm.DOB IS NOT NULL
 				  AND TRIM(fm.DOB) != ''
-				  AND fm.DOB LIKE '%-%-%'
-				  AND __WHERE_CLAUSE__
-			) base
-		) base
-		GROUP BY age_group, gender
+				  AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL
+				GROUP BY fm.EXTERNAL_FAMILY_ID
+			) m ON m.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+			WHERE NULLIF(TRIM(f.ANNUAL_INCOME), '') IS NOT NULL
+			  AND CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) IS NOT NULL
+			  AND TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) >= 18
+			  AND __WHERE_CLAUSE__
+		) t
+		GROUP BY age_group
 	`, whereF)
 	disabilityQuery := injectWhere(`
 		SELECT
@@ -638,23 +636,23 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 		defer wg.Done()
 		rows, err := queryRowsWithRetry(ctx, h.DB, ageIncomeQuery, args...)
 		if err != nil {
+			log.Println("AGE-GENDER QUERY FAILED:", err)
 			recordErr(fmt.Errorf("age-income query failed: %w", err))
 			return
 		}
 		defer rows.Close()
 
-		ageGroupOrder := []string{"0-18", "19-30", "31-45", "46-60", "60+"}
+		ageGroupOrder := []string{"18-30", "31-45", "46-60", "60+"}
 		pivot := map[string]map[string]interface{}{}
 		for _, ageGroup := range ageGroupOrder {
-			pivot[ageGroup] = map[string]interface{}{"male": 0, "female": 0, "other": 0, "income": 0.0}
+			pivot[ageGroup] = map[string]interface{}{"families": 0, "avg_income": 0.0}
 		}
 
 		for rows.Next() {
 			var ageGroup string
-			var gender string
-			var total int
+			var families int
 			var avgIncome sql.NullFloat64
-			if scanErr := rows.Scan(&ageGroup, &gender, &total, &avgIncome); scanErr != nil {
+			if scanErr := rows.Scan(&ageGroup, &families, &avgIncome); scanErr != nil {
 				recordErr(fmt.Errorf("age-income scan failed: %w", scanErr))
 				return
 			}
@@ -663,19 +661,9 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 			if !ok {
 				continue
 			}
-
-			normalizedGender := strings.ToLower(strings.TrimSpace(gender))
-			switch normalizedGender {
-			case "male":
-				bucket["male"] = bucket["male"].(int) + total
-			case "female":
-				bucket["female"] = bucket["female"].(int) + total
-			default:
-				bucket["other"] = bucket["other"].(int) + total
-			}
-
+			bucket["families"] = families
 			if avgIncome.Valid {
-				bucket["income"] = avgIncome.Float64
+				bucket["avg_income"] = avgIncome.Float64
 			}
 		}
 
@@ -688,11 +676,9 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 		for _, ageGroup := range ageGroupOrder {
 			bucket := pivot[ageGroup]
 			ageIncome = append(ageIncome, gin.H{
-				"age_group": ageGroup,
-				"male":      bucket["male"],
-				"female":    bucket["female"],
-				"other":     bucket["other"],
-				"income":    bucket["income"],
+				"age_group":  ageGroup,
+				"families":   bucket["families"],
+				"avg_income": bucket["avg_income"],
 			})
 		}
 		sectionMux.Lock()

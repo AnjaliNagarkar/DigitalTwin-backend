@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +28,7 @@ type PopulationDemographicsResponse struct {
 type AgeIncomeGenderItem struct {
 	AgeRange      string  `json:"age_range"`
 	AverageIncome float64 `json:"average_income"`
+	TotalIncome   float64 `json:"total_income"`
 	MaleCount     int     `json:"male_count"`
 	FemaleCount   int     `json:"female_count"`
 }
@@ -247,55 +250,66 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 		  AND %s
 	`, where), args...).Scan(&totalDivyang)
 
-	ageIncomeGenderRows, err := h.DB.Query(fmt.Sprintf(`
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	ageGroupOrder := []string{"0-18", "19-30", "31-45", "46-60", "60+"}
+	ageIncomeGenderDistribution := make([]AgeIncomeGenderItem, 0, len(ageGroupOrder))
+	ageIncomeGenderMap := make(map[string]AgeIncomeGenderItem, len(ageGroupOrder))
+
+	ageGenderQuery := `
 		SELECT
 			CASE
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 0 AND 18 THEN '0-18'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60 THEN '60+'
-				ELSE NULL
-			END AS age_range,
-			AVG(CAST(COALESCE(f.ANNUAL_INCOME, 0) AS DECIMAL(15,2))) AS average_income,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male_count,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female_count
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) <= 18 THEN '0-18'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
+				ELSE '60+'
+			END AS age_group,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) IN ('male','m') THEN 1 ELSE 0 END) AS male,
+			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) IN ('female','f') THEN 1 ELSE 0 END) AS female,
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female', 'm', 'f') THEN 1 ELSE 0 END) AS other,
+			SUM(IFNULL(f.ANNUAL_INCOME, 0)) AS total_income
 		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
-		WHERE fm.DOB IS NOT NULL AND TRIM(fm.DOB) != ''
-		  AND %s
-		GROUP BY age_range
-		ORDER BY
-			CASE age_range
-				WHEN '0-18' THEN 1
-				WHEN '19-30' THEN 2
-				WHEN '31-45' THEN 3
-				WHEN '46-60' THEN 4
-				WHEN '60+' THEN 5
-				ELSE 6
-			END
-	`, where), args...)
-	if err != nil {
-		log.Printf("demographics age_income_gender_distribution query failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch age income gender distribution"})
-		return
-	}
-	defer ageIncomeGenderRows.Close()
+		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+		WHERE fm.DOB IS NOT NULL AND fm.DOB != ''
+		  AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL
+		GROUP BY age_group
+	`
+	log.Println("AGE-GENDER QUERY:", ageGenderQuery)
 
-	ageIncomeGenderDistribution := make([]AgeIncomeGenderItem, 0)
-	for ageIncomeGenderRows.Next() {
-		var item AgeIncomeGenderItem
-		if err := ageIncomeGenderRows.Scan(&item.AgeRange, &item.AverageIncome, &item.MaleCount, &item.FemaleCount); err != nil {
-			log.Printf("demographics age_income_gender_distribution scan failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse age income gender distribution"})
-			return
+	ageIncomeGenderRows, err := h.DB.QueryContext(ctx, ageGenderQuery)
+	if err != nil {
+		log.Println("AGE-GENDER QUERY FAILED:", err)
+	} else {
+		defer ageIncomeGenderRows.Close()
+
+		for ageIncomeGenderRows.Next() {
+			var item AgeIncomeGenderItem
+			var other int
+			var totalIncome sql.NullFloat64
+			if scanErr := ageIncomeGenderRows.Scan(&item.AgeRange, &item.MaleCount, &item.FemaleCount, &other, &totalIncome); scanErr != nil {
+				log.Println("SCAN ERROR:", scanErr)
+				ageIncomeGenderMap = map[string]AgeIncomeGenderItem{}
+				break
+			}
+			item.AverageIncome = 0
+			if totalIncome.Valid {
+				item.TotalIncome = totalIncome.Float64
+			}
+			ageIncomeGenderMap[item.AgeRange] = item
 		}
-		ageIncomeGenderDistribution = append(ageIncomeGenderDistribution, item)
+		if rowsErr := ageIncomeGenderRows.Err(); rowsErr != nil {
+			log.Println("ROWS ERROR:", rowsErr)
+		}
 	}
-	if err := ageIncomeGenderRows.Err(); err != nil {
-		log.Printf("demographics age_income_gender_distribution rows error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read age income gender distribution"})
-		return
+
+	for _, ageGroup := range ageGroupOrder {
+		if item, ok := ageIncomeGenderMap[ageGroup]; ok {
+			ageIncomeGenderDistribution = append(ageIncomeGenderDistribution, item)
+			continue
+		}
+		ageIncomeGenderDistribution = append(ageIncomeGenderDistribution, AgeIncomeGenderItem{AgeRange: ageGroup})
 	}
 
 	disabilityRows, err := h.DB.Query(fmt.Sprintf(`
