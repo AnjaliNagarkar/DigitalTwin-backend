@@ -903,7 +903,18 @@ const filteredRecords = computed(() => {
   // Occupation type sub-filter (All Citizens category)
   if (hasAny('occupationType')) {
     const occSet = new Set(selected('occupationType').map(v => String(v).toLowerCase()))
-    list = list.filter(r => occSet.has(String(r.occupation || '').toLowerCase()))
+    list = list.filter(r => {
+      // Check if the record's occupation text matches any of the selected filters
+      if (occSet.has(String(r.occupation || '').toLowerCase())) {
+        return true
+      }
+      // Additionally, if 'student' is a selected filter, check the reliable isStudent flag.
+      // This catches cases where occupation is not 'Student' but they are one.
+      if (occSet.has('student') && r.isStudent) {
+        return true
+      }
+      return false
+    })
   }
 
   // IsFarmer sub-filter (All Citizens category)
