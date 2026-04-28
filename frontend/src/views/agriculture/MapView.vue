@@ -94,24 +94,28 @@
           </button>
         </div>
 
-        <!-- Color by (only in points mode) -->
+        <!-- View by (only in points mode) -->
         <div class="map-control-group" v-if="viewMode === 'points'">
-          <label class="control-label">Color by</label>
-          <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
-               @click.stop="toggleDropdown('colorMode')">
-            <button class="cs-trigger" type="button">
-              <span class="cs-value">{{ selectedColorModeLabel }}</span>
-              <span class="cs-arrow">▾</span>
-            </button>
-            <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div
-                class="cs-option"
-                v-for="option in colorOptions"
-                :key="option.value"
-                :class="{ selected: colorMode === option.value }"
-                @click="selectColorMode(option.value)"
-              >
-                {{ option.label }}
+          <div class="view-by-container">
+            <span class="label">VIEW BY</span>
+            <div class="custom-dropdown">
+              <button class="dropdown-btn" type="button" @click.stop="toggleViewDropdown">
+                {{ selectedViewLabel || 'Select a view...' }}
+              </button>
+              <div v-if="showViewDropdown" class="dropdown-menu" @click.stop>
+                <div class="dropdown-group">
+                  <div class="group-title">Population</div>
+                  <div class="option" :class="{ selected: selectedView === 'population_density' }" @click="selectView('population_density')">Population Density</div>
+                  <div class="option" :class="{ selected: selectedView === 'education' }" @click="selectView('education')">Education Level</div>
+                  <div class="option" :class="{ selected: selectedView === 'divyang' }" @click="selectView('divyang')">Divyang Presence</div>
+                  <div class="option" :class="{ selected: selectedView === 'occupation' }" @click="selectView('occupation')">Occupation</div>
+                </div>
+                <div class="dropdown-group">
+                  <div class="group-title">Agriculture</div>
+                  <div class="option" :class="{ selected: selectedView === 'crop' }" @click="selectView('crop')">Crop Type</div>
+                  <div class="option" :class="{ selected: selectedView === 'irrigation' }" @click="selectView('irrigation')">Irrigation</div>
+                  <div class="option" :class="{ selected: selectedView === 'land' }" @click="selectView('land')">Land Holdings</div>
+                </div>
               </div>
             </div>
           </div>
@@ -170,7 +174,7 @@
                      :style="{ background: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
                                borderColor: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
                                color: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
-                  {{ isPopulationMode ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
+                  {{ isPopulationMode ? selectedViewLabel : getConditionLabel(selectedHouse) }}
                 </div>
                 <div class="detail-name">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || 'Household' }}</div>
                 <div class="detail-sub">
@@ -517,7 +521,9 @@ const selectedCluster = ref(null)
 const mapContainer  = ref(null)
 const mapContentRef = ref(null)
 const isMapVisualReady = ref(false)
-const colorMode     = ref('irrigation')
+const colorMode     = ref('')
+const selectedView  = ref('')
+const showViewDropdown = ref(false)
 const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
 const isFullscreen = ref(false)
@@ -536,17 +542,7 @@ const alpListRef           = ref(null)    // ref to the scrollable anomaly list
 // ── Custom dropdown state ─────────────────────────────────────────────────────
 const openDropdown = ref(null)
 
-const populationFilters = ['population_density', 'bpl_status', 'divyang_presence', 'employment_status']
-
-const colorOptions = [
-  { label: 'Irrigation', value: 'irrigation' },
-  { label: 'Crops / Season', value: 'crops' },
-  { label: 'Land Holdings', value: 'land' },
-  { label: 'Population Density', value: 'population_density' },
-  { label: 'BPL Status', value: 'bpl_status' },
-  { label: 'Divyang Presence', value: 'divyang_presence' },
-  { label: 'Employment Status', value: 'employment_status' },
-]
+const populationFilters = ['population_density', 'education_level', 'divyang_presence', 'occupation']
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
@@ -554,6 +550,7 @@ function toggleDropdown(name) {
 
 function closeDropdowns() {
   openDropdown.value = null
+  showViewDropdown.value = false
 }
 
 // Selection handlers — the existing watchers handle cascade reset + API refetch
@@ -572,19 +569,48 @@ function selectVillage(id) {
   closeDropdowns()
 }
 
-const COLOR_MODE_LABELS_MAP = {
-  irrigation: 'Irrigation',
-  crops: 'Crops / Season',
-  land: 'Land Holdings',
+const VIEW_LABEL_MAP = {
   population_density: 'Population Density',
-  bpl_status: 'BPL Status',
-  divyang_presence: 'Divyang Presence',
-  employment_status: 'Employment Status',
+  education: 'Education Level',
+  divyang: 'Divyang Presence',
+  occupation: 'Occupation',
+  crop: 'Crop Type',
+  irrigation: 'Irrigation',
+  land: 'Land Holdings',
 }
 
-function selectColorMode(mode) {
-  colorMode.value = mode
-  closeDropdowns()
+const COLOR_MODE_TO_VIEW = {
+  population_density: 'population_density',
+  education_level: 'education',
+  divyang_presence: 'divyang',
+  occupation: 'occupation',
+  crops: 'crop',
+  irrigation: 'irrigation',
+  land: 'land',
+}
+
+function applyColorFilter(mode) {
+  const viewToColorMode = {
+    population_density: 'population_density',
+    education: 'education_level',
+    divyang: 'divyang_presence',
+    occupation: 'occupation',
+    crop: 'crops',
+    irrigation: 'irrigation',
+    land: 'land',
+  }
+  colorMode.value = viewToColorMode[mode] || mode
+}
+
+function toggleViewDropdown() {
+  showViewDropdown.value = !showViewDropdown.value
+  if (showViewDropdown.value) openDropdown.value = null
+}
+
+function selectView(value) {
+  selectedView.value = value
+  showViewDropdown.value = false
+  applyColorFilter(value)
 }
 
 // Human-readable labels shown in the trigger button
@@ -600,8 +626,12 @@ const selectedVillageLabel = computed(() => {
   if (!selectedVillage.value) return 'All'
   return villageOptions.value.find(v => String(v.id) === String(selectedVillage.value))?.name || 'All'
 })
-const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Irrigation')
+const selectedViewLabel = computed(() => VIEW_LABEL_MAP[selectedView.value] || '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
+
+watch(colorMode, (mode) => {
+  selectedView.value = COLOR_MODE_TO_VIEW[mode] || ''
+})
 
 function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase()
@@ -2361,6 +2391,88 @@ watch(analyticsPanelOpen, async () => {
 .map-controls { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
 .map-control-group { display: flex; align-items: center; gap: 0.45rem; }
 .control-label { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); white-space: nowrap; font-weight: 600; }
+.view-by-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.view-by-container .label {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #374151;
+  font-weight: 700;
+  line-height: 1;
+}
+.custom-dropdown {
+  position: relative;
+  min-width: 176px;
+}
+.dropdown-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border: 1.5px solid #9ca3af;
+  border-radius: 8px;
+  color: #111827;
+  font-size: 0.76rem;
+  font-weight: 500;
+  padding: 0.28rem 0.55rem;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+}
+.dropdown-btn:hover {
+  border-color: #6b7280;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.13), 0 3px 8px rgba(0,0,0,0.08);
+  z-index: 10000;
+}
+.dropdown-group + .dropdown-group { border-top: 1px solid #e5e7eb; }
+.group-title {
+  padding: 0.3rem 0.75rem 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+  background: #f9fafb;
+  pointer-events: none;
+  user-select: none;
+}
+.option {
+  padding: 0.42rem 0.75rem;
+  font-size: 0.76rem;
+  color: #111827;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+  background: #ffffff;
+}
+.option:hover {
+  background: #f0fdf4;
+  color: #15803d;
+}
+.option.selected {
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 600;
+}
 /* ── Custom Select Dropdowns — no native <select>, immune to OS dark mode ── */
 .custom-select {
   position: relative;
