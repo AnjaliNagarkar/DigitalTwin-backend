@@ -783,6 +783,7 @@ Cesium.Ion.defaultAccessToken = ''
 // ── Core state ────────────────────────────────────────────────────────────────
 const houses              = ref([])
 const mapPoints           = ref([])
+const allMapPoints        = ref([])
 const selectedHouse       = ref(null)
 const hoveredHouse        = ref(null)
 const mouseX              = ref(0)
@@ -930,6 +931,161 @@ let vpInFlight         = 0       // count of loadViewportData calls currently aw
 const viewportTileCache = new Map()   // cacheKey → { ts, data }
 const VIEWPORT_CACHE_TTL = 5 * 60 * 1000   // 5 minutes
 const VIEWPORT_CACHE_MAX = 30
+const prefetchedMapPointsByKey = new Map() // locationKey -> { ts, data }
+const PREFETCH_CACHE_TTL = 2 * 60 * 1000
+let pendingPrefetchSeq = 0
+let _instantMarkerId = null // id for temporary instant centroid marker
+let applyFiltersDebounce = null
+let lastAppliedFilterKey = null // track last applied filter to skip redundant renders
+let pendingClusterRender = false // flag to prevent render queue buildup
+let lastMapPointsChecksum = null // simple hash to detect data changes
+let clusterBuildScheduled = false // track if cluster build was already queued
+
+// ─── REAL MARKER CACHE (PER LOCATION) ───
+const markerCache = new Map() // locationKey → { timestamp, points, clusterIndex }
+const MARKER_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+let lastRenderedLocationKey = null // track what location is currently visible
+
+function buildLocationFilterKey(districtId, talukaId, villageId) {
+  return [String(districtId || ''), String(talukaId || ''), String(villageId || '')].join('|')
+}
+
+function normalizeMapPoints(raw) {
+  const points = Array.isArray(raw) ? raw : []
+  return points
+    .map((point) => ({
+      id: Number(point?.id),
+      lat: Number(point?.lat),
+      lng: Number(point?.lng),
+      districtId: point?.districtId ?? point?.district_id ?? point?.fklDistrictId ?? point?.pklDistrictId ?? null,
+      talukaId: point?.talukaId ?? point?.taluka_id ?? point?.fklTalukaId ?? point?.pklTalukaId ?? null,
+      villageId: point?.villageId ?? point?.village_id ?? point?.fklVillageId ?? point?.pklVillageId ?? null,
+    }))
+    .filter((point) => Number.isFinite(point.id) && Number.isFinite(point.lat) && Number.isFinite(point.lng))
+}
+
+function getFreshPrefetchedMapPoints(key) {
+  const entry = prefetchedMapPointsByKey.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.ts > PREFETCH_CACHE_TTL) {
+    prefetchedMapPointsByKey.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+// Show a single lightweight marker immediately at a centroid while full data loads.
+// Returns the created entity id (or null).
+async function showImmediateCentroidMarker() {
+  // Remove any existing instant marker first
+  try {
+    if (!viewer) return null
+    if (_instantMarkerId) {
+      viewer.entities.removeById(_instantMarkerId)
+      _instantMarkerId = null
+    }
+
+    // Prefer district centroid from API when a district filter is applied
+    const districtId = filterDistrict.value || ''
+    if (districtId) {
+      try {
+        const centroids = await (await import('../../api/index.js')).getDistrictCentroids()
+        const found = Array.isArray(centroids) ? centroids.find(c => String(c.district_id || c.DistrictID || c.DistrictId) === String(districtId)) : null
+        if (found && Number.isFinite(found.lat) && Number.isFinite(found.lng)) {
+          const ent = viewer.entities.add({
+            id: `instant-centroid-${Date.now()}`,
+            position: Cesium.Cartesian3.fromDegrees(found.lng, found.lat, 0),
+            point: {
+              pixelSize: 12,
+              color: Cesium.Color.fromCssColorString('#2563eb').withAlpha(0.95),
+              outlineColor: Cesium.Color.WHITE,
+              outlineWidth: 2,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            },
+            label: {
+              text: selectedVillageLabel.value || selectedTalukaLabel.value || selectedDistrictLabel.value || 'Selected area',
+              font: '12px sans-serif',
+              fillColor: Cesium.Color.WHITE,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              outlineColor: Cesium.Color.BLACK,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+            }
+          })
+          _instantMarkerId = ent.id
+          return _instantMarkerId
+        }
+      } catch (e) {
+        // ignore centroid errors and fall back
+      }
+    }
+
+    // Fallback: use viewer camera center as approximate location
+    try {
+      const camPos = viewer.camera.positionCartographic
+      if (camPos) {
+        const lat = Cesium.Math.toDegrees(camPos.latitude)
+        const lng = Cesium.Math.toDegrees(camPos.longitude)
+        const ent = viewer.entities.add({
+          id: `instant-centroid-${Date.now()}`,
+          position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.fromCssColorString('#2563eb').withAlpha(0.9),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          }
+        })
+        _instantMarkerId = ent.id
+        return _instantMarkerId
+      }
+    } catch (e) {
+      // ignore
+    }
+
+  } catch (e) {
+    // ignore any errors creating marker
+  }
+  return null
+}
+
+function removeImmediateCentroidMarker() {
+  try {
+    if (!viewer) return
+    if (_instantMarkerId) {
+      viewer.entities.removeById(_instantMarkerId)
+      _instantMarkerId = null
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function schedulePendingLocationPrefetch() {
+  const seq = ++pendingPrefetchSeq
+  const districtId = pendingDistrict.value || undefined
+  const talukaId = pendingTaluka.value || undefined
+  const villageId = pendingVillage.value || undefined
+  const key = buildLocationFilterKey(districtId, talukaId, villageId)
+
+  if (getFreshPrefetchedMapPoints(key)) return
+
+  ;(async () => {
+    try {
+      const res = await getHousesMapPoints({
+        district_id: districtId,
+        taluka_id: talukaId,
+        village_id: villageId,
+      })
+      if (seq !== pendingPrefetchSeq) return
+      const normalized = normalizeMapPoints(res)
+      prefetchedMapPointsByKey.set(key, { ts: Date.now(), data: normalized })
+    } catch {
+      // Ignore prefetch failures; Apply path has fallback loading.
+    }
+  })()
+}
 
 function toMapPointHouse(point) {
   const id = Number(point?.id)
@@ -1029,6 +1185,61 @@ const householdsOnMapCount = computed(() => {
   return filteredHouses.value.length
 })
 
+function getPointLocationId(point, keys) {
+  for (const key of keys) {
+    const val = point?.[key]
+    if (val !== undefined && val !== null && String(val).trim() !== '') return String(val)
+  }
+  return ''
+}
+
+function filterPointsByLocation(points) {
+  const district = String(filterDistrict.value || '')
+  const taluka = String(filterTaluka.value || '')
+  const village = String(filterVillage.value || '')
+
+  return points.filter((p) => {
+    const districtId = getPointLocationId(p, ['districtId', 'district_id', 'fklDistrictId', 'pklDistrictId'])
+    const talukaId = getPointLocationId(p, ['talukaId', 'taluka_id', 'fklTalukaId', 'pklTalukaId'])
+    const villageId = getPointLocationId(p, ['villageId', 'village_id', 'fklVillageId', 'pklVillageId'])
+
+    if (district && districtId !== district) return false
+    if (taluka && talukaId !== taluka) return false
+    if (village && villageId !== village) return false
+    return true
+  })
+}
+
+function applyImmediateLocationFilterRender() {
+  if (!allMapPoints.value.length) return false
+
+  const sample = allMapPoints.value[0] || {}
+  const hasLocationMeta = (
+    sample.districtId !== undefined || sample.district_id !== undefined ||
+    sample.talukaId !== undefined || sample.taluka_id !== undefined ||
+    sample.villageId !== undefined || sample.village_id !== undefined
+  )
+  if (!hasLocationMeta) return false
+
+  const instantPoints = filterPointsByLocation(allMapPoints.value)
+  mapPoints.value = instantPoints
+  
+  // Defer cluster rebuild to requestIdleCallback for non-blocking rendering
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => {
+      buildSuperclusterIndexFromHouses()
+      renderClustersForCurrentView()
+    }, { timeout: 200 })
+  } else {
+    // Fallback to setTimeout for browsers without requestIdleCallback
+    setTimeout(() => {
+      buildSuperclusterIndexFromHouses()
+      renderClustersForCurrentView()
+    }, 20)
+  }
+  return true
+}
+
 // ── Filter handlers ───────────────────────────────────────────────────────────
 const openDropdown = ref(null)
 
@@ -1099,22 +1310,269 @@ watch(pendingDistrict, () => {
 watch(pendingTaluka, () => {
   refreshVillageOptions()
 }, { immediate: true })
+watch([pendingDistrict, pendingTaluka, pendingVillage], () => {
+  schedulePendingLocationPrefetch()
+}, { immediate: true })
 
 // Apply: copy pending → applied, reload filtered map points, then focus camera.
+// ══════════════════════════════════════════════════════════════════════════════
+// NEW NON-BLOCKING APPLY FLOW
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * applyFilters() - Main entry point
+ * Debounces and routes to real implementation.
+ * Returns immediately - does NOT wait for renders.
+ */
 async function applyFilters() {
+  clearTimeout(applyFiltersDebounce)
+  applyFiltersDebounce = setTimeout(() => {
+    _applyFiltersNonBlocking()
+      .catch(err => console.error('[apply] error:', err))
+  }, 300)
+}
+
+/**
+ * _applyFiltersNonBlocking() - NEW ARCHITECTURE
+ * 
+ * Flow:
+ * 1. Update filter state (sync, instant)
+ * 2. Render immediately from cache/previous data
+ * 3. Trigger camera fly (async, non-blocking)
+ * 4. Fetch new data in background (completely async)
+ * 5. Update cache + silently refresh when ready
+ */
+async function _applyFiltersNonBlocking() {
+  const startTime = performance.now()
+  const locationKey = buildLocationFilterKey(pendingDistrict.value, pendingTaluka.value, pendingVillage.value)
+  
+  console.log('[apply🚀] INSTANT MODE - markers will appear in <300ms')
+  
+  // ════════════════════════════════════════════════════════════════════════════
+  // STEP 1: UPDATE FILTER STATE (INSTANT)
+  // ════════════════════════════════════════════════════════════════════════════
   _forceNextFly = true
   filterDistrict.value = pendingDistrict.value
   filterTaluka.value   = pendingTaluka.value
   filterVillage.value  = pendingVillage.value
-  await loadInitialDataWithCleanup()
-
-  // Fit camera to filtered map points so location-based Apply is always visible.
+  
+  // Skip if same location
+  if (lastAppliedFilterKey === locationKey) {
+    console.log('[apply] same location - no re-render needed')
+    return
+  }
+  lastAppliedFilterKey = locationKey
+  
+  // ════════════════════════════════════════════════════════════════════════════
+  // STEP 2: RENDER INSTANTLY FROM CACHE OR PREVIOUS DATA (100-200ms MAX)
+  // ════════════════════════════════════════════════════════════════════════════
+  const instantRenderStart = performance.now()
+  const hadInstantRender = _renderInstantly(locationKey)
+  const instantRenderTime = performance.now() - instantRenderStart
+  
+  console.log(`[apply✅] instant render: ${hadInstantRender ? 'YES' : 'NO'} (${instantRenderTime.toFixed(1)}ms)`)
+  
+  // ════════════════════════════════════════════════════════════════════════════
+  // STEP 3: FLY CAMERA (ASYNC, NON-BLOCKING)
+  // ════════════════════════════════════════════════════════════════════════════
   if (viewer && mapPoints.value.length > 0) {
-    setTimeout(() => flyToPoints(mapPoints.value.map(toMapPointHouse)), 120)
+    setTimeout(() => {
+      flyToPoints(mapPoints.value.map(toMapPointHouse))
+    }, hadInstantRender ? 10 : 50)
+  }
+  
+  // ════════════════════════════════════════════════════════════════════════════
+  // STEP 4: FETCH NEW DATA IN BACKGROUND (FIRE AND FORGET)
+  // ════════════════════════════════════════════════════════════════════════════
+  // Do NOT await this - UI must stay responsive
+  _fetchAndUpdateInBackground(locationKey)
+    .catch(err => console.warn('[apply] background fetch error:', err))
+  
+  const totalTime = performance.now() - startTime
+  console.log(`[apply⏱] UI unblocked in ${totalTime.toFixed(1)}ms`)
+}
+
+/**
+ * _renderInstantly() - Show markers immediately from best available source
+ * 
+ * Priority:
+ * 1. Marker cache (previous result for this location)
+ * 2. Prefetch cache (from pending selection)
+ * 3. Filter existing allMapPoints
+ * 4. Show previous location's markers
+ * 
+ * Returns: true if rendered, false if nothing available
+ */
+function _renderInstantly(locationKey) {
+  // Check 1: Do we have cached markers for this exact location?
+  const cachedMarkers = markerCache.get(locationKey)
+  if (cachedMarkers && Date.now() - cachedMarkers.timestamp < MARKER_CACHE_TTL) {
+    console.log('[instant] ✓ cache hit:', cachedMarkers.points.length, 'markers')
+    mapPoints.value = cachedMarkers.points
+    clusterIndex = cachedMarkers.clusterIndex
+    lastMapPointsChecksum = computeMapPointsChecksum()
+    renderClustersForCurrentView()
+    lastRenderedLocationKey = locationKey
+    return true
+  }
+  
+  // Check 2: Do we have prefetched data?
+  const prefetched = getFreshPrefetchedMapPoints(locationKey)
+  if (prefetched && prefetched.length > 0) {
+    console.log('[instant] ✓ prefetch hit:', prefetched.length, 'markers')
+    mapPoints.value = prefetched
+    _deferClusterBuild() // Don't block UI
+    _deferRender() // Don't block UI
+    lastRenderedLocationKey = locationKey
+    return true
+  }
+  
+  // Check 3: Can we filter existing allMapPoints?
+  if (allMapPoints.value.length > 0) {
+    const filtered = filterPointsByLocation(allMapPoints.value)
+    if (filtered.length > 0) {
+      console.log('[instant] ✓ filter hit:', filtered.length, 'markers')
+      mapPoints.value = filtered
+      _deferClusterBuild()
+      _deferRender()
+      lastRenderedLocationKey = locationKey
+      return true
+    }
+  }
+  
+  // Check 4: Fall back to previous location's markers (better than nothing)
+  if (lastRenderedLocationKey && mapPoints.value.length > 0) {
+    console.log('[instant] ⚠ showing previous location:', mapPoints.value.length, 'markers')
+    showImmediateCentroidMarker().catch(() => {})
+    return true // User sees something while loading
+  }
+  
+  console.log('[instant] ✗ no data available yet')
+  return false
+}
+
+/**
+ * _deferClusterBuild() - Queue cluster index rebuild without blocking
+ */
+function _deferClusterBuild() {
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => {
+      buildSuperclusterIndexFromHouses()
+    }, { timeout: 150 })
+  } else {
+    setTimeout(() => {
+      buildSuperclusterIndexFromHouses()
+    }, 0)
   }
 }
 
+/**
+ * _deferRender() - Queue render without blocking
+ */
+function _deferRender() {
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => {
+      renderClustersForCurrentView()
+    }, { timeout: 200 })
+  } else {
+    setTimeout(() => {
+      renderClustersForCurrentView()
+    }, 0)
+  }
+}
+
+/**
+ * _fetchAndUpdateInBackground() - Fetch new data and silently update cache
+ * 
+ * This runs completely in background:
+ * - Does NOT block UI
+ * - Updates cache when done
+ * - Only refreshes view if data significantly different
+ */
+async function _fetchAndUpdateInBackground(locationKey) {
+  const fetchStart = performance.now()
+  console.log('[bg-fetch] starting for', locationKey)
+  
+  try {
+    // Parse location filter
+    const [districtId, talukaId, villageId] = locationKey.split('|')
+    
+    // Fetch data
+    const res = await getHousesMapPoints({
+      district_id: districtId || undefined,
+      taluka_id: talukaId || undefined,
+      village_id: villageId || undefined,
+    })
+    
+    const points = normalizeMapPoints(res)
+    const fetchTime = performance.now() - fetchStart
+    console.log(`[bg-fetch] ✓ got ${points.length} points in ${fetchTime.toFixed(0)}ms`)
+    
+    if (points.length === 0) {
+      console.log('[bg-fetch] empty result, skipping cache update')
+      return
+    }
+    
+    // Build cluster index for this dataset (non-blocking)
+    const builtClusterIndex = new Supercluster({
+      radius: 100,
+      minPoints: 20,
+      maxZoom: 18,
+      minZoom: 0,
+      nodeSize: 64,
+    })
+    
+    builtClusterIndex.load(
+      points
+        .filter((h) => Number.isFinite(Number(h.lng)) && Number.isFinite(Number(h.lat)))
+        .map((h) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [Number(h.lng), Number(h.lat)],
+          },
+          properties: { id: Number(h.id) },
+        }))
+    )
+    
+    // Store in cache
+    markerCache.set(locationKey, {
+      timestamp: Date.now(),
+      points,
+      clusterIndex: builtClusterIndex,
+    })
+    console.log('[bg-fetch] ✓ cached for', locationKey)
+    
+    // Only re-render if currently viewing this location
+    if (lastRenderedLocationKey === locationKey) {
+      console.log('[bg-fetch] updating view (we\'re still viewing this location)')
+      mapPoints.value = points
+      clusterIndex = builtClusterIndex
+      lastMapPointsChecksum = computeMapPointsChecksum()
+      renderClustersForCurrentView()
+    } else {
+      console.log('[bg-fetch] not updating view (user switched location)')
+    }
+    
+  } catch (err) {
+    console.error('[bg-fetch] error:', err?.message || err)
+    // Silently fail - don't interrupt user's current view
+  }
+}
+
+/**
+ * Old _applyFiltersImpl() - DEPRECATED
+ * Kept for reference only. Use _applyFiltersNonBlocking() instead.
+ */
+async function _applyFiltersImpl() {
+  console.warn('[apply] DEPRECATED - use _applyFiltersNonBlocking instead')
+  return _applyFiltersNonBlocking()
+}
+
 async function resetFilters() {
+  clearTimeout(applyFiltersDebounce)
+  lastAppliedFilterKey = null
+  lastRenderedLocationKey = null
   pendingDistrict.value = ''
   pendingTaluka.value = ''
   pendingVillage.value = ''
@@ -2417,8 +2875,21 @@ function ensureClusterCollections() {
   }
 }
 
+function computeMapPointsChecksum() {
+  const pts = mapPoints.value
+  return pts.length > 0 ? `${pts.length}_${pts[0].id}_${pts[pts.length-1].id}` : '0'
+}
+
 function buildSuperclusterIndexFromHouses() {
   const source = mapPoints.value
+  const checksum = computeMapPointsChecksum()
+  
+  // Skip rebuild if data hasn't changed
+  if (clusterIndex && lastMapPointsChecksum === checksum) {
+    console.log('[cluster] data unchanged, skipping rebuild')
+    return
+  }
+  
   const features = source
     .filter((h) => Number.isFinite(Number(h.lng)) && Number.isFinite(Number(h.lat)))
     .map((h) => ({
@@ -2440,6 +2911,8 @@ function buildSuperclusterIndexFromHouses() {
     nodeSize: 64,
   })
   clusterIndex.load(features)
+  lastMapPointsChecksum = checksum
+  console.log('[cluster] rebuilt with', features.length, 'features')
 }
 
 function getHeightFromClusterZoom(zoom) {
@@ -2640,14 +3113,20 @@ function mergeHouseDetailWithFallback(detail, fallbackHouse) {
 
 function renderClustersForCurrentView() {
   if (!viewer || viewer.isDestroyed()) return
+  if (pendingClusterRender) return // prevent queue buildup
+  
   ensureClusterCollections()
 
-  viewer.entities.removeAll()
+  // Remove only tracked building entities instead of all entities (much faster)
+  buildingIds.forEach(id => {
+    viewer.entities.removeById(id)
+  })
   entityMap.clear()
   buildingIds.clear()
   ptCollection.removeAll()
   clusterBillboardCollection.removeAll()
   ptPrimMap.clear()
+  pendingClusterRender = false
 
   if (!clusterIndex) {
     viewer.scene.requestRender()
@@ -2660,6 +3139,8 @@ function renderClustersForCurrentView() {
   const nodes = clusterIndex.getClusters(bbox, zoom)
 
   const selectedId = selectedHouse.value?.familyId
+  const startRender = performance.now()
+  let entityCount = 0
 
   nodes.forEach((node) => {
     const [lng, lat] = node.geometry.coordinates
@@ -2686,14 +3167,18 @@ function renderClustersForCurrentView() {
         },
       })
       billboard.show = true
+      entityCount++
       return
     }
 
     const house = resolveHouseForRendering(node.properties?.id, lng, lat)
     if (!Number.isFinite(house.familyId)) return
     addHouseModelEntity(house, lng, lat)
+    entityCount++
   })
 
+  const renderTime = performance.now() - startRender
+  console.log(`[render] ${entityCount} entities in ${renderTime.toFixed(1)}ms`)
   viewer.scene.requestRender()
 }
 
@@ -3562,9 +4047,9 @@ function evictOldTiles() {
 // get data on the first render, regardless of camera state.  After this
 // completes, isInitialLoadDone = true and the debounce-driven loadViewportData
 // takes over for all subsequent camera pan/zoom refreshes.
-async function loadInitialData() {
+async function loadInitialData(silent = false) {
   console.log('[initial] start')
-  loadingLiveData.value = true
+  if (!silent) loadingLiveData.value = true
   viewportLoading.value = false
   showEmptyViewportHint.value = false
 
@@ -3577,14 +4062,12 @@ async function loadInitialData() {
         village_id: filterVillage.value || undefined,
       })
 
-      const points = Array.isArray(res) ? res : []
-      mapPoints.value = points
-        .map((point) => ({
-          id: Number(point?.id),
-          lat: Number(point?.lat),
-          lng: Number(point?.lng),
-        }))
-        .filter((point) => Number.isFinite(point.id) && Number.isFinite(point.lat) && Number.isFinite(point.lng))
+      const normalizedPoints = normalizeMapPoints(res)
+
+      mapPoints.value = normalizedPoints
+      if (!filterDistrict.value && !filterTaluka.value && !filterVillage.value) {
+        allMapPoints.value = normalizedPoints
+      }
 
       console.log('[initial] map points loaded — records:', mapPoints.value.length)
 
@@ -3609,16 +4092,16 @@ async function loadInitialData() {
 }
 
 // Wrapped version so loading is always cleared via finally
-async function loadInitialDataWithCleanup() {
+async function loadInitialDataWithCleanup(silent = false) {
   try {
-    await loadInitialData()
+    await loadInitialData(silent)
     // Prime detailed household rows for counters/problem filters on first view,
     // but do not block initial map rendering on this network call.
     loadViewportData().catch((err) => {
       console.warn('[initial] viewport prime failed:', err?.message || err)
     })
   } finally {
-    loadingLiveData.value = false
+    if (!silent) loadingLiveData.value = false
     console.log('[initial] loading cleared — mapPoints:', mapPoints.value.length)
   }
 }
