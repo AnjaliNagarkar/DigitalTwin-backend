@@ -507,7 +507,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
-import { getDivyangDistrictCounts } from '../population/api.js'
+import { getDistrictDominantCrops, getDivyangDistrictCounts, getEmploymentDistrictCounts, getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
@@ -1166,12 +1166,38 @@ function renderDistrictCentroids(centroidRows) {
       }),
     })
 
-    marker.bindTooltip(`District ID: ${d.district_id} | Count: ${d.count}`, {
-      permanent: false,
-      direction: 'top',
-    })
+    const districtId = d?.district_id ?? d?.DISTRICT_ID ?? d?.id ?? 'N/A'
+    const valueLabel = d?.crop ? `${d.crop} (${d.count})` : `Count: ${d.count}`
 
-    marker.bindPopup(`District ID: ${d.district_id}<br/>Count: ${d.count}`)
+    if (selectedView.value === 'crop' && d?.crop) {
+      const html = `
+        <div class="custom-tooltip-card">
+          <div class="ct-district">District ${escapeHtml(districtId)}</div>
+          <div class="ct-crop">${escapeHtml(d.crop)}</div>
+          <div class="ct-count">${Number(d.count).toLocaleString()} farms</div>
+        </div>
+      `
+
+      marker.bindTooltip(html, {
+        permanent: false,
+        direction: 'top',
+        className: 'custom-tooltip',
+        offset: L.point(0, -10),
+      })
+
+      marker.bindPopup(html)
+    } else {
+      marker.bindTooltip(`District ID: ${districtId} | ${valueLabel}`, {
+        permanent: false,
+        direction: 'top',
+      })
+
+      marker.bindPopup(
+        d?.crop
+          ? `District ID: ${districtId}<br/>${d.crop} (${d.count})`
+          : `District ID: ${districtId}<br/>Count: ${d.count}`
+      )
+    }
 
     marker.addTo(districtCentroidMarkerLayer)
   })
@@ -1270,24 +1296,55 @@ async function refreshDistrictCentroids() {
       }
 
       if (selectedView.value === 'employment_status') {
-        const allHouses = await fetchAllHouses()
-        const employmentCountByDistrict = {}
-        allHouses.forEach((house) => {
-          const districtId = house?.district_id ?? house?.DISTRICT_ID
-          const key = Number(districtId)
-          if (!Number.isFinite(key)) return
-          if (hasEmployment(house)) {
-            employmentCountByDistrict[key] = (employmentCountByDistrict[key] || 0) + 1
+        console.log('>>> EXECUTING EMPLOYMENT BRANCH')
+        const apiRows = await getEmploymentDistrictCounts()
+        const countMap = {}
+        apiRows.forEach((row) => {
+          const districtId = Number(row?.district_id)
+          if (!Number.isFinite(districtId)) return
+          countMap[districtId] = Number(row?.employed_count || 0)
+        })
+        console.log('EMPLOYMENT API:', apiRows)
+        console.log('EMPLOYMENT MAP:', countMap)
+        console.log('CENTROID IDS:', normalizedRows.map(r => r.DISTRICT_ID ?? r.district_id))
+
+        const renderRows = centroidRows.map(row => ({
+          ...row,
+          count: countMap[Number(row?.DISTRICT_ID ?? row?.district_id)] || 0
+        }))
+        console.log('FINAL ROWS BEFORE RENDER:', renderRows)
+
+        renderDistrictCentroids(renderRows)
+        return
+      }
+
+      if (selectedView.value === 'crop') {
+        console.log('Selected View:', selectedView.value)
+        console.log('Calling Crop API')
+        const apiRows = await getDistrictDominantCrops()
+        console.log('Crop API Response:', apiRows)
+        const cropMap = {}
+
+        apiRows.forEach((row) => {
+          const id = Number(row?.district_id)
+          if (!Number.isFinite(id)) return
+          cropMap[id] = {
+            crop: String(row?.crop || 'N/A'),
+            count: Number(row?.count || 0),
+          }
+        })
+        console.log('CENTROID IDS:', centroidRows.map(r => r?.id ?? r?.DISTRICT_ID ?? r?.district_id))
+
+        const finalRows = centroidRows.map((row) => {
+          const districtId = Number(row?.id ?? row?.DISTRICT_ID ?? row?.district_id)
+          return {
+            ...row,
+            crop: cropMap[districtId]?.crop || 'N/A',
+            count: cropMap[districtId]?.count || 0,
           }
         })
 
-        const rows = normalizedRows.map((row) => {
-          const districtId = row?.district_id ?? row?.DISTRICT_ID
-          const key = Number(districtId)
-          return { ...row, count: employmentCountByDistrict[key] || 0 }
-        })
-
-        renderDistrictCentroids(rows)
+        renderDistrictCentroids(finalRows)
         return
       }
     }
@@ -1957,14 +2014,24 @@ function hasActiveLocationFilter() {
 }
 
 const isDistrictPopulationView = () => {
-  return ['population_density', 'bpl_status', 'divyang_presence', 'employment_status'].includes(selectedView.value) &&
+  return ['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop'].includes(selectedView.value) &&
     !hasLocationFilter()
+}
+
+function escapeHtml(unsafe) {
+  if (unsafe === null || unsafe === undefined) return ''
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 function shouldRenderDataMarkers() {
   if (hasActiveLocationFilter()) return true
   // Requirement: for population View By, no location filter => district markers only.
-  if (['population_density', 'bpl_status', 'divyang_presence', 'employment_status'].includes(selectedView.value)) return false
+  if (['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop'].includes(selectedView.value)) return false
   return Boolean(selectedView.value)
 }
 
@@ -2010,7 +2077,8 @@ function renderMarkerLayersForCurrentState() {
   if (!hasActiveLocationFilter() && (
     selectedView.value === 'bpl_status' ||
     selectedView.value === 'divyang_presence' ||
-    selectedView.value === 'employment_status'
+    selectedView.value === 'employment_status' ||
+    selectedView.value === 'crop'
   )) {
     console.log('District aggregation mode for:', selectedView.value)
 
@@ -3895,4 +3963,40 @@ watch(analyticsPanelOpen, async () => {
 .asb-item:hover .asb-item-arrow  { color: #fca5a5; }
 .asb-item--active .asb-item-arrow { color: #ef4444; }
 
+</style>
+
+<style>
+.custom-tooltip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.custom-tooltip-card {
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 8px 24px rgba(2,6,23,0.12);
+  border: 1px solid rgba(15,23,42,0.06);
+  min-width: 140px;
+  font-size: 0.86rem;
+  line-height: 1.1;
+}
+.custom-tooltip-card .ct-district {
+  font-size: 0.72rem;
+  color: #475569;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+.custom-tooltip-card .ct-crop {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #16a34a; /* green accent for crop */
+  margin-bottom: 0.25rem;
+}
+.custom-tooltip-card .ct-count {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
 </style>

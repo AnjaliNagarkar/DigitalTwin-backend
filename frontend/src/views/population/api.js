@@ -91,6 +91,14 @@ export function getDivyangDistrictCounts() {
   return fetchJSON('/divyang/district-count')
 }
 
+export function getEmploymentDistrictCounts() {
+  return fetchJSON('/employment/district-count')
+}
+
+export function getDistrictDominantCrops() {
+  return fetchJSON('/crop/district-dominant')
+}
+
 export function getPopulationMapSummary(params = {}) {
   const query = toQueryString(params)
   return fetchJSON(`/population/map-summary${query ? `?${query}` : ''}`)
