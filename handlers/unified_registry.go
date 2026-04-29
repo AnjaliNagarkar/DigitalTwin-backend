@@ -17,10 +17,9 @@ type UnifiedRecord struct {
 	FullName  string `json:"fullName"`
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
-	Age       int    `json:"age"`
-	Gender    string `json:"gender"`
-	Education string `json:"education"`
-	FamilyID  int    `json:"familyId"`
+	Age       int    `json:"age"`      // Add Age field
+	Gender    string `json:"gender"`   // Re-added Gender field
+	FamilyID  int    `json:"familyId"` // FamilyID is still a core demographic
 
 	// ── Agri (N/A when person has no land) ───────────────────────────────────
 	TotalLand      string `json:"totalLand"`
@@ -51,9 +50,6 @@ type UnifiedRecord struct {
 	// ── Disabled-specific ────────────────────────────────────────────────────
 	DisabilityType    string `json:"disabilityType"`
 	DisabilityPercent string `json:"disabilityPercent"`
-	PensionStatus     string `json:"pensionStatus"`
-	CaretakerName     string `json:"caretakerName"`
-	GovtPensionAmount string `json:"govtPensionAmount"`
 
 	MaritalStatus string `json:"maritalStatus"` // New field
 	// ── Housewife-specific ───────────────────────────────────────────────────
@@ -119,6 +115,7 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 		"STANDARD_WHICH_STUDYING",
 		"TYPE_INSTITUTION",
 		"DIVYANG",
+		"DISABILITY_CATEGORY",
 		"DISABILITY",
 		"MARITAL_STATUS", // Add this
 		"DISABILITY_PERCENTAGE",
@@ -174,7 +171,12 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 	stdExpr := opt("STANDARD_WHICH_STUDYING", "COALESCE(fm.STANDARD_WHICH_STUDYING,'')")
 	instExpr := opt("TYPE_INSTITUTION", "COALESCE(fm.TYPE_INSTITUTION,'')")
 	divyangExpr := opt("DIVYANG", "COALESCE(fm.DIVYANG,'')")
-	disabilityExpr := opt("DISABILITY", "COALESCE(fm.DISABILITY,'')")
+	disabilityExpr := "''"
+	if fm["DISABILITY_CATEGORY"] {
+		disabilityExpr = "COALESCE(fm.DISABILITY_CATEGORY,'')"
+	} else if fm["DISABILITY"] {
+		disabilityExpr = "COALESCE(fm.DISABILITY,'')"
+	}
 	disabilityPctExpr := opt("DISABILITY_PERCENTAGE", "COALESCE(CAST(fm.DISABILITY_PERCENTAGE AS CHAR),'')")
 	maritalStatusExpr := opt("MARITAL_STATUS", "COALESCE(fm.MARITAL_STATUS,'')") // New expression
 
@@ -228,7 +230,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			firstName        string
 			lastName         string
 			gender           string
-			dobRaw           string
+			dobRaw           string // Declared here
 			education        string
 			occupation       string
 			familyID         int
@@ -250,7 +252,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 		)
 
 		if err := rows.Scan(
-			&firstName, &lastName, &gender, &dobRaw,
+			&firstName, &lastName, &gender, &dobRaw, // Scanned here
 			&education, &occupation, &familyID,
 			&totalLand, &ownAgriLand, &waterSource,
 			&kharifCrop, &rabiCrop, &annualIncome,
@@ -298,18 +300,8 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			scholarship = "Yes"
 		}
 
-		// ── Pension: Eligible for divyang or senior ───────────────────────────
-		pensionStatus := "Not Eligible"
-		if isDivyang || isSenior {
-			pensionStatus = "Eligible"
-		}
-
-		// ── Govt Pension Amount: reuse annual_income for eligible citizens ────
+		// ── Income normalization ───────────────────────────────────────────────
 		incomeClean := strings.TrimSpace(annualIncome)
-		govtPensionAmt := "N/A"
-		if (isDivyang || isSenior) && incomeClean != "" && incomeClean != "0" {
-			govtPensionAmt = incomeClean
-		}
 
 		// ── Source of Income: keyword-derived from occupation ─────────────────
 		sourceOfIncome := deriveSourceOfIncome(strings.TrimSpace(occupation))
@@ -320,7 +312,6 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			LastName:  strings.TrimSpace(lastName),
 			Age:       ageVal,
 			Gender:    strings.TrimSpace(gender),
-			Education: strings.TrimSpace(education),
 			FamilyID:  familyID,
 
 			TotalLand:      landVal,
@@ -347,9 +338,6 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 
 			DisabilityType:    capitalizeWords(strings.TrimSpace(disabilityType)),
 			DisabilityPercent: strings.TrimSpace(disabilityPct),
-			PensionStatus:     pensionStatus,
-			CaretakerName:     "Not Available",
-			GovtPensionAmount: govtPensionAmt,
 
 			MaritalStatus:  strings.TrimSpace(maritalStatusRaw), // Populate new field
 			SourceOfIncome: sourceOfIncome,

@@ -10,19 +10,21 @@ import (
 )
 
 type PopulationRegistryRecord struct {
-	Name       string `json:"name"`
-	Gender     string `json:"gender"`
-	Age        int    `json:"age"`
-	Education  string `json:"education"`
-	Occupation string `json:"occupation"`
+	Name           string `json:"name"`
+	Gender         string `json:"gender"`
+	Age            int    `json:"age"`
+	Education      string `json:"education"`
+	Occupation     string `json:"occupation"`
+	DisabilityType string `json:"disabilityType"`
 }
 
 type populationRegistryRow struct {
-	Name       string
-	Gender     string
-	Age        sql.NullInt64
-	Education  string
-	Occupation string
+	Name           string
+	Gender         string
+	Age            sql.NullInt64
+	Education      string
+	Occupation     string
+	DisabilityType string
 }
 
 func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
@@ -63,7 +65,8 @@ func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
 				ELSE NULL
 			END AS age,
 			COALESCE(NULLIF(TRIM(COALESCE(fm.QUALIFICATION, '')), ''), NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS, '')), ''), 'Not Available') AS education,
-			COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working') AS occupation
+			COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working') AS occupation,
+			COALESCE(NULLIF(TRIM(COALESCE(fm.DISABILITY_CATEGORY, '')), ''), '') AS disability_type
 		FROM FAMILY_MEMBER fm
 		LEFT JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
 		WHERE %[2]s
@@ -86,6 +89,7 @@ func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
 			&row.Age,
 			&row.Education,
 			&row.Occupation,
+			&row.DisabilityType,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan population registry record", "detail": err.Error()})
 			return
@@ -100,11 +104,12 @@ func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
 		}
 
 		records = append(records, PopulationRegistryRecord{
-			Name:       strings.TrimSpace(row.Name),
-			Gender:     strings.TrimSpace(row.Gender),
-			Age:        age,
-			Education:  strings.TrimSpace(row.Education),
-			Occupation: strings.TrimSpace(row.Occupation),
+			Name:           strings.TrimSpace(row.Name),
+			Gender:         strings.TrimSpace(row.Gender),
+			Age:            age,
+			Education:      strings.TrimSpace(row.Education),
+			Occupation:     strings.TrimSpace(row.Occupation),
+			DisabilityType: strings.TrimSpace(row.DisabilityType),
 		})
 	}
 
