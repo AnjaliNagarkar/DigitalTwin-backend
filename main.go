@@ -40,6 +40,8 @@ func main() {
 	districtDivyangHandler := &handlers.DistrictDivyangHandler{DB: conn}
 	districtEmploymentHandler := &handlers.DistrictEmploymentHandler{DB: conn}
 	districtCropDominantHandler := &handlers.DistrictCropDominantHandler{DB: conn}
+	districtIrrigationCoverageHandler := &handlers.DistrictIrrigationCoverageHandler{DB: conn}
+	districtLandHoldingHandler := &handlers.DistrictLandHoldingHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
 	unifiedRegistryHandler := handlers.NewUnifiedRegistryHandler(conn)
@@ -112,6 +114,8 @@ func main() {
 	r.GET("/divyang/district-count", districtDivyangHandler.GetDistrictDivyangCount)
 	r.GET("/employment/district-count", districtEmploymentHandler.GetDistrictEmploymentCount)
 	r.GET("/crop/district-dominant", districtCropDominantHandler.GetDistrictDominantCrops)
+	r.GET("/irrigation/district-coverage", districtIrrigationCoverageHandler.GetDistrictIrrigationCoverage)
+	r.GET("/landholding/district-coverage", districtLandHoldingHandler.GetDistrictLandHoldingCoverage)
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	r.POST("/pdf/report", pdfHandler.GeneratePDF)
@@ -152,6 +156,8 @@ func main() {
 	log.Println("  GET /divyang/district-count — district-wise Divyang counts")
 	log.Println("  GET /employment/district-count — district-wise employed counts")
 	log.Println("  GET /crop/district-dominant — district-wise dominant crop")
+	log.Println("  GET /irrigation/district-coverage — district-wise irrigation coverage")
+	log.Println("  GET /landholding/district-coverage — district-wise land holding coverage")
 	log.Println("  GET /population/dashboard — population top-card metrics")
 	log.Println("  GET /crops            — kharif/rabi cultivation data")
 	log.Println("  GET /land             — land area records")

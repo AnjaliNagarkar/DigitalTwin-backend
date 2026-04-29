@@ -507,7 +507,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
-import { getDistrictDominantCrops, getDivyangDistrictCounts, getEmploymentDistrictCounts, getPopulationMapData } from '../population/api.js'
+import { getDistrictDominantCrops, getDistrictIrrigationCoverage, getDistrictLandHoldingCoverage, getDivyangDistrictCounts, getEmploymentDistrictCounts, getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
@@ -1157,16 +1157,22 @@ function renderDistrictCentroids(centroidRows) {
     const lat = d.lat + (Math.random() * 0.02)
     const lng = d.lng + (Math.random() * 0.02)
 
+    const isCoverageMode = selectedView.value === 'irrigation' || selectedView.value === 'land' || selectedView.value === 'land_holding'
+    const markerValue = isCoverageMode
+      ? `${Math.round(Number(d?.coverage || 0))}%`
+      : `${d.count}`
+
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'district-marker',
-        html: `<div class="marker-count">${d.count}</div>`,
+        html: `<div class="marker-count">${markerValue}</div>`,
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       }),
     })
 
     const districtId = d?.district_id ?? d?.DISTRICT_ID ?? d?.id ?? 'N/A'
+    const districtName = d?.district_name ?? d?.DISTRICT_NAME ?? d?.name ?? `ID ${districtId}`
     const valueLabel = d?.crop ? `${d.crop} (${d.count})` : `Count: ${d.count}`
 
     if (selectedView.value === 'crop' && d?.crop) {
@@ -1181,11 +1187,93 @@ function renderDistrictCentroids(centroidRows) {
       marker.bindTooltip(html, {
         permanent: false,
         direction: 'top',
-        className: 'custom-tooltip',
+        className: 'crop-tooltip-shell',
         offset: L.point(0, -10),
       })
 
       marker.bindPopup(html)
+    } else if (selectedView.value === 'irrigation') {
+      const coverage = Number(d?.coverage || 0)
+      const irrigated = Number(d?.irrigated || 0)
+      const total = Number(d?.total || 0)
+      const numericDistrictId = Number(districtId)
+      const districtDisplay = Number.isFinite(numericDistrictId)
+        ? numericDistrictId
+        : districtId
+      const color =
+        coverage > 60 ? '#16a34a' :
+        coverage > 30 ? '#f59e0b' :
+        '#dc2626'
+
+      const tooltipContent = `
+        <div class="custom-tooltip">
+          <div class="title">District ID: ${escapeHtml(districtDisplay)}</div>
+
+          <div class="coverage-label">Irrigation Coverage</div>
+          <div class="coverage-value" style="color:${color}">
+            ${coverage.toFixed(2)}%
+          </div>
+
+          <div class="meta">
+            <span>Irrigated</span>
+            <span>${irrigated}</span>
+          </div>
+
+          <div class="meta">
+            <span>Total</span>
+            <span>${total}</span>
+          </div>
+        </div>
+      `
+
+      const popupText = `District: ${escapeHtml(districtName)}<br/>Irrigation Coverage: ${coverage.toFixed(2)}%<br/>Irrigated: ${irrigated}<br/>Total: ${total}`
+
+      marker.bindTooltip(tooltipContent, {
+        direction: 'top',
+        offset: [0, -10],
+        opacity: 1,
+        className: '',
+      })
+
+      marker.bindPopup(popupText)
+    } else if (selectedView.value === 'land' || selectedView.value === 'land_holding') {
+      const coverage = Number(d?.coverage || 0)
+      const holders = Number(d?.holders || 0)
+      const total = Number(d?.total || 0)
+      const numericDistrictId = Number(districtId)
+      const districtDisplay = Number.isFinite(numericDistrictId)
+        ? numericDistrictId
+        : districtId
+
+      const tooltipContent = `
+        <div class="custom-tooltip">
+          <div class="title">District ID: ${escapeHtml(districtDisplay)}</div>
+
+          <div class="coverage-label">Land Holding Coverage</div>
+          <div class="coverage-value">${coverage.toFixed(2)}%</div>
+
+          <div class="meta">
+            <span>Land Holders</span>
+            <span>${holders}</span>
+          </div>
+
+          <div class="meta">
+            <span>Total Families</span>
+            <span>${total}</span>
+          </div>
+        </div>
+      `
+
+      const popupText = `District: ${escapeHtml(districtName)}<br/>Land Holding Coverage: ${coverage.toFixed(2)}%<br/>Land Holders: ${holders}<br/>Total Families: ${total}`
+
+      marker.bindTooltip(tooltipContent, {
+        direction: 'top',
+        offset: [0, -10],
+        opacity: 1,
+        className: '',
+      })
+
+      marker.bindPopup(popupText)
     } else {
       marker.bindTooltip(`District ID: ${districtId} | ${valueLabel}`, {
         permanent: false,
@@ -1341,6 +1429,66 @@ async function refreshDistrictCentroids() {
             ...row,
             crop: cropMap[districtId]?.crop || 'N/A',
             count: cropMap[districtId]?.count || 0,
+          }
+        })
+
+        renderDistrictCentroids(finalRows)
+        return
+      }
+
+      if (selectedView.value === 'irrigation') {
+        console.log('>>> EXECUTING IRRIGATION BRANCH')
+        const apiRows = await getDistrictIrrigationCoverage()
+        const coverageMap = {}
+
+        apiRows.forEach((row) => {
+          const districtId = Number(row?.district_id)
+          if (!Number.isFinite(districtId)) return
+          coverageMap[districtId] = {
+            coverage: Number(row?.coverage || 0),
+            irrigated: Number(row?.irrigated || 0),
+            total: Number(row?.total || 0),
+          }
+        })
+
+        const finalRows = centroidRows.map((row) => {
+          const districtId = Number(row?.id ?? row?.DISTRICT_ID ?? row?.district_id)
+          return {
+            ...row,
+            coverage: coverageMap[districtId]?.coverage || 0,
+            irrigated: coverageMap[districtId]?.irrigated || 0,
+            total: coverageMap[districtId]?.total || 0,
+            count: Math.round(coverageMap[districtId]?.coverage || 0),
+          }
+        })
+
+        renderDistrictCentroids(finalRows)
+        return
+      }
+
+      if (selectedView.value === 'land' || selectedView.value === 'land_holding') {
+        console.log('>>> EXECUTING LAND HOLDING BRANCH')
+        const apiRows = await getDistrictLandHoldingCoverage()
+        const coverageMap = {}
+
+        apiRows.forEach((row) => {
+          const districtId = Number(row?.district_id)
+          if (!Number.isFinite(districtId)) return
+          coverageMap[districtId] = {
+            coverage: Number(row?.coverage_percentage || 0),
+            holders: Number(row?.land_holders || 0),
+            total: Number(row?.total_families || 0),
+          }
+        })
+
+        const finalRows = centroidRows.map((row) => {
+          const districtId = Number(row?.id ?? row?.DISTRICT_ID ?? row?.district_id)
+          return {
+            ...row,
+            coverage: coverageMap[districtId]?.coverage || 0,
+            holders: coverageMap[districtId]?.holders || 0,
+            total: coverageMap[districtId]?.total || 0,
+            count: Math.round(coverageMap[districtId]?.coverage || 0),
           }
         })
 
@@ -2014,7 +2162,7 @@ function hasActiveLocationFilter() {
 }
 
 const isDistrictPopulationView = () => {
-  return ['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop'].includes(selectedView.value) &&
+  return ['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop', 'irrigation', 'land', 'land_holding'].includes(selectedView.value) &&
     !hasLocationFilter()
 }
 
@@ -2031,7 +2179,7 @@ function escapeHtml(unsafe) {
 function shouldRenderDataMarkers() {
   if (hasActiveLocationFilter()) return true
   // Requirement: for population View By, no location filter => district markers only.
-  if (['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop'].includes(selectedView.value)) return false
+  if (['population_density', 'bpl_status', 'divyang_presence', 'employment_status', 'crop', 'irrigation', 'land', 'land_holding'].includes(selectedView.value)) return false
   return Boolean(selectedView.value)
 }
 
@@ -2078,7 +2226,10 @@ function renderMarkerLayersForCurrentState() {
     selectedView.value === 'bpl_status' ||
     selectedView.value === 'divyang_presence' ||
     selectedView.value === 'employment_status' ||
-    selectedView.value === 'crop'
+    selectedView.value === 'crop' ||
+    selectedView.value === 'irrigation' ||
+    selectedView.value === 'land' ||
+    selectedView.value === 'land_holding'
   )) {
     console.log('District aggregation mode for:', selectedView.value)
 
@@ -3966,10 +4117,46 @@ watch(analyticsPanelOpen, async () => {
 </style>
 
 <style>
-.custom-tooltip {
+.crop-tooltip-shell {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
+}
+
+.custom-tooltip {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  font-family: 'Inter', sans-serif;
+  min-width: 180px;
+}
+
+.custom-tooltip .title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.custom-tooltip .coverage-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.custom-tooltip .coverage-value {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 4px 0;
+  color: #2563eb;
+}
+
+.custom-tooltip .meta {
+  font-size: 12px;
+  color: #4b5563;
+  display: flex;
+  justify-content: space-between;
 }
 
 .custom-tooltip-card {

@@ -99,6 +99,14 @@ export function getDistrictDominantCrops() {
   return fetchJSON('/crop/district-dominant')
 }
 
+export function getDistrictIrrigationCoverage() {
+  return fetchJSON('/irrigation/district-coverage')
+}
+
+export function getDistrictLandHoldingCoverage() {
+  return fetchJSON('/landholding/district-coverage')
+}
+
 export function getPopulationMapSummary(params = {}) {
   const query = toQueryString(params)
   return fetchJSON(`/population/map-summary${query ? `?${query}` : ''}`)
