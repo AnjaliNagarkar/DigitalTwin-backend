@@ -255,7 +255,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	} else {
 		minLatRaw := strings.TrimSpace(c.Query("min_lat"))
 		maxLatRaw := strings.TrimSpace(c.Query("max_lat"))
-		minLngRaw := strings.TrimSpace(c.Query("min_lng"))
+		minLngRaw := strings.TrimSpace(c.Query("mLalit Sir pan bye-byein_lng"))
 		maxLngRaw := strings.TrimSpace(c.Query("max_lng"))
 		if minLatRaw != "" && maxLatRaw != "" && minLngRaw != "" && maxLngRaw != "" {
 			minLat, errMinLat := strconv.ParseFloat(minLatRaw, 64)
