@@ -727,6 +727,45 @@ function classifyChildrenGroup(v) {
   return 'threePlus'
 }
 
+function normalizeOccupationText(record) {
+  return String(record?.occupation || '').toLowerCase().trim()
+}
+
+function matchesOccupationType(record, value) {
+  const occupation = normalizeOccupationText(record)
+  const selected = String(value || '').toLowerCase()
+
+  if (selected === 'farmer') {
+    return Boolean(record?.isFarmer)
+  }
+
+  if (selected === 'student') {
+    return Boolean(record?.isStudent || occupation.includes('student') || occupation.includes('studying'))
+  }
+
+  if (selected === 'housewife') {
+    return Boolean(record?.isHousewife || occupation.includes('housewife') || occupation.includes('homemaker'))
+  }
+
+  if (selected === 'salaried job') {
+    return occupation.includes('salaried') || occupation.includes('salary') || occupation.includes('service')
+  }
+
+  if (selected === 'wage work') {
+    return occupation.includes('wage') || occupation.includes('labour') || occupation.includes('labor')
+  }
+
+  if (selected === 'unemployed') {
+    return occupation.includes('unemployed')
+  }
+
+  if (selected === 'not working') {
+    return occupation === 'not working' || occupation === ''
+  }
+
+  return occupation === selected
+}
+
 function toggleSort(key) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
   else { sortKey.value = key; sortDir.value = 'asc' }
@@ -902,8 +941,8 @@ const filteredRecords = computed(() => {
 
   // Occupation type sub-filter (All Citizens category)
   if (hasAny('occupationType')) {
-    const occSet = new Set(selected('occupationType').map(v => String(v).toLowerCase()))
-    list = list.filter(r => occSet.has(String(r.occupation || '').toLowerCase()))
+    const occValues = selected('occupationType')
+    list = list.filter(r => occValues.some((value) => matchesOccupationType(r, value)))
   }
 
   // IsFarmer sub-filter (All Citizens category)

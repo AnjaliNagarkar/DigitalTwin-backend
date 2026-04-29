@@ -9,7 +9,7 @@
 
 ### Key Capabilities
 - **Household Registry**: Browse and filter 10,000+ household records with farming profiles
-- **Geospatial Intelligence**: Interactive 2D mapping with village-level clustering and heatmaps
+- **Geospatial Intelligence**: Interactive 2D mapping with village-level clustering
 - **3D Digital Twin**: Cesium-based terrain visualization with problem highlighting
 - **Insights Engine**: Automated analysis of governance, agriculture, and welfare metrics
 - **PDF Reporting**: Generate customized reports on selected regions with problem filtering
