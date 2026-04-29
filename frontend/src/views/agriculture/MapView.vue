@@ -121,7 +121,7 @@
           </div>
         </div>
 
-        <div class="map-legend">
+        <div class="map-legend" v-if="viewMode === 'points' && selectedView">
           <template v-if="viewMode === 'villages'">
             <div class="legend-item"><span class="legend-dot" style="background:#16a34a;"></span>Irrigation available</div>
             <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>No irrigation</div>
@@ -1272,8 +1272,7 @@ function applyFilters(autoZoomToResults = true) {
   houses.value = []
   selectedHouse.value = null
   selectedCluster.value = null
-  clearClusterSelection()
-  if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
+  clearClusterMarkers()
   clearMarkers()
   if (map) {
     // Signal plotMarkers to auto-zoom once new data arrives.
@@ -1282,8 +1281,8 @@ function applyFilters(autoZoomToResults = true) {
     fitAfterLoad = autoZoomToResults
     loading.value = true
     loadLiveHouseData(0, requestToken)
-    // Hide district markers if any location filter is applied
-    if (selectedDistrict.value || selectedTaluka.value || selectedVillage.value) {
+    // District-only mode (no location + no view) should show only centroid markers.
+    if (shouldRenderDataMarkers()) {
       clearDistrictCentroids()
     } else {
       refreshDistrictCentroids()
@@ -1783,19 +1782,50 @@ function showPointLayer() {
 }
 
 function hidePointLayer() {
+  if (!map) return
   markerRefs.forEach(({ marker }) => map.removeLayer(marker))
+}
+
+function hasActiveLocationFilter() {
+  return Boolean(selectedDistrict.value || selectedTaluka.value || selectedVillage.value)
+}
+
+function shouldRenderDataMarkers() {
+  return Boolean(hasActiveLocationFilter() || selectedView.value)
+}
+
+function clearClusterMarkers() {
+  if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
+  clearClusterSelection()
+}
+
+function renderMarkerLayersForCurrentState() {
+  if (!map) return
+
+  // Default state: no location filter + no "View By" => district-only markers.
+  if (!shouldRenderDataMarkers()) {
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+    return
+  }
+
+  clearDistrictCentroids()
+  if (selectedView.value) {
+    // "View By" mode uses categorized household markers.
+    clearClusterMarkers()
+    showPointLayer()
+    return
+  }
+
+  // Location-filter mode without "View By" shows village clusters only.
+  hidePointLayer()
+  drawClusters(buildVillageClusters(houses.value))
 }
 
 async function setViewMode(mode) {
   viewMode.value = mode
-  if (mode === 'villages') {
-    hidePointLayer()
-    drawClusters(buildVillageClusters(houses.value))
-  } else {
-    if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
-    clearClusterSelection()
-    showPointLayer()
-  }
+  renderMarkerLayersForCurrentState()
   // Ensure map renders properly after layer changes
   await nextTick()
   setTimeout(() => handleMapResize(), 50)
@@ -2254,9 +2284,15 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
       clearRetryTimer()
       houses.value = real
       plotMarkers(real)
-      if (viewMode.value === 'villages') {
-        drawClusters(buildVillageClusters(real))
+      if (!shouldRenderDataMarkers()) {
+        // Guard against async overlap: keep strict district-only mode.
+        hidePointLayer()
+        clearClusterMarkers()
+        refreshDistrictCentroids()
+        loading.value = false
+        return
       }
+      renderMarkerLayersForCurrentState()
       loading.value = false
       return
     }
@@ -2345,17 +2381,21 @@ watch(selectedDistrict, async () => {
   selectedTaluka.value = ''
   selectedVillage.value = ''
   await loadLocationDropdowns()
-  refreshDistrictCentroids()
+  renderMarkerLayersForCurrentState()
 })
 
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
   await loadLocationDropdowns()
-  refreshDistrictCentroids()
+  renderMarkerLayersForCurrentState()
 })
 
 watch(selectedVillage, () => {
-  refreshDistrictCentroids()
+  renderMarkerLayersForCurrentState()
+})
+
+watch(selectedView, () => {
+  renderMarkerLayersForCurrentState()
 })
 
 watch(analyticsPanelOpen, async () => {
