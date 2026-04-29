@@ -149,6 +149,11 @@ export function getDistrictCentroids(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/map/district-centroids?${qs}` : '/map/district-centroids', TIMEOUT_DATA)
 }
+
+export function getDistrictPopulation(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/district-population?${qs}` : '/map/district-population', TIMEOUT_DATA)
+}
 /**
  * Fetch farm advisory for a household's identified problems.
  * @param {string[]} problems  - array of problem keys e.g. ['noIrrigation','singleSeason']

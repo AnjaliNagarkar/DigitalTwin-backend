@@ -35,6 +35,7 @@ func main() {
 	locationHandler := &handlers.LocationHandler{DB: conn}
 	districtSurveyCountHandler := &handlers.DistrictSurveyCountHandler{DB: conn}
 	districtCentroidsHandler := &handlers.DistrictCentroidsHandler{DB: conn}
+	districtPopulationHandler := &handlers.DistrictPopulationHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
 	unifiedRegistryHandler := handlers.NewUnifiedRegistryHandler(conn)
@@ -102,6 +103,7 @@ func main() {
 	r.GET("/location-options", locationHandler.GetLocationOptions)
 	r.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)
 	r.GET("/map/district-centroids", districtCentroidsHandler.GetDistrictCentroids)
+	r.GET("/map/district-population", districtPopulationHandler.GetDistrictPopulation)
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	r.POST("/pdf/report", pdfHandler.GeneratePDF)

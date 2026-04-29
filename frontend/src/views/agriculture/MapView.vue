@@ -506,7 +506,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
+import { getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
@@ -1091,6 +1091,7 @@ function clearDistrictCentroids() {
 }
 
 function renderDistrictCentroids(centroidRows) {
+  console.log('FINAL RENDER: renderDistrictCentroids', centroidRows)
   clearDistrictCentroids()
   districtCentroidMarkerLayer = L.layerGroup()
   console.log('District count:', Array.isArray(centroidRows) ? centroidRows.length : 0)
@@ -1138,7 +1139,39 @@ async function refreshDistrictCentroids() {
 
   try {
     const centroidRows = await getDistrictCentroids(getActiveLocationParams())
-    renderDistrictCentroids(Array.isArray(centroidRows) ? centroidRows : [])
+    const normalizedRows = Array.isArray(centroidRows) ? centroidRows : []
+
+    console.log('View:', selectedView.value)
+
+    if (selectedView.value === 'population_density' && !hasActiveLocationFilter()) {
+      console.log('Using dataset:', 'FAMILY_MEMBER')
+      const populationData = await getDistrictPopulation()
+      const populationRowsRaw = Array.isArray(populationData) ? populationData : []
+      const popMap = {}
+      populationRowsRaw.forEach((p) => {
+        const id = p?.DISTRICT_ID ?? p?.district_id
+        popMap[Number(id)] = Number(p?.population || 0)
+      })
+
+      const populationRows = normalizedRows.map((row) => {
+        const districtId = row?.DISTRICT_ID ?? row?.district_id
+        console.log('Centroid ID:', districtId)
+        console.log('Population Map:', popMap)
+        console.log('Mapped Count:', popMap[Number(districtId)])
+        return {
+          ...row,
+          count: popMap[Number(districtId)] || 0,
+        }
+      })
+      console.log('Population Data:', populationRowsRaw)
+      console.log('Population count:', populationRows)
+      console.log('CALLER: refreshDistrictCentroids(population_density)', populationRows)
+      renderDistrictCentroids(populationRows)
+      return
+    }
+
+    console.log('CALLER: refreshDistrictCentroids(default)', normalizedRows)
+    renderDistrictCentroids(normalizedRows)
   } catch (error) {
     console.warn('District centroids unavailable:', error?.message || error)
   }
@@ -1267,6 +1300,13 @@ async function fetchAllHouses() {
 }
 
 function applyFilters(autoZoomToResults = true) {
+  if (isDistrictPopulationView()) {
+    console.log('Skipping render/clear for district population view')
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+    return
+  }
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
   houses.value = []
@@ -1790,6 +1830,13 @@ function hasActiveLocationFilter() {
   return Boolean(selectedDistrict.value || selectedTaluka.value || selectedVillage.value)
 }
 
+const isDistrictPopulationView = () => {
+  return selectedView.value === 'population_density' &&
+    !selectedDistrict.value &&
+    !selectedTaluka.value &&
+    !selectedVillage.value
+}
+
 function shouldRenderDataMarkers() {
   return Boolean(hasActiveLocationFilter() || selectedView.value)
 }
@@ -1801,6 +1848,13 @@ function clearClusterMarkers() {
 
 function renderMarkerLayersForCurrentState() {
   if (!map) return
+  if (isDistrictPopulationView()) {
+    console.log('Skipping render/clear for district population view')
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+    return
+  }
 
   // Default state: no location filter + no "View By" => district-only markers.
   if (!shouldRenderDataMarkers()) {
@@ -1810,7 +1864,18 @@ function renderMarkerLayersForCurrentState() {
     return
   }
 
-  clearDistrictCentroids()
+  // Population density at all-location scope should keep district population markers only.
+  if (selectedView.value === 'population_density' && !hasActiveLocationFilter()) {
+    console.log('Skipping clearDistrictCentroids for population_density view')
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+    return
+  }
+
+  if (selectedView.value !== 'population_density') {
+    clearDistrictCentroids()
+  }
   if (selectedView.value) {
     // "View By" mode uses categorized household markers.
     clearClusterMarkers()
@@ -2275,6 +2340,14 @@ function clearRetryTimer() {
 
 async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToken) {
   if (requestToken !== activeHouseLoadToken) return
+  if (isDistrictPopulationView()) {
+    console.log('Skipping render/clear for district population view')
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+    loading.value = false
+    return
+  }
 
   try {
     const real = await fetchAllHouses()
@@ -2395,6 +2468,15 @@ watch(selectedVillage, () => {
 })
 
 watch(selectedView, () => {
+  console.log('View changed:', selectedView.value)
+
+  if (selectedView.value === 'population_density') {
+    console.log('Skip clearing district markers for population density')
+    // Instead refresh with population data
+    refreshDistrictCentroids()
+    return
+  }
+
   renderMarkerLayersForCurrentState()
 })
 
