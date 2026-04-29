@@ -507,7 +507,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
-import { getPopulationMapData } from '../population/api.js'
+import { getDivyangDistrictCounts } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
@@ -1090,22 +1090,28 @@ async function loadFamilyMembers() {
     // Load ALL family members globally (no filters) so count computation is always complete.
     // This data is used to compute population stats during marker enrichment.
     const res = await getPopulationMapData({})
-    const rows = extractPopulationRows(res)
-    familyMembers.value = Array.isArray(res?.data?.members)
-      ? res.data.members
-      : Array.isArray(res?.members)
-        ? res.members
-        : []
+    console.log('API RESPONSE MEMBERS:', res)
+    const rows = Array.isArray(res) ? res : []
+    console.log('ROWS AFTER EXTRACTION:', rows[0])
+    familyMembers.value = rows
+    console.log('SET familyMembers:', familyMembers.value)
     populationStatsByFamily.value = buildPopulationStatsMap(rows)
     populationRowsBySignature.value = buildPopulationRowsBySignature(rows)
     populationRowsByHouseVillage.value = buildPopulationRowsByHouseVillage(rows)
+    return familyMembers.value
   } catch (error) {
     console.warn('Population member stats unavailable:', error?.message || error)
     familyMembers.value = []
     populationStatsByFamily.value = new Map()
     populationRowsBySignature.value = new Map()
     populationRowsByHouseVillage.value = new Map()
+    return []
   }
+}
+
+async function fetchAllMembers() {
+  await loadFamilyMembers()
+  return familyMembers.value
 }
 
 const MAHARASHTRA_BOUNDS = L.latLngBounds(
@@ -1181,6 +1187,8 @@ async function refreshDistrictCentroids() {
   if (!map) return
 
   try {
+    console.log('--- INSIDE refreshDistrictCentroids ---')
+    console.log('VIEW RECEIVED:', selectedView.value)
     const centroidRows = await getDistrictCentroids(getActiveLocationParams())
     const normalizedRows = Array.isArray(centroidRows) ? centroidRows : []
 
@@ -1217,6 +1225,7 @@ async function refreshDistrictCentroids() {
       // District-level aggregated counts for selected "View By" categories.
       // We keep marker style + position unchanged and only replace centroid `count`.
       if (selectedView.value === 'bpl_status') {
+        console.log('>>> EXECUTING BPL BRANCH')
         const bplData = await getDistrictBpl()
         const bplMap = {}
         bplData.forEach(d => {
@@ -1238,24 +1247,25 @@ async function refreshDistrictCentroids() {
       }
 
       if (selectedView.value === 'divyang_presence') {
-        const allHouses = await fetchAllHouses()
-        const divyangCountByDistrict = {}
-        allHouses.forEach((house) => {
-          const districtId = house?.district_id ?? house?.DISTRICT_ID
-          const key = Number(districtId)
-          if (!Number.isFinite(key)) return
-          if (hasDivyangPresence(house)) {
-            divyangCountByDistrict[key] = (divyangCountByDistrict[key] || 0) + 1
-          }
+        console.log('>>> EXECUTING DIVYANG BRANCH')
+        const apiRows = await getDivyangDistrictCounts()
+        const countMap = {}
+        apiRows.forEach((row) => {
+          const districtId = Number(row?.district_id)
+          if (!Number.isFinite(districtId)) return
+          countMap[districtId] = Number(row?.divyang_count || 0)
         })
+        console.log('COUNT MAP:', countMap)
+        console.log('CENTROID IDS:', normalizedRows.map(r => r.DISTRICT_ID ?? r.district_id))
 
-        const rows = normalizedRows.map((row) => {
-          const districtId = row?.district_id ?? row?.DISTRICT_ID
-          const key = Number(districtId)
-          return { ...row, count: divyangCountByDistrict[key] || 0 }
+        const renderRows = centroidRows.map(row => ({
+          ...row,
+          count: countMap[Number(row?.DISTRICT_ID ?? row?.district_id)] || 0
         })
+        )
+        console.log('FINAL ROWS BEFORE RENDER:', renderRows)
 
-        renderDistrictCentroids(rows)
+        renderDistrictCentroids(renderRows)
         return
       }
 
@@ -1966,6 +1976,10 @@ function clearClusterMarkers() {
 function renderMarkerLayersForCurrentState() {
   if (!map) return
 
+  console.log('--- RENDER START ---')
+  console.log('SELECTED VIEW:', selectedView.value)
+  console.log('COLOR MODE:', colorMode.value)
+  console.log('HAS FILTER:', hasActiveLocationFilter())
   console.log('View:', selectedView.value)
   console.log('Has Filter:', hasActiveLocationFilter())
   console.log('Mode:', hasActiveLocationFilter() ? 'HOUSEHOLD' : 'DISTRICT')
@@ -1976,6 +1990,7 @@ function renderMarkerLayersForCurrentState() {
 
     hidePointLayer()
     clearClusterMarkers()
+    console.log('CALLING refreshDistrictCentroids FOR VIEW:', selectedView.value)
     refreshDistrictCentroids()
 
     return
@@ -1986,6 +2001,7 @@ function renderMarkerLayersForCurrentState() {
 
     hidePointLayer()
     clearClusterMarkers()
+    console.log('CALLING refreshDistrictCentroids FOR VIEW:', selectedView.value)
     refreshDistrictCentroids()
 
     return
@@ -2000,6 +2016,7 @@ function renderMarkerLayersForCurrentState() {
 
     hidePointLayer()
     clearClusterMarkers()
+    console.log('CALLING refreshDistrictCentroids FOR VIEW:', selectedView.value)
     refreshDistrictCentroids()
 
     return
@@ -2009,6 +2026,7 @@ function renderMarkerLayersForCurrentState() {
   if (!shouldRenderDataMarkers()) {
     hidePointLayer()
     clearClusterMarkers()
+    console.log('CALLING refreshDistrictCentroids FOR VIEW:', selectedView.value)
     refreshDistrictCentroids()
     return
   }

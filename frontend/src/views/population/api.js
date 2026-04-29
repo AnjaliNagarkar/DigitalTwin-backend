@@ -87,6 +87,10 @@ export function getPopulationMapData(params = {}) {
   return fetchJSON(`/population/map-data${query ? `?${query}` : ''}`, MAP_DATA_TIMEOUT)
 }
 
+export function getDivyangDistrictCounts() {
+  return fetchJSON('/divyang/district-count')
+}
+
 export function getPopulationMapSummary(params = {}) {
   const query = toQueryString(params)
   return fetchJSON(`/population/map-summary${query ? `?${query}` : ''}`)

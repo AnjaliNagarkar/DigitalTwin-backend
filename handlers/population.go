@@ -58,6 +58,7 @@ type PopulationEmploymentResponse struct {
 
 type PopulationMapMarker struct {
 	ExternalFamilyID        string   `json:"external_family_id"`
+	DistrictID              string   `json:"district_id"`
 	HouseNo                 string   `json:"house_no"`
 	HeadName                string   `json:"head_name"`
 	VillageID               string   `json:"village_id"`
@@ -767,6 +768,7 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 	query := fmt.Sprintf(`
 		SELECT
 			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), '') AS external_family_id,
+			COALESCE(CAST(f.DISTRICT_ID AS CHAR), '') AS district_id,
 			COALESCE(CAST(f.HOUSE_NO AS CHAR), '') AS house_no,
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
@@ -874,6 +876,7 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 		var marker PopulationMapMarker
 		if err := rows.Scan(
 			&marker.ExternalFamilyID,
+			&marker.DistrictID,
 			&marker.HouseNo,
 			&marker.HeadName,
 			&marker.VillageID,
