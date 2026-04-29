@@ -41,6 +41,7 @@
               <th>Age</th>
               <th>Education</th>
               <th>Occupation</th>
+              <th>Disability Type</th>
             </tr>
           </thead>
           <tbody>
@@ -51,6 +52,7 @@
               <td>{{ record.age || '—' }}</td>
               <td>{{ record.education || 'Not Available' }}</td>
               <td>{{ record.occupation || 'Not Working' }}</td>
+              <td>{{ record.disabilityType || '—' }}</td>
             </tr>
           </tbody>
         </table>
