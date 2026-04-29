@@ -94,6 +94,36 @@ type HouseHandler struct {
 	memberColCache   map[string]bool
 }
 
+func (h *HouseHandler) firstNonEmptyExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.CC != nil && h.CC.Has(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(f.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	return fmt.Sprintf("COALESCE(%s, '')", strings.Join(parts, ", "))
+}
+
+func (h *HouseHandler) yesNoExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.CC != nil && h.CC.Has(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(f.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	raw := fmt.Sprintf("LOWER(TRIM(COALESCE(%s, '')))", strings.Join(parts, ", "))
+	return fmt.Sprintf(`CASE
+		WHEN %s IN ('', '0', 'false', 'no', 'none', 'na', 'n/a', 'kerosene', 'no electricity', 'no lighting') THEN 'No'
+		ELSE 'Yes'
+	END`, raw)
+}
+
 func (h *HouseHandler) memberColExists(col string) bool {
 	h.memberColCacheMu.RLock()
 	if h.memberColCache != nil {
@@ -283,6 +313,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	// FAMILY-level optional columns for population context
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
+	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
+	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
 	// Use the actual columns present in the FAMILY table.
 	query := fmt.Sprintf(`
@@ -302,9 +335,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
-			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
-			COALESCE(f.ELECTRICITY_CONNECTION, ''),
-			COALESCE(f.RATION_CARD_TYPE, ''),
+			%s,
+			%s,
+			%s,
 			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
@@ -332,6 +365,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	`,
 		latCol,
 		lngCol,
+		sanitationExpr,
+		lightingExpr,
+		rationExpr,
 		bplExpr,
 		incomeExpr,
 		popStatsSQL,
@@ -468,6 +504,9 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	popStatsSQL := h.buildPopStatsSQL()
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
+	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
+	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -486,9 +525,9 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
-			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
-			COALESCE(f.ELECTRICITY_CONNECTION, ''),
-			COALESCE(f.RATION_CARD_TYPE, ''),
+				%s,
+				%s,
+				%s,
 			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
 			COALESCE(
 				TRIM(CONCAT(
@@ -515,6 +554,9 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	`,
 		latCol,
 		lngCol,
+		sanitationExpr,
+		lightingExpr,
+		rationExpr,
 		bplExpr,
 		incomeExpr,
 		popStatsSQL,
