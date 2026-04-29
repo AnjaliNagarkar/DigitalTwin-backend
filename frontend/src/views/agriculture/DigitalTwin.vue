@@ -326,14 +326,14 @@
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
               <div class="cs-option-group-label">— Population —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectColorMode('education_level')">Education Level</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }"   @click="selectColorMode('divyang_presence')">Divyang Presence</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'occupation' }"         @click="selectColorMode('occupation')">Occupation</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectView('population_density')">Population Density</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectView('education')">Education Level</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }"   @click="selectView('divyang')">Divyang Presence</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'occupation' }"         @click="selectView('occupation')">Occupation</div>
               <div class="cs-option-group-label">— Infrastructure —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }"        @click="selectColorMode('sanitation')">Sanitation / Toilet</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'lighting' }"          @click="selectColorMode('lighting')">Electricity</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'ration' }"            @click="selectColorMode('ration')">Ration Card</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }"        @click="selectView('sanitation')">Sanitation / Toilet</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'lighting' }"          @click="selectView('lighting')">Electricity</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'ration' }"            @click="selectView('ration')">Ration Card</div>
               <div class="cs-option-group-label">— Agriculture —</div>
               <div class="cs-option" :class="{ selected: selectedView === 'crop' }"               @click="selectView('crop')">Crop Type</div>
               <div class="cs-option" :class="{ selected: selectedView === 'irrigation' }"         @click="selectView('irrigation')">Irrigation</div>
@@ -1622,6 +1622,10 @@ const VIEW_TO_COLOR_MODE = {
   crop:               'crops',
   irrigation:         'irrigation',
   land:               'land',
+  bpl:                'bpl_status',
+  employment:         'employment_status',
+}
+
 const COLOR_MODE_LABELS = {
   irrigation:          'Irrigation',
   occupation:          'Occupation',
@@ -1706,18 +1710,8 @@ const selectedViewLabel = computed(() => {
 const selectView = (value) => {
   hasUserSelectedView.value = true
   selectedView.value = value
-
-  const mapping = {
-    population_density: 'population_density',
-    education: 'education_level',
-    divyang: 'divyang_presence',
-    occupation: 'occupation',
-    crop: 'crops',
-    irrigation: 'irrigation',
-    land: 'land',
-  }
-
-  applyColorFilter(mapping[value])
+  colorMode.value = VIEW_TO_COLOR_MODE[value] || value
+  applyColorFilter(colorMode.value)
 }
 
 // Human-readable labels for current selections (shown in trigger button)
