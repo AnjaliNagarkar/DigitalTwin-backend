@@ -106,9 +106,9 @@
                 <div class="dropdown-group">
                   <div class="group-title">Population</div>
                   <div class="option" :class="{ selected: selectedView === 'population_density' }" @click="selectView('population_density')">Population Density</div>
-                  <div class="option" :class="{ selected: selectedView === 'education' }" @click="selectView('education')">Education Level</div>
-                  <div class="option" :class="{ selected: selectedView === 'divyang' }" @click="selectView('divyang')">Divyang Presence</div>
-                  <div class="option" :class="{ selected: selectedView === 'occupation' }" @click="selectView('occupation')">Occupation</div>
+                  <div class="option" :class="{ selected: selectedView === 'bpl_status' }" @click="selectView('bpl')">BPL Status</div>
+                  <div class="option" :class="{ selected: selectedView === 'divyang_presence' }" @click="selectView('divyang')">Divyang Presence</div>
+                  <div class="option" :class="{ selected: selectedView === 'employment_status' }" @click="selectView('employment')">Employment Status</div>
                 </div>
                 <div class="dropdown-group">
                   <div class="group-title">Agriculture</div>
@@ -542,7 +542,7 @@ const alpListRef           = ref(null)    // ref to the scrollable anomaly list
 // ── Custom dropdown state ─────────────────────────────────────────────────────
 const openDropdown = ref(null)
 
-const populationFilters = ['population_density', 'education_level', 'divyang_presence', 'occupation']
+const populationFilters = ['population_density', 'bpl_status', 'divyang_presence', 'employment_status']
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
@@ -571,9 +571,9 @@ function selectVillage(id) {
 
 const VIEW_LABEL_MAP = {
   population_density: 'Population Density',
-  education: 'Education Level',
-  divyang: 'Divyang Presence',
-  occupation: 'Occupation',
+  bpl_status: 'BPL Status',
+  divyang_presence: 'Divyang Presence',
+  employment_status: 'Employment Status',
   crop: 'Crop Type',
   irrigation: 'Irrigation',
   land: 'Land Holdings',
@@ -581,9 +581,12 @@ const VIEW_LABEL_MAP = {
 
 const COLOR_MODE_TO_VIEW = {
   population_density: 'population_density',
-  education_level: 'education',
-  divyang_presence: 'divyang',
-  occupation: 'occupation',
+  bpl_status: 'bpl_status',
+  divyang_presence: 'divyang_presence',
+  employment_status: 'employment_status',
+  // Backward compatibility for older persisted / interim modes
+  education_level: 'bpl_status',
+  occupation: 'employment_status',
   crops: 'crop',
   irrigation: 'irrigation',
   land: 'land',
@@ -592,9 +595,12 @@ const COLOR_MODE_TO_VIEW = {
 function applyColorFilter(mode) {
   const viewToColorMode = {
     population_density: 'population_density',
-    education: 'education_level',
+    bpl: 'bpl_status',
     divyang: 'divyang_presence',
-    occupation: 'occupation',
+    employment: 'employment_status',
+    // Backward compatibility for older interim mode keys
+    education: 'bpl_status',
+    occupation: 'employment_status',
     crop: 'crops',
     irrigation: 'irrigation',
     land: 'land',
@@ -608,6 +614,26 @@ function toggleViewDropdown() {
 }
 
 function selectView(value) {
+  // Population View By: selectedView should map to the internal colorMode keys
+  // so marker color + legends + analytics behave consistently.
+  const popViewToSelected = {
+    population_density: 'population_density',
+    bpl: 'bpl_status',
+    divyang: 'divyang_presence',
+    employment: 'employment_status',
+    // Backward compatibility
+    education: 'bpl_status',
+    occupation: 'employment_status',
+  }
+
+  if (popViewToSelected[value]) {
+    selectedView.value = popViewToSelected[value]
+    showViewDropdown.value = false
+    // Requirement: connect selectedView -> colorMode only for population fields.
+    colorMode.value = selectedView.value
+    return
+  }
+
   selectedView.value = value
   showViewDropdown.value = false
   applyColorFilter(value)
@@ -732,9 +758,24 @@ function getOccupationValues(house) {
   return raw.split(/[|,;]+/).map(value => value.trim()).filter(Boolean)
 }
 
+function isWorkingOccupation(value) {
+  const v = String(value).trim().toLowerCase()
+
+  const nonWorking = [
+    'housewife',
+    'unemployed',
+    'not applicable',
+    'studying'
+  ]
+
+  return v && !nonWorking.includes(v)
+}
+
 function hasEmployment(house) {
   if (getWorkingMembers(house) > 0) return true
-  return getOccupationValues(house).length > 0
+
+  const occupations = getOccupationValues(house)
+  return occupations.some(isWorkingOccupation)
 }
 
 function toFiniteNumber(value) {
@@ -1601,18 +1642,18 @@ const headerLegend = computed(() => {
     ]
   } else if (colorMode.value === 'bpl_status') {
     entries = [
-      { color: '#ef4444', label: 'BPL households' },
-      { color: '#16a34a', label: 'Non-BPL households' },
+      { color: '#ef4444', label: 'BPL' },
+      { color: '#16a34a', label: 'Non-BPL' },
     ]
   } else if (colorMode.value === 'divyang_presence') {
     entries = [
-      { color: '#a855f7', label: 'Divyang present' },
+      { color: '#a855f7', label: 'Divyang' },
       { color: '#9ca3af', label: 'No divyang' },
     ]
   } else if (colorMode.value === 'employment_status' || colorMode.value === 'employment') {
     entries = [
-      { color: '#f59e0b', label: 'Working households' },
-      { color: '#9ca3af', label: 'Non-working households' },
+      { color: '#f59e0b', label: 'Working' },
+      { color: '#9ca3af', label: 'Non-working' },
     ]
   } else if (colorMode.value === 'crops') {
     entries = [
@@ -1826,19 +1867,24 @@ function hidePointLayer() {
   markerRefs.forEach(({ marker }) => map.removeLayer(marker))
 }
 
-function hasActiveLocationFilter() {
+const hasLocationFilter = () => {
   return Boolean(selectedDistrict.value || selectedTaluka.value || selectedVillage.value)
 }
 
+function hasActiveLocationFilter() {
+  return hasLocationFilter()
+}
+
 const isDistrictPopulationView = () => {
-  return selectedView.value === 'population_density' &&
-    !selectedDistrict.value &&
-    !selectedTaluka.value &&
-    !selectedVillage.value
+  return ['population_density', 'bpl_status', 'divyang_presence', 'employment_status'].includes(selectedView.value) &&
+    !hasLocationFilter()
 }
 
 function shouldRenderDataMarkers() {
-  return Boolean(hasActiveLocationFilter() || selectedView.value)
+  if (hasActiveLocationFilter()) return true
+  // Requirement: for population View By, no location filter => district markers only.
+  if (['population_density', 'bpl_status', 'divyang_presence', 'employment_status'].includes(selectedView.value)) return false
+  return Boolean(selectedView.value)
 }
 
 function clearClusterMarkers() {
@@ -1864,18 +1910,8 @@ function renderMarkerLayersForCurrentState() {
     return
   }
 
-  // Population density at all-location scope should keep district population markers only.
-  if (selectedView.value === 'population_density' && !hasActiveLocationFilter()) {
-    console.log('Skipping clearDistrictCentroids for population_density view')
-    hidePointLayer()
-    clearClusterMarkers()
-    refreshDistrictCentroids()
-    return
-  }
-
-  if (selectedView.value !== 'population_density') {
-    clearDistrictCentroids()
-  }
+  // In all non-district-only states, ensure district centroids aren't visible.
+  clearDistrictCentroids()
   if (selectedView.value) {
     // "View By" mode uses categorized household markers.
     clearClusterMarkers()
@@ -2469,13 +2505,6 @@ watch(selectedVillage, () => {
 
 watch(selectedView, () => {
   console.log('View changed:', selectedView.value)
-
-  if (selectedView.value === 'population_density') {
-    console.log('Skip clearing district markers for population density')
-    // Instead refresh with population data
-    refreshDistrictCentroids()
-    return
-  }
 
   renderMarkerLayersForCurrentState()
 })
