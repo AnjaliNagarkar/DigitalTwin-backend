@@ -154,6 +154,11 @@ export function getDistrictPopulation(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/map/district-population?${qs}` : '/map/district-population', TIMEOUT_DATA)
 }
+
+export function getDistrictBpl(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/district-bpl?${qs}` : '/map/district-bpl', TIMEOUT_DATA)
+}
 /**
  * Fetch farm advisory for a household's identified problems.
  * @param {string[]} problems  - array of problem keys e.g. ['noIrrigation','singleSeason']

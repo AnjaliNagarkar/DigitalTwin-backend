@@ -506,7 +506,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
+import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
@@ -725,13 +725,12 @@ function getWorkingOccupations(house) {
 }
 
 function getBplStatus(house) {
-  const bpl = normalizeText(house?.FAMILY_BELONG_BPL_CATEGORY || house?.familyBelongBplCategory)
-  if (bpl.includes('non-bpl') || bpl === 'no' || bpl === 'apl' || bpl.includes('above poverty')) return 'no'
-  if (bpl.includes('bpl') || bpl === 'yes') return 'yes'
+  const bpl = (house?.FAMILY_BELONG_BPL_CATEGORY || '')
+    .toString()
+    .trim()
+    .toLowerCase()
 
-  const ration = normalizeText(house?.rationCard || house?.ration_card_type || house?.RATION_CARD_TYPE)
-  if (ration.includes('bpl') || ration.includes('antyodaya') || ration.includes('aay')) return 'yes'
-  return 'no'
+  return bpl === 'yes' ? 'yes' : 'no'
 }
 
 function hasDivyangPresence(house) {
@@ -772,6 +771,7 @@ function isWorkingOccupation(value) {
 }
 
 function hasEmployment(house) {
+  console.log('BPL CHECK:', house.FAMILY_BELONG_BPL_CATEGORY)
   if (getWorkingMembers(house) > 0) return true
 
   const occupations = getOccupationValues(house)
@@ -1133,6 +1133,8 @@ function clearDistrictCentroids() {
 
 function renderDistrictCentroids(centroidRows) {
   console.log('FINAL RENDER: renderDistrictCentroids', centroidRows)
+  console.log('=== RENDER DISTRICT MARKERS ===')
+  console.log(centroidRows)
   clearDistrictCentroids()
   districtCentroidMarkerLayer = L.layerGroup()
   console.log('District count:', Array.isArray(centroidRows) ? centroidRows.length : 0)
@@ -1209,6 +1211,75 @@ async function refreshDistrictCentroids() {
       console.log('CALLER: refreshDistrictCentroids(population_density)', populationRows)
       renderDistrictCentroids(populationRows)
       return
+    }
+
+    if (!hasActiveLocationFilter()) {
+      // District-level aggregated counts for selected "View By" categories.
+      // We keep marker style + position unchanged and only replace centroid `count`.
+      if (selectedView.value === 'bpl_status') {
+        const bplData = await getDistrictBpl()
+        const bplMap = {}
+        bplData.forEach(d => {
+          const id = d.DISTRICT_ID || d.district_id
+          bplMap[Number(id)] = d.bpl_count
+        })
+
+        const rows = normalizedRows.map(d => {
+          const id = d.DISTRICT_ID || d.district_id
+          return {
+            ...d,
+            count: bplMap[Number(id)] || 0
+          }
+        })
+
+        console.log('BPL MAP (API):', bplMap)
+        renderDistrictCentroids(rows)
+        return
+      }
+
+      if (selectedView.value === 'divyang_presence') {
+        const allHouses = await fetchAllHouses()
+        const divyangCountByDistrict = {}
+        allHouses.forEach((house) => {
+          const districtId = house?.district_id ?? house?.DISTRICT_ID
+          const key = Number(districtId)
+          if (!Number.isFinite(key)) return
+          if (hasDivyangPresence(house)) {
+            divyangCountByDistrict[key] = (divyangCountByDistrict[key] || 0) + 1
+          }
+        })
+
+        const rows = normalizedRows.map((row) => {
+          const districtId = row?.district_id ?? row?.DISTRICT_ID
+          const key = Number(districtId)
+          return { ...row, count: divyangCountByDistrict[key] || 0 }
+        })
+
+        renderDistrictCentroids(rows)
+        return
+      }
+
+      if (selectedView.value === 'employment_status') {
+        const allHouses = await fetchAllHouses()
+        const employmentCountByDistrict = {}
+        allHouses.forEach((house) => {
+          const districtId = house?.district_id ?? house?.DISTRICT_ID
+          const key = Number(districtId)
+          if (!Number.isFinite(key)) return
+          if (hasEmployment(house)) {
+            employmentCountByDistrict[key] = (employmentCountByDistrict[key] || 0) + 1
+          }
+        })
+
+        const rows = normalizedRows.map((row) => {
+          const districtId = row?.district_id ?? row?.DISTRICT_ID
+          const key = Number(districtId)
+          return { ...row, count: employmentCountByDistrict[key] || 0 }
+        })
+
+        renderDistrictCentroids(rows)
+        return
+      }
     }
 
     console.log('CALLER: refreshDistrictCentroids(default)', normalizedRows)
@@ -1894,11 +1965,43 @@ function clearClusterMarkers() {
 
 function renderMarkerLayersForCurrentState() {
   if (!map) return
-  if (isDistrictPopulationView()) {
-    console.log('Skipping render/clear for district population view')
+
+  console.log('View:', selectedView.value)
+  console.log('Has Filter:', hasActiveLocationFilter())
+  console.log('Mode:', hasActiveLocationFilter() ? 'HOUSEHOLD' : 'DISTRICT')
+  console.log('HOUSES AT RENDER TIME:', houses.value.length)
+
+  if (selectedView.value === 'population_density' && !hasActiveLocationFilter()) {
+    console.log('Population district mode only')
+
     hidePointLayer()
     clearClusterMarkers()
     refreshDistrictCentroids()
+
+    return
+  }
+
+  if (!hasActiveLocationFilter() && selectedView.value === 'bpl_status') {
+    console.log('BPL DISTRICT MODE ACTIVE')
+
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+
+    return
+  }
+
+  if (!hasActiveLocationFilter() && (
+    selectedView.value === 'bpl_status' ||
+    selectedView.value === 'divyang_presence' ||
+    selectedView.value === 'employment_status'
+  )) {
+    console.log('District aggregation mode for:', selectedView.value)
+
+    hidePointLayer()
+    clearClusterMarkers()
+    refreshDistrictCentroids()
+
     return
   }
 
