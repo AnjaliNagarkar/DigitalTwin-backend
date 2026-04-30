@@ -105,6 +105,7 @@ func main() {
 	r.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
 	r.GET("/houses/summary", houseHandler.GetHousesSummary)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
+	r.GET("/map/village-households", houseHandler.GetVillageHouseholds)
 	r.GET("/districts", locationHandler.GetDistricts)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
 	r.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)

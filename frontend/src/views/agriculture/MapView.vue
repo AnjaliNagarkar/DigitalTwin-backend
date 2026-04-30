@@ -136,7 +136,7 @@
     </header>
 
     <section class="map-shell">
-      <div v-if="!loading && !houses.length" class="empty-state">
+      <div v-if="showNoData" class="empty-state">
         No live household data returned from the database API.
       </div>
 
@@ -506,12 +506,14 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
+import { getDistrictBpl, getDistrictCentroids, getDistrictPopulation, getDistrictSurveyCounts, getHouses, getLocationOptions, getVillageHouseholds } from '../../api/index.js'
 import { getDistrictDominantCrops, getDistrictIrrigationCoverage, getDistrictLandHoldingCoverage, getDivyangDistrictCounts, getEmploymentDistrictCounts, getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
 const houses        = ref([])
+const households    = ref([])
+const showNoData    = ref(false)
 const familyMembers = ref([])
 const populationStatsByFamily = ref(new Map())
 const populationRowsBySignature = ref(new Map())
@@ -530,6 +532,7 @@ const isFullscreen = ref(false)
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
+const allDistricts = ref([])
 const selectedDistrict = ref('')
 const selectedTaluka = ref('')
 const selectedVillage = ref('')
@@ -556,16 +559,20 @@ function closeDropdowns() {
 // Selection handlers — the existing watchers handle cascade reset + API refetch
 function selectDistrict(id) {
   selectedDistrict.value = id   // watcher fires: resets taluka/village + reloads options
+  isVillageMode = false
   closeDropdowns()
 }
 
 function selectTaluka(id) {
   selectedTaluka.value = id     // watcher fires: resets village + reloads options
+  isVillageMode = false
   closeDropdowns()
 }
 
 function selectVillage(id) {
   selectedVillage.value = id
+  isVillageMode = Boolean(id)
+  if (!id) showNoData.value = false
   closeDropdowns()
 }
 
@@ -1124,6 +1131,8 @@ const MAHARASHTRA_INITIAL_ZOOM = 7
 let map = null
 const markerRefs    = []   // { marker, house }
 let clusterGroup    = null // L.layerGroup for village circles
+let householdLayer  = null // L.layerGroup for village household markers (no clustering)
+let isVillageMode   = false
 let highlightCircle = null // currently highlighted village circle
 let retryTimer      = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
@@ -1135,6 +1144,13 @@ function clearDistrictCentroids() {
     map.removeLayer(districtCentroidMarkerLayer)
   }
   districtCentroidMarkerLayer = null
+}
+
+function clearHouseholdMarkers() {
+  if (map && householdLayer) {
+    map.removeLayer(householdLayer)
+  }
+  householdLayer = null
 }
 
 function renderDistrictCentroids(centroidRows) {
@@ -1299,6 +1315,7 @@ function renderDistrictCentroids(centroidRows) {
 
 async function refreshDistrictCentroids() {
   if (!map) return
+  if (isVillageMode) return
 
   try {
     console.log('--- INSIDE refreshDistrictCentroids ---')
@@ -1560,6 +1577,15 @@ function clearMarkers() {
     if (map && map.hasLayer(marker)) map.removeLayer(marker)
   })
   markerRefs.length = 0
+
+  if (map && clusterGroup && map.hasLayer(clusterGroup)) {
+    map.removeLayer(clusterGroup)
+  }
+
+  if (map && householdLayer && map.hasLayer(householdLayer)) {
+    map.removeLayer(householdLayer)
+  }
+  householdLayer = null
 }
 
 async function loadLocationDropdowns() {
@@ -1568,11 +1594,21 @@ async function loadLocationDropdowns() {
       district_id: selectedDistrict.value,
       taluka_id: selectedTaluka.value,
     })
-    districtOptions.value = res.districts || []
+
+    const districts = Array.isArray(res?.districts) ? res.districts : []
+    if (!allDistricts.value.length && districts.length) {
+      allDistricts.value = districts
+    }
+
+    // Keep district list cached after first load so dropdown opens instantly.
+    districtOptions.value = allDistricts.value.length ? [...allDistricts.value] : districts
     talukaOptions.value = res.talukas || []
     villageOptions.value = res.villages || []
   } catch (e) {
     console.warn('Location options unavailable:', e.message)
+    districtOptions.value = allDistricts.value.length ? [...allDistricts.value] : []
+    talukaOptions.value = []
+    villageOptions.value = []
   }
 }
 
@@ -1626,7 +1662,53 @@ async function fetchAllHouses() {
   return all
 }
 
-function applyFilters(autoZoomToResults = true) {
+async function applyFilters(autoZoomToResults = true) {
+  // 🚀 CASE 1: VILLAGE SELECTED (FAST PATH)
+  if (selectedVillage.value) {
+    console.log('🚀 Village fast path:', selectedVillage.value)
+    isVillageMode = true
+    loading.value = true
+    showNoData.value = false
+    
+    // Clear any previous layers
+    clearHouseholdMarkers()
+    clearDistrictCentroids()
+    if (clusterGroup) {
+      map.removeLayer(clusterGroup)
+      clusterGroup.clearLayers()
+    }
+
+    try {
+      const res = await getVillageHouseholds({ village_id: selectedVillage.value })
+      console.log('Village households:', Array.isArray(res) ? res.length : 0)
+      clearRetryTimer()
+
+      households.value = Array.isArray(res) ? res : []
+      showNoData.value = households.value.length === 0
+
+      if (showNoData.value) {
+        console.warn('No households found')
+        clearMarkers()
+        loading.value = false
+        return
+      }
+
+      // Store data for view-by re-rendering
+      // Render with current view type
+      renderVillageHouseholds(households.value, selectedView.value)
+    } catch (err) {
+      console.error('Failed to load village households:', err)
+      households.value = []
+      showNoData.value = true
+      clearMarkers()
+    }
+
+    loading.value = false
+    
+    return // ❗ STOP here (do NOT call other APIs)
+  }
+
+  // 🚀 CASE 2: DISTRICT POPULATION VIEW (existing behavior)
   if (isDistrictPopulationView()) {
     console.log('Skipping render/clear for district population view')
     hidePointLayer()
@@ -1634,6 +1716,8 @@ function applyFilters(autoZoomToResults = true) {
     refreshDistrictCentroids()
     return
   }
+
+  // 🚀 CASE 3: NORMAL FLOW (existing behavior)
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
   houses.value = []
@@ -1660,6 +1744,7 @@ function applyFilters(autoZoomToResults = true) {
 async function resetFilters() {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
+  isVillageMode = false
   selectedDistrict.value = ''
   selectedTaluka.value = ''
   selectedVillage.value = ''
@@ -1667,8 +1752,11 @@ async function resetFilters() {
   await loadLocationDropdowns()
   // Replot without auto-zoom — fitToMaharashtra() gives the full-state view
   houses.value = []
+  households.value = []
+  showNoData.value = false
   selectedHouse.value = null
   clearMarkers()
+  clearHouseholdMarkers()
   if (map) {
     loading.value = true
     loadLiveHouseData(0, requestToken)
@@ -2074,6 +2162,7 @@ function clearClusterSelection() {
 }
 
 function drawClusters(clusters) {
+  if (isVillageMode) return
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearClusterSelection()
   if (!map || !clusters.length) return
@@ -2142,6 +2231,7 @@ function drawClusters(clusters) {
 }
 
 function showPointLayer() {
+  if (isVillageMode) return
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearClusterSelection()
   // Markers are already on the map from plotMarkers; just need to show them
@@ -2190,6 +2280,7 @@ function clearClusterMarkers() {
 
 function renderMarkerLayersForCurrentState() {
   if (!map) return
+  if (isVillageMode) return
 
   console.log('--- RENDER START ---')
   console.log('SELECTED VIEW:', selectedView.value)
@@ -2707,6 +2798,120 @@ function plotMarkers(data) {
   }
 }
 
+// 🚀 Fast path for village household rendering (no clustering, with view-by support)
+function renderVillageHouseholds(rows, viewType = null) {
+  clearMarkers()
+  isVillageMode = true
+  
+  if (!Array.isArray(rows) || rows.length === 0) {
+    console.log('No households found for village')
+    return
+  }
+
+  console.log("Village households:", rows.length, "View:", viewType)
+  
+  // Create new household layer
+  householdLayer = L.layerGroup().addTo(map)
+  if (clusterGroup) {
+    map.removeLayer(clusterGroup)
+    clusterGroup.clearLayers()
+  }
+  
+  const validPoints = []
+  
+  rows.forEach(row => {
+    const lat = Number(row.lat)
+    const lng = Number(row.lng)
+    
+    if (isNaN(lat) || isNaN(lng)) return
+
+    // Determine marker color based on view type
+    let color = '#2563eb'
+    let fillColor = '#3b82f6'
+    
+    // Apply view-based coloring
+    if (viewType === 'population_density') {
+      const members = Number(row.members) || 0
+      if (members <= 2) {
+        fillColor = '#bbf7d0'  // light green
+        color = '#6ee7b7'
+      } else if (members <= 5) {
+        fillColor = '#4ade80'  // medium green
+        color = '#22c55e'
+      } else {
+        fillColor = '#15803d'  // dark green
+        color = '#16a34a'
+      }
+    } else if (viewType === 'bpl_status' && row.bpl_category) {
+      if (row.bpl_category.toLowerCase().includes('bpl')) {
+        fillColor = '#ef4444'
+        color = '#dc2626'
+      } else {
+        fillColor = '#34d399'
+        color = '#10b981'
+      }
+    } else if (viewType === 'irrigation_type' && row.waterSource) {
+      if (row.waterSource === 'Rain Fed' || row.waterSource === 'None') {
+        fillColor = '#ca8a04'
+        color = '#a16207'
+      } else {
+        fillColor = '#10b981'
+        color = '#059669'
+      }
+    } else if (viewType === 'divyang_presence' && row.divyangMembers) {
+      if (row.divyangMembers > 0) {
+        fillColor = '#8b5cf6'
+        color = '#7c3aed'
+      } else {
+        fillColor = '#86efac'
+        color = '#4ade80'
+      }
+    }
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: 5,
+      color: color,
+      fillColor: fillColor,
+      weight: 1.5,
+      opacity: 1,
+      fillOpacity: 0.8,
+    }).addTo(householdLayer)
+
+    const headName = row.head_name || row.headName || 'N/A'
+    const houseId = row.family_id || row.id || 'N/A'
+    const tooltipContent = `
+      <div class="custom-tooltip">
+        <div><b>House ID:</b> ${houseId}</div>
+        <div><b>Head:</b> ${headName}</div>
+        ${viewType === 'population_density' && row.members ? `<div><b>Members:</b> ${row.members}</div>` : ''}
+      </div>
+    `
+
+    marker.bindTooltip(tooltipContent, {
+      sticky: true,
+      direction: 'top',
+      opacity: 1,
+      className: 'map-tooltip',
+      offset: L.point(0, -6)
+    })
+
+    markerRefs.push({ marker })
+    validPoints.push([lat, lng])
+  })
+
+  console.log(`Rendered ${validPoints.length} household markers`)
+
+  // Auto-zoom to village bounds on every village render.
+  if (validPoints.length > 0 && map) {
+    const bounds = L.latLngBounds(validPoints)
+    map.fitBounds(bounds, {
+      padding: [40, 40],
+      maxZoom: 14,
+    })
+    setTimeout(() => ensureMapReady(), 100)
+  }
+}
+
 function clearRetryTimer() {
   if (retryTimer) {
     clearTimeout(retryTimer)
@@ -2811,8 +3016,10 @@ onMounted(async () => {
   }
 
   loading.value = true
-  await loadFamilyMembers()
-  await loadLocationDropdowns()
+  await Promise.allSettled([
+    loadLocationDropdowns(),
+    loadFamilyMembers(),
+  ])
   applyFilters(false)
 })
 
@@ -2829,22 +3036,45 @@ onUnmounted(() => {
 watch(selectedDistrict, async () => {
   selectedTaluka.value = ''
   selectedVillage.value = ''
+  isVillageMode = false
   await loadLocationDropdowns()
   renderMarkerLayersForCurrentState()
 })
 
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
+  isVillageMode = false
   await loadLocationDropdowns()
   renderMarkerLayersForCurrentState()
 })
 
 watch(selectedVillage, () => {
+  if (selectedVillage.value) {
+    isVillageMode = true
+    clearMarkers()
+    clearDistrictCentroids()
+    showNoData.value = false
+    return
+  }
+
+  isVillageMode = false
+  showNoData.value = false
   renderMarkerLayersForCurrentState()
 })
 
 watch(selectedView, () => {
   console.log('View changed:', selectedView.value)
+
+  // If village is selected and we have cached household data, re-render with new view
+  if (selectedVillage.value && households.value.length > 0) {
+    console.log('Re-rendering village households with new view:', selectedView.value)
+    renderVillageHouseholds(households.value, selectedView.value)
+    return
+  }
+
+  if (selectedVillage.value) {
+    return
+  }
 
   renderMarkerLayersForCurrentState()
 })
@@ -2884,6 +3114,7 @@ watch(analyticsPanelOpen, async () => {
 .control-label { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); white-space: nowrap; font-weight: 600; }
 .view-by-container {
   position: relative;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2898,6 +3129,7 @@ watch(analyticsPanelOpen, async () => {
 }
 .custom-dropdown {
   position: relative;
+  z-index: 9999;
   min-width: 176px;
 }
 .dropdown-btn {

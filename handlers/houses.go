@@ -80,9 +80,10 @@ type HouseDetail struct {
 }
 
 type HouseMapPoint struct {
-	ID  int     `json:"id"`
-	Lat float64 `json:"lat"`
-	Lng float64 `json:"lng"`
+	ID       int     `json:"id"`
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+	HeadName string  `json:"head_name"`
 }
 
 type MemberRecord struct {
@@ -683,6 +684,65 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		HouseRecord: house,
 		Members:     members,
 	})
+}
+
+// GetVillageHouseholds — GET /map/village-households
+// Returns lightweight household coordinates for a selected village.
+// Fast path for instant marker rendering without clustering.
+// Query params: village_id (required)
+func (h *HouseHandler) GetVillageHouseholds(c *gin.Context) {
+	villageID := strings.TrimSpace(c.Query("village_id"))
+	if villageID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "village_id is required"})
+		return
+	}
+
+	var villageArg any = villageID
+	if parsedVillageID, err := strconv.ParseInt(villageID, 10, 64); err == nil {
+		villageArg = parsedVillageID
+	}
+
+	query := `
+		SELECT
+			FAMILY_ID,
+			CAST(LATITUDE AS DECIMAL(10,6)) AS lat,
+			CAST(LONGITUDE AS DECIMAL(10,6)) AS lng,
+			COALESCE(TRIM(CONCAT(
+				COALESCE(FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(LAST_NAME_HOUSEHOLD_HEAD, '')
+			)), '') AS head_name
+		FROM FAMILY
+		WHERE
+			VILLAGE_ID = ?
+			AND LATITUDE IS NOT NULL
+			AND LATITUDE != ''
+			AND LONGITUDE IS NOT NULL
+			AND LONGITUDE != ''
+		LIMIT 2000
+	`
+
+	rows, err := h.DB.Query(query, villageArg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch village households", "detail": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	points := make([]HouseMapPoint, 0, 2000)
+	for rows.Next() {
+		var point HouseMapPoint
+		if err := rows.Scan(&point.ID, &point.Lat, &point.Lng, &point.HeadName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan marker", "detail": err.Error()})
+			return
+		}
+		points = append(points, point)
+	}
+
+	if points == nil {
+		points = []HouseMapPoint{}
+	}
+
+	c.JSON(http.StatusOK, points)
 }
 
 // GetHousesSummary — GET /houses/summary
