@@ -120,6 +120,11 @@
             <span class="legend-item"><span class="gender-dot female"></span> Female</span>
             <span class="legend-item"><span class="gender-dot other"></span> Other</span>
           </div>
+          <div class="income-legend" style="display:flex;gap:1rem;align-items:center;font-size:0.75rem;color:var(--text-dim);border-left:1px solid var(--border);padding-left:1rem">
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#20c997"></span> High</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ffc107"></span> Mid</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ff4d4f"></span> Low</span>
+          </div>
         </div>
         <!-- Active category pill -->
         <span v-if="category" class="active-cat-pill" :style="{ background: activeCategoryConfig.color + '22', color: activeCategoryConfig.color, borderColor: activeCategoryConfig.color + '55' }">
@@ -279,6 +284,7 @@ const CATEGORY_CONFIG = {
       { key: 'fullName',          label: 'Full Name',         minWidth: true, tdClass: 'td-name' },
       { key: 'disabilityType',    label: 'Disability Type' },
       { key: 'disabilityPercent', label: 'Disability %',      tdClass: 'td-num' },
+      { key: 'annualIncome',      label: 'Annual Income',     tdClass: 'td-num' },
       { key: 'pensionStatus',     label: 'Pension Status' },
       { key: 'govtPensionAmount', label: 'Govt. Pension Amt', tdClass: 'td-num' },
       { key: 'caretakerName',     label: 'Caretaker' },
@@ -302,6 +308,7 @@ const CATEGORY_CONFIG = {
     columns: [
       { key: 'fullName',       label: 'Full Name',       minWidth: true, tdClass: 'td-name' },
       { key: 'age',            label: 'Age',              tdClass: 'td-num' }, // Re-add age column
+      { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
       { key: 'maritalStatus',  label: 'Marital Status' },
     ],
@@ -503,20 +510,15 @@ function parseIncome(v) {
 }
 
 // classifyIncome: maps an income string to 'low' | 'medium' | 'high' | ''
-function classifyIncome(v) {
-  const raw = String(v ?? '').toLowerCase().trim()
-  if (!raw) return ''
-
-  // Handle text labels stored in the DB (e.g. "Less than 21,000", "21001 to 50000")
-  if (raw.includes('less than') && raw.includes('21')) return 'low'
-  if ((raw.includes('21') || raw.includes('21001')) && raw.includes('50')) return 'medium'
-  if (raw.includes('50,001') || raw.includes('50001') || raw.includes('above') || raw.includes('50,000+')) return 'high'
-
-  const n = parseIncome(v)
-  if (!Number.isFinite(n) || n === 0) return ''
-  if (n <= 21000)  return 'low'
-  if (n <= 50000)  return 'medium'
-  return 'high'
+function classifyIncome(inc) {
+  const v = String(inc || '').toLowerCase();
+  if (!v) return '';
+  // Strictly define what is High
+  if (v.includes('100001') || v.includes('250000') || v.includes('above') || v.includes('high')) return 'High';
+  // Strictly define what is Mid
+  if (v.includes('50001') || v.includes('100000') || v.includes('to 50000') || v.includes('mid')) return 'Mid';
+  // Everything else is Low
+  return 'Low';
 }
 
 function classifyDisabilitySeverity(v) {
@@ -899,12 +901,15 @@ function renderCell(r, col) {
       return v && v > 0 ? String(v) : '—'
 
     case 'annualIncome': {
-      if (!v || v === '0') return `<span class="text-dim-sm">—</span>`
-      const rangeMap = { low: 'badge-rainfed', medium: 'badge-orange', high: 'badge-green' }
-      const rangeCls = rangeMap[classifyIncome(v)] || ''
-      const rangeLabel = { low: 'Low', medium: 'Mid', high: 'High' }[classifyIncome(v)] || ''
-      const rangePill = rangeCls ? `<span class="badge ${rangeCls}" style="margin-left:0.35rem;font-size:0.62rem">${rangeLabel}</span>` : ''
-      return `<span>${esc(v)}</span>${rangePill}`
+      const inc = r.annualIncome;
+      if (!inc) return '<span class="text-muted">Not Recorded</span>';
+      
+      const b = classifyIncome(inc);
+      let color = '#ff4d4f'; // Default to Low
+      if (b === 'High') color = '#20c997';
+      else if (b === 'Mid') color = '#ffc107';
+      
+      return `<span style="color: ${color}; font-weight: 500;">${esc(inc)}</span>`;
     }
     
     case 'maritalStatus': {
