@@ -92,12 +92,16 @@ func (h *DashboardSummaryHandler) ensureSummaryIndexes() {
 
 func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	started := time.Now()
-	districtID := normalizeFilterValue(c.Query("district_id"))
-	talukaID := normalizeFilterValue(c.Query("taluka_id"))
-	villageID := normalizeFilterValue(c.Query("village_id"))
-	log.Printf("[dashboard/summary] request district=%q taluka=%q village=%q", districtID, talukaID, villageID)
+	districtIDs := parseFilterValues(c.Query("district_ids"), c.Query("district_id"))
+	talukaIDs := parseFilterValues(c.Query("taluka_ids"), c.Query("taluka_id"))
+	villageIDs := parseFilterValues(c.Query("village_ids"), c.Query("village_id"))
+	log.Printf("[dashboard/summary] request districts=%v talukas=%v villages=%v", districtIDs, talukaIDs, villageIDs)
 
-	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s", nonEmpty(districtID, "all"), nonEmpty(talukaID, "all"), nonEmpty(villageID, "all"))
+	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s",
+		nonEmpty(strings.Join(districtIDs, ","), "all"),
+		nonEmpty(strings.Join(talukaIDs, ","), "all"),
+		nonEmpty(strings.Join(villageIDs, ","), "all"),
+	)
 
 	h.cacheMux.RLock()
 	if item, ok := h.cache[cacheKey]; ok && time.Now().Before(item.ExpiresAt) {
@@ -121,7 +125,7 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	whereF, args := buildOptionalLocationFilter("f", districtID, talukaID, villageID)
+	whereF, args := buildOptionalLocationFilter("f", districtIDs, talukaIDs, villageIDs)
 
 	result := defaultDashboardSummaryResponse()
 	resultMux := sync.Mutex{}
@@ -208,26 +212,65 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func buildOptionalLocationFilter(alias, districtID, talukaID, villageID string) (string, []interface{}) {
+func buildOptionalLocationFilter(alias string, districtIDs, talukaIDs, villageIDs []string) (string, []interface{}) {
 	where := "1=1"
 	args := []interface{}{}
 
-	if district := normalizeFilterValue(districtID); district != "" {
-		where += fmt.Sprintf(" AND %s.DISTRICT_ID = ?", alias)
-		args = append(args, district)
+	if len(districtIDs) > 0 {
+		where += fmt.Sprintf(" AND CAST(%s.DISTRICT_ID AS CHAR) IN (%s)", alias, sqlPlaceholders(len(districtIDs)))
+		for _, id := range districtIDs {
+			args = append(args, id)
+		}
 	}
 
-	if taluka := normalizeFilterValue(talukaID); taluka != "" {
-		where += fmt.Sprintf(" AND %s.TALUKA_ID = ?", alias)
-		args = append(args, taluka)
+	if len(talukaIDs) > 0 {
+		where += fmt.Sprintf(" AND CAST(%s.TALUKA_ID AS CHAR) IN (%s)", alias, sqlPlaceholders(len(talukaIDs)))
+		for _, id := range talukaIDs {
+			args = append(args, id)
+		}
 	}
 
-	if village := normalizeFilterValue(villageID); village != "" {
-		where += fmt.Sprintf(" AND %s.VILLAGE_ID = ?", alias)
-		args = append(args, village)
+	if len(villageIDs) > 0 {
+		where += fmt.Sprintf(" AND CAST(%s.VILLAGE_ID AS CHAR) IN (%s)", alias, sqlPlaceholders(len(villageIDs)))
+		for _, id := range villageIDs {
+			args = append(args, id)
+		}
 	}
 
 	return where, args
+}
+
+func parseFilterValues(csv string, fallbackSingle string) []string {
+	source := strings.TrimSpace(csv)
+	if source == "" {
+		source = strings.TrimSpace(fallbackSingle)
+	}
+	if source == "" {
+		return nil
+	}
+
+	parts := strings.Split(source, ",")
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		val := normalizeFilterValue(part)
+		if val == "" {
+			continue
+		}
+		if _, exists := seen[val]; exists {
+			continue
+		}
+		seen[val] = struct{}{}
+		values = append(values, val)
+	}
+	return values
+}
+
+func sqlPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimRight(strings.Repeat("?,", n), ",")
 }
 
 func isValidFilterValue(val string) bool {

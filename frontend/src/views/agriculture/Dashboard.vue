@@ -10,7 +10,7 @@
     <section class="card dashboard-filter">
       <div class="dashboard-filter-head">Location Filter</div>
       <div class="dashboard-filter-grid">
-        <select v-model="selectedDistrict" class="dashboard-filter-select" @change="onDistrictChange">
+        <select v-model="selectedDistricts" class="dashboard-filter-select" multiple @change="onDistrictChange">
           <option value="">Select District</option>
           <option v-for="district in districtOptions" :key="district.id" :value="String(district.id)">
             {{ district.name }}
@@ -18,9 +18,10 @@
         </select>
 
         <select
-          v-model="selectedTaluka"
+          v-model="selectedTalukas"
           class="dashboard-filter-select"
-          :disabled="!selectedDistrict"
+          multiple
+          :disabled="!selectedDistricts.length"
           @change="onTalukaChange"
         >
           <option value="">Select Taluka</option>
@@ -30,9 +31,10 @@
         </select>
 
         <select
-          v-model="selectedVillage"
+          v-model="selectedVillages"
           class="dashboard-filter-select"
-          :disabled="!selectedTaluka"
+          multiple
+          :disabled="!selectedTalukas.length"
         >
           <option value="">Select Village</option>
           <option v-for="village in villageOptions" :key="village.id" :value="String(village.id)">
@@ -45,6 +47,7 @@
           <button type="button" class="dashboard-reset-btn" @click="resetLocationFilters">Reset</button>
         </div>
       </div>
+      <div v-if="selectedFilterLabel" class="dashboard-filter-summary">Showing data for: {{ selectedFilterLabel }}</div>
     </section>
 
     <div v-if="loading" class="loading-state">
@@ -355,9 +358,9 @@ const employment = ref({
   },
 })
 const bplDistribution = ref({ bpl: 0, non_bpl: 0, total_households: 0 })
-const selectedDistrict = ref('')
-const selectedTaluka = ref('')
-const selectedVillage = ref('')
+const selectedDistricts = ref([])
+const selectedTalukas = ref([])
+const selectedVillages = ref([])
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
@@ -572,18 +575,30 @@ function isValidFilterValue(value) {
   return normalized !== '' && normalized !== '0' && normalized !== 'null' && normalized !== 'undefined'
 }
 
+function sanitizeSelections(values = []) {
+  return (Array.isArray(values) ? values : [])
+    .map(v => String(v || '').trim())
+    .filter(v => isValidFilterValue(v))
+}
+
+function selectedNames(options, ids) {
+  if (!ids.length) return []
+  const idSet = new Set(ids.map(String))
+  return options
+    .filter(option => idSet.has(String(option.id)))
+    .map(option => option.name)
+}
+
 function buildLocationParams() {
   const params = {}
 
-  if (isValidFilterValue(selectedDistrict.value)) {
-    params.district_id = String(selectedDistrict.value).trim()
-  }
-  if (isValidFilterValue(selectedTaluka.value)) {
-    params.taluka_id = String(selectedTaluka.value).trim()
-  }
-  if (isValidFilterValue(selectedVillage.value)) {
-    params.village_id = String(selectedVillage.value).trim()
-  }
+  const districtIds = sanitizeSelections(selectedDistricts.value)
+  const talukaIds = sanitizeSelections(selectedTalukas.value)
+  const villageIds = sanitizeSelections(selectedVillages.value)
+
+  if (districtIds.length) params.district_ids = districtIds.join(',')
+  if (talukaIds.length) params.taluka_ids = talukaIds.join(',')
+  if (villageIds.length) params.village_ids = villageIds.join(',')
 
   return params
 }
@@ -591,12 +606,11 @@ function buildLocationParams() {
 async function loadLocationOptions() {
   try {
     const optionParams = {}
-    if (isValidFilterValue(selectedDistrict.value)) {
-      optionParams.district_id = String(selectedDistrict.value).trim()
-    }
-    if (isValidFilterValue(selectedTaluka.value)) {
-      optionParams.taluka_id = String(selectedTaluka.value).trim()
-    }
+    const districtIds = sanitizeSelections(selectedDistricts.value)
+    const talukaIds = sanitizeSelections(selectedTalukas.value)
+
+    if (districtIds.length) optionParams.district_ids = districtIds.join(',')
+    if (talukaIds.length) optionParams.taluka_ids = talukaIds.join(',')
 
     const options = await getLocationOptions(optionParams)
 
@@ -632,13 +646,13 @@ async function fetchDashboardData(params = {}) {
 }
 
 async function onDistrictChange() {
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
+  selectedTalukas.value = []
+  selectedVillages.value = []
   await loadLocationOptions()
 }
 
 async function onTalukaChange() {
-  selectedVillage.value = ''
+  selectedVillages.value = []
   await loadLocationOptions()
 }
 
@@ -647,13 +661,22 @@ async function applyLocationFilters() {
 }
 
 async function resetLocationFilters() {
-  selectedDistrict.value = ''
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
+  selectedDistricts.value = []
+  selectedTalukas.value = []
+  selectedVillages.value = []
   const dashboardPromise = fetchDashboardData()
   const optionsPromise = loadLocationOptions()
   await Promise.allSettled([dashboardPromise, optionsPromise])
 }
+
+const selectedFilterLabel = computed(() => {
+  const names = [
+    ...selectedNames(districtOptions.value, sanitizeSelections(selectedDistricts.value)),
+    ...selectedNames(talukaOptions.value, sanitizeSelections(selectedTalukas.value)),
+    ...selectedNames(villageOptions.value, sanitizeSelections(selectedVillages.value)),
+  ]
+  return names.length ? names.join(', ') : ''
+})
 
 onMounted(async () => {
   const dashboardPromise = fetchDashboardData()

@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -60,8 +61,8 @@ func (h *LocationHandler) GetDistricts(c *gin.Context) {
 // - district_id: narrows taluka/village options
 // - taluka_id: narrows village options
 func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
-	districtID := c.Query("district_id")
-	talukaID := c.Query("taluka_id")
+	districtIDs := parseIDs(c.Query("district_ids"), c.Query("district_id"))
+	talukaIDs := parseIDs(c.Query("taluka_ids"), c.Query("taluka_id"))
 
 	districts := []LocationOption{}
 	talukas := []LocationOption{}
@@ -90,9 +91,11 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		WHERE tm.bEnabled = 1
 	`
 	tArgs := []interface{}{}
-	if districtID != "" {
-		tQuery += " AND CAST(tm.fklDistrictId AS CHAR) = ?"
-		tArgs = append(tArgs, districtID)
+	if len(districtIDs) > 0 {
+		tQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + placeholders(len(districtIDs)) + ")"
+		for _, id := range districtIDs {
+			tArgs = append(tArgs, id)
+		}
 	}
 	tQuery += " ORDER BY COALESCE(tm.vsDisplayName, tm.vsTalukaName)"
 
@@ -116,13 +119,17 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		WHERE vm.bEnabled = 1
 	`
 	vArgs := []interface{}{}
-	if districtID != "" {
-		vQuery += " AND CAST(tm.fklDistrictId AS CHAR) = ?"
-		vArgs = append(vArgs, districtID)
+	if len(districtIDs) > 0 {
+		vQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + placeholders(len(districtIDs)) + ")"
+		for _, id := range districtIDs {
+			vArgs = append(vArgs, id)
+		}
 	}
-	if talukaID != "" {
-		vQuery += " AND CAST(tm.pklTalukaId AS CHAR) = ?"
-		vArgs = append(vArgs, talukaID)
+	if len(talukaIDs) > 0 {
+		vQuery += " AND CAST(tm.pklTalukaId AS CHAR) IN (" + placeholders(len(talukaIDs)) + ")"
+		for _, id := range talukaIDs {
+			vArgs = append(vArgs, id)
+		}
 	}
 	vQuery += " ORDER BY COALESCE(vm.vsDisplayName, vm.vsVillageName)"
 
@@ -143,4 +150,36 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		"talukas":   talukas,
 		"villages":  villages,
 	})
+}
+
+func parseIDs(csv string, single string) []string {
+	src := strings.TrimSpace(csv)
+	if src == "" {
+		src = strings.TrimSpace(single)
+	}
+	if src == "" {
+		return nil
+	}
+	parts := strings.Split(src, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		id := strings.TrimSpace(part)
+		if id == "" || id == "0" || strings.EqualFold(id, "null") || strings.EqualFold(id, "undefined") {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimRight(strings.Repeat("?,", n), ",")
 }
