@@ -2963,6 +2963,10 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
       }
     }
   }
+
+  if (selectedHouse.value) {
+    loadAdvisoryForHouse(selectedHouse.value)
+  }
 }
 
 function spiderfyCluster(clusterOrPoints, centerCartesian) {
@@ -3591,7 +3595,6 @@ watch(houses, (newValue) => {
 
 watch(selectedHouse, (house) => {
   if (viewer) buildEntities(!!(house && spiderfyFamilyIds.has(house.familyId)))
-  if (house) loadAdvisoryForHouse(house)
 })
 watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
 
