@@ -204,7 +204,7 @@ const CATEGORIES = [
   { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
   { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
   { value: 'disabled', label: 'Divyang',          fullLabel: 'Divyang',         icon: '♿' },
-  { value: 'housewife',label: 'Housewives',       fullLabel: 'Housewives',      icon: '🏠' },
+  { value: 'housewife',label: 'Homemakers',       fullLabel: 'Homemakers',      icon: '🏠' },
   { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
 ]
 
@@ -249,6 +249,7 @@ const CATEGORY_CONFIG = {
       { key: 'landSize', label: 'Land Size' },
       { key: 'irrigationType', label: 'Irrigation' },
       { key: 'cropType', label: 'Crop' },
+      { key: 'gender', label: 'Gender' },
       { key: 'incomeRange', label: 'Income Range' },
       { key: 'maritalStatus', label: 'Marital Status' },
     ],
@@ -271,6 +272,7 @@ const CATEGORY_CONFIG = {
       { key: 'educationLevel', label: 'Level' },
       { key: 'scholarship', label: 'Scholarship' },
       { key: 'ageGroup', label: 'Age Group' },
+      { key: 'gender', label: 'Gender' },
     ],
   },
 
@@ -294,14 +296,15 @@ const CATEGORY_CONFIG = {
       { key: 'pensionStatus', label: 'Pension' },
       { key: 'disabilitySeverity', label: 'Disability %' },
       { key: 'divyangCertificate', label: 'Certificate' },
+      { key: 'gender', label: 'Gender' },
       { key: 'incomeRange', label: 'Income Range' },
       { key: 'maritalStatus', label: 'Marital Status' },
     ],
   },
 
   housewife: {
-    label: 'Housewife',
-    subtitle: 'Citizens with occupation recorded as housewife / homemaker',
+    label: 'Homemaker',
+    subtitle: 'Citizens with occupation recorded as homemaker',
     icon: '🏠',
     color: '#db2777',
     rowFilter: r => r.isHousewife,
@@ -315,6 +318,7 @@ const CATEGORY_CONFIG = {
     subFilters: [
       { key: 'ageGroup', label: 'Age Group' },
       { key: 'childrenGroup', label: 'Children' },
+      { key: 'gender', label: 'Gender' },
       { key: 'incomeRange', label: 'Income Range' },
       { key: 'maritalStatus', label: 'Marital Status' },
     ],
@@ -728,7 +732,7 @@ const dynamicSubFilters = computed(() => {
 
       const sortedValues = Array.from(unique).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
       const options = sortedValues.map((value) => ({
-        label: sf.key === 'occupationType' ? value : formatDynamicLabel(value),
+        label: sf.key === 'occupationType' ? (value === 'Housewife' ? 'Homemaker' : value) : formatDynamicLabel(value),
         value,
       }))
 
@@ -894,7 +898,8 @@ function renderCell(r, col) {
     case 'schoolName':
       return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">Not Recorded</span>`
 
-    case 'occupation':
+       case 'occupation':
+      if (String(v || '').trim() === 'Housewife') return esc('Homemaker')
       return esc(v || 'Not Working')
 
     case 'age':

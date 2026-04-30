@@ -186,16 +186,9 @@ func (h *HouseHandler) memberColExists(col string) bool {
 // and falls back to 0 when they are absent, so the main query never errors.
 func (h *HouseHandler) buildPopStatsSQL() string {
 	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
-	hasFamilyID := h.memberColExists("FAMILY_ID")
-
 	familyJoinExpr := "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
-	switch {
-	case hasExternalFamilyID && hasFamilyID:
-		familyJoinExpr = "CAST(COALESCE(fm.EXTERNAL_FAMILY_ID, fm.FAMILY_ID) AS CHAR)"
-	case hasFamilyID:
-		familyJoinExpr = "CAST(fm.FAMILY_ID AS CHAR)"
-	case hasExternalFamilyID:
-		familyJoinExpr = "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	if !hasExternalFamilyID {
+		familyJoinExpr = "''"
 	}
 
 	illiterateExpr := "0"
@@ -265,6 +258,16 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
 
+	// Build head name from household head columns (matches GetHouses)
+	headNameExpr := `COALESCE(TRIM(CONCAT(
+		COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+		COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
+		COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
+	)), '')`
+
+	// Build family member aggregation (matches GetHouses dual-join strategy)
+	popStatsSQL := h.buildPopStatsSQL()
+
 	return fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
@@ -285,15 +288,25 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			%s,
 			%s,
 			%s,
-			'',
+			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
+			%s,
+			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
+			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
+			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
+			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
+			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
+			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
+			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
 			%s,
 			%s
 		FROM FAMILY f
+		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
 		ORDER BY f.FAMILY_ID
-	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, bplExpr, incomeExpr)
+	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr, popStatsSQL, popStatsSQL)
 }
 
 func (h *HouseHandler) PreloadHouseCache() error {
@@ -317,7 +330,10 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
-			&detail.HeadName,
+			&detail.Occupation, &detail.HeadName,
+			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
+			&detail.WorkingMembers, &detail.IlliterateMembers, &detail.DivyangMembers,
+			&detail.UnemployedMembers,
 			&detail.BplCategory, &detail.AnnualIncome,
 		); err != nil {
 			return err
@@ -329,36 +345,25 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		return err
 	}
 
+	// Query individual members using dual-join strategy (EXTERNAL_FAMILY_ID preferred, fallback to FAMILY_ID)
 	memberFirstNameExpr := "COALESCE(fm.FIRST_NAME, '')"
 	memberLastNameExpr := "COALESCE(fm.LAST_NAME, '')"
-	memberGenderExpr := "COALESCE(fm.GENDER, '')"
 	if !h.memberColExists("FIRST_NAME") {
 		memberFirstNameExpr = "''"
 	}
 	if !h.memberColExists("LAST_NAME") {
 		memberLastNameExpr = "''"
 	}
-	if !h.memberColExists("GENDER") {
-		memberGenderExpr = "''"
-	}
-
-	workExpr := h.memberFirstNonEmptyExpr("NATURE_WAGE_WORK", "OCCUPATION")
-	attendedExpr := h.memberYesNoExpr("EVER_ATTENDED_SCHOOL")
-	disabilityExpr := h.memberFirstNonEmptyExpr("DIVYANG", "DISABILITY")
 
 	memberQuery := fmt.Sprintf(`
 		SELECT
 			CAST(fm.EXTERNAL_FAMILY_ID AS CHAR),
 			%s,
-			%s,
-			%s,
-			%s,
-			%s,
 			%s
 		FROM FAMILY_MEMBER fm
 		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
 		ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID
-	`, memberFirstNameExpr, memberLastNameExpr, memberGenderExpr, workExpr, attendedExpr, disabilityExpr)
+	`, memberFirstNameExpr, memberLastNameExpr)
 
 	memberRows, err := h.DB.Query(memberQuery)
 	if err != nil {
@@ -370,11 +375,7 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		var familyIDRaw string
 		var firstName string
 		var lastName string
-		var gender string
-		var work string
-		var attendedSchool string
-		var disability string
-		if err := memberRows.Scan(&familyIDRaw, &firstName, &lastName, &gender, &work, &attendedSchool, &disability); err != nil {
+		if err := memberRows.Scan(&familyIDRaw, &firstName, &lastName); err != nil {
 			continue
 		}
 
@@ -392,30 +393,6 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			FirstName: strings.TrimSpace(firstName),
 			LastName:  strings.TrimSpace(lastName),
 		})
-
-		detail.TotalMembers++
-		if strings.EqualFold(strings.TrimSpace(gender), "male") || strings.EqualFold(strings.TrimSpace(gender), "m") {
-			detail.MaleMembers++
-		} else if strings.EqualFold(strings.TrimSpace(gender), "female") || strings.EqualFold(strings.TrimSpace(gender), "f") {
-			detail.FemaleMembers++
-		}
-
-		workNorm := strings.ToLower(strings.TrimSpace(work))
-		if workNorm == "" || workNorm == "unemployed" || workNorm == "not working" || workNorm == "no work" {
-			detail.UnemployedMembers++
-		} else {
-			detail.WorkingMembers++
-			if detail.Occupation == "" {
-				detail.Occupation = strings.TrimSpace(work)
-			}
-		}
-
-		if strings.EqualFold(strings.TrimSpace(attendedSchool), "no") {
-			detail.IlliterateMembers++
-		}
-		if strings.EqualFold(strings.TrimSpace(disability), "yes") {
-			detail.DivyangMembers++
-		}
 	}
 	if err := memberRows.Err(); err != nil {
 		return err
