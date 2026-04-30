@@ -5,10 +5,6 @@
         <h1 class="page-title">Village Command Center</h1>
         <p class="page-subtitle">Unified population and agriculture intelligence</p>
       </div>
-      <div class="header-badge">
-        <span class="badge-dot"></span>
-        <span>Live API</span>
-      </div>
     </header>
 
     <section class="card dashboard-filter">
@@ -404,9 +400,8 @@ function applyDemographicsData(data) {
 }
 
 function formatIncome(value) {
-  const amount = Number(value || 0)
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(0)}K`
-  return `₹${amount}`
+  const amount = Math.round(Number(value || 0))
+  return `₹${amount.toLocaleString('en-IN')}`
 }
 
 function destroyAgeIncomeGenderChart() {
@@ -421,6 +416,7 @@ function syncAgeIncomeGenderChart() {
   if (!canvas) return
 
   const data = ageIncomeGenderSegments.value || []
+  const avgIncomeValues = data.map(item => Number(item.avg_income) || 0)
   const chartData = {
     datasets: [
       {
@@ -482,23 +478,19 @@ function syncAgeIncomeGenderChart() {
           label(context) {
             const raw = context.raw || {}
             const families = Number(raw.families || 0)
-            const avgIncome = Math.round(Number(raw.avg_income || 0))
-            return [
-              `Families: ${families.toLocaleString()}`,
-              `Average Family Income: ₹${avgIncome.toLocaleString()}`,
-            ]
+            return `Families: ${families.toLocaleString()}`
           },
         },
       },
       datalabels: {
-        display: false,
+        display: true,
         anchor: 'end',
-        align: 'end',
-        offset: 6,
+        align: 'top',
+        offset: 4,
         clamp: true,
         clip: false,
         color: '#374151',
-        formatter: value => Number(value || 0).toLocaleString(),
+        formatter: (_, context) => formatIncome(avgIncomeValues[context.dataIndex] || 0),
         font: {
           weight: '600',
           size: 11,

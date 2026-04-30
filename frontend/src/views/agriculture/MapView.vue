@@ -1139,7 +1139,7 @@ let renderTimeout   = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
 let activeHouseLoadToken = 0
 let activeRequestId = 0
-let renderMode = 'district' // 'district' | 'village'
+let renderMode = 'default' // 'default' | 'village'
 let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
 let modeDebugInterval = null
 
@@ -1323,7 +1323,7 @@ async function refreshDistrictCentroids() {
     console.log('BLOCKED: village mode active')
     return
   }
-  if (renderMode !== 'district') return
+  if (renderMode === 'village') return
   if (selectedVillage.value) return
 
   try {
@@ -1751,7 +1751,6 @@ async function applyFilters(autoZoomToResults = true) {
 
   // 🚀 CASE 2: DISTRICT POPULATION VIEW (existing behavior)
   if (requestId !== activeRequestId) return
-  renderMode = 'district'
   isVillageMode = false
   if (isDistrictPopulationView()) {
     console.log('Skipping render/clear for district population view')
@@ -1789,7 +1788,7 @@ async function resetFilters() {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
   activeRequestId++
-  renderMode = 'district'
+  renderMode = 'default'
   isVillageMode = false
   selectedDistrict.value = ''
   selectedTaluka.value = ''
@@ -2213,7 +2212,7 @@ function drawClusters(clusters) {
     console.log('BLOCKED: village mode active')
     return
   }
-  if (renderMode !== 'district') return
+  if (renderMode === 'village') return
   if (selectedVillage.value) return
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearClusterSelection()
@@ -2336,7 +2335,7 @@ function renderMarkerLayersForCurrentState() {
     console.log('BLOCKED: village mode active')
     return
   }
-  if (renderMode !== 'district') return
+  if (renderMode === 'village') return
   if (selectedVillage.value) return
   if (!map) return
 
@@ -2420,7 +2419,7 @@ async function setViewMode(mode) {
   await nextTick()
   renderTimeout = setTimeout(() => {
     console.log('DELAYED RENDER TRIGGERED')
-    if (renderMode !== 'district') return
+    if (renderMode === 'village') return
     handleMapResize()
   }, 50)
 }
@@ -2571,12 +2570,12 @@ function resizeMapAfterTransition() {
   if (map) map.invalidateSize({ animate: false })
   renderTimeout = setTimeout(() => {
     console.log('DELAYED RENDER TRIGGERED')
-    if (renderMode !== 'district') return
+    if (renderMode === 'village') return
     if (map) map.invalidateSize({ animate: false })
   }, 60)
   renderTimeout = setTimeout(() => {
     console.log('DELAYED RENDER TRIGGERED')
-    if (renderMode !== 'district') return
+    if (renderMode === 'village') return
     if (map) map.invalidateSize({ animate: false })
   }, 260)
 }
@@ -2865,12 +2864,12 @@ function plotMarkers(data) {
     // Ensure map renders properly after zoom operations
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 100)
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 200)
   }
@@ -2968,7 +2967,6 @@ function renderVillageHouseholds(rows, viewType = null) {
       </div>
     `, {
       permanent: false,
-      sticky: false,
       direction: 'top',
       opacity: 1
     })
@@ -2994,7 +2992,7 @@ function renderVillageHouseholds(rows, viewType = null) {
     })
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 100)
   }
@@ -3042,7 +3040,7 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
       renderTimeout = setTimeout(() => {
         console.log('DELAYED RENDER TRIGGERED')
-        if (renderMode !== 'district') return
+        if (renderMode === 'village') return
         loadLiveHouseData(attempt + 1, requestToken)
       }, 3000)
       retryTimer = renderTimeout
@@ -3054,7 +3052,7 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
       renderTimeout = setTimeout(() => {
         console.log('DELAYED RENDER TRIGGERED')
-        if (renderMode !== 'district') return
+        if (renderMode === 'village') return
         loadLiveHouseData(attempt + 1, requestToken)
       }, 3000)
       retryTimer = renderTimeout
@@ -3118,17 +3116,17 @@ onMounted(async () => {
     // More aggressive size invalidation for reliable rendering
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 50)
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 150)
     renderTimeout = setTimeout(() => {
       console.log('DELAYED RENDER TRIGGERED')
-      if (renderMode !== 'district') return
+      if (renderMode === 'village') return
       ensureMapReady()
     }, 300)
     window.addEventListener('resize', handleMapResize)
@@ -3164,7 +3162,6 @@ onUnmounted(() => {
 
 watch(selectedDistrict, async () => {
   activeRequestId++
-  renderMode = 'district'
   selectedTaluka.value = ''
   selectedVillage.value = ''
   isVillageMode = false
@@ -3174,7 +3171,6 @@ watch(selectedDistrict, async () => {
 
 watch(selectedTaluka, async () => {
   activeRequestId++
-  renderMode = 'district'
   selectedVillage.value = ''
   isVillageMode = false
   await loadLocationDropdowns()
@@ -3195,7 +3191,6 @@ watch(selectedVillage, () => {
     return
   }
 
-  renderMode = 'district'
   isVillageMode = false
   showNoData.value = false
   renderMarkerLayersForCurrentState()
@@ -3244,6 +3239,7 @@ watch(analyticsPanelOpen, async () => {
 
 .top-bar,
 .filters,
+.dropdown-container,
 .dropdown,
 .view-dropdown,
 .header,
