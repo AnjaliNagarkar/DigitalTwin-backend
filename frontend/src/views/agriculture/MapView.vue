@@ -1129,15 +1129,19 @@ const MAHARASHTRA_CENTER = [19.7515, 75.7139]
 const MAHARASHTRA_INITIAL_ZOOM = 7
 
 let map = null
-const markerRefs    = []   // { marker, house }
+let markerRefs    = []   // { marker, house }
 let clusterGroup    = null // L.layerGroup for village circles
 let householdLayer  = null // L.layerGroup for village household markers (no clustering)
 let isVillageMode   = false
 let highlightCircle = null // currently highlighted village circle
 let retryTimer      = null
+let renderTimeout   = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
 let activeHouseLoadToken = 0
+let activeRequestId = 0
+let renderMode = 'district' // 'district' | 'village'
 let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
+let modeDebugInterval = null
 
 function clearDistrictCentroids() {
   if (map && districtCentroidMarkerLayer) {
@@ -1315,7 +1319,12 @@ function renderDistrictCentroids(centroidRows) {
 
 async function refreshDistrictCentroids() {
   if (!map) return
-  if (isVillageMode) return
+  if (isVillageMode) {
+    console.log('BLOCKED: village mode active')
+    return
+  }
+  if (renderMode !== 'district') return
+  if (selectedVillage.value) return
 
   try {
     console.log('--- INSIDE refreshDistrictCentroids ---')
@@ -1588,6 +1597,19 @@ function clearMarkers() {
   householdLayer = null
 }
 
+function clearAllMarkers() {
+  markerRefs.forEach((m) => {
+    const marker = m?.marker ?? m
+    if (map && marker && map.hasLayer(marker)) {
+      map.removeLayer(marker)
+    }
+  })
+  markerRefs = []
+  clearMarkers()
+  clearHouseholdMarkers()
+  clearDistrictCentroids()
+}
+
 async function loadLocationDropdowns() {
   try {
     const res = await getLocationOptions({
@@ -1663,23 +1685,42 @@ async function fetchAllHouses() {
 }
 
 async function applyFilters(autoZoomToResults = true) {
+  const requestId = ++activeRequestId
+  if (renderTimeout) {
+    clearTimeout(renderTimeout)
+    renderTimeout = null
+  }
+  clearAllMarkers()
+  console.log('APPLY CLICKED')
+  console.log('Selected Village:', selectedVillage.value)
+  console.log('Selected View:', selectedView.value)
   // 🚀 CASE 1: VILLAGE SELECTED (FAST PATH)
   if (selectedVillage.value) {
+    renderMode = 'village'
     console.log('🚀 Village fast path:', selectedVillage.value)
     isVillageMode = true
     loading.value = true
     showNoData.value = false
     
     // Clear any previous layers
-    clearHouseholdMarkers()
+    clearAllMarkers()
+    clearClusterMarkers()
     clearDistrictCentroids()
+    if (renderTimeout) {
+      clearTimeout(renderTimeout)
+      renderTimeout = null
+    }
     if (clusterGroup) {
       map.removeLayer(clusterGroup)
       clusterGroup.clearLayers()
+      clusterGroup = null
     }
 
     try {
+      console.log('API CALL START:', 'village-households')
       const res = await getVillageHouseholds({ village_id: selectedVillage.value })
+      if (requestId !== activeRequestId) return
+      console.log('API RESPONSE:', Array.isArray(res) ? res.length : 0, res)
       console.log('Village households:', Array.isArray(res) ? res.length : 0)
       clearRetryTimer()
 
@@ -1695,7 +1736,7 @@ async function applyFilters(autoZoomToResults = true) {
 
       // Store data for view-by re-rendering
       // Render with current view type
-      renderVillageHouseholds(households.value, selectedView.value)
+      renderVillageHouseholds(households.value)
     } catch (err) {
       console.error('Failed to load village households:', err)
       households.value = []
@@ -1709,6 +1750,9 @@ async function applyFilters(autoZoomToResults = true) {
   }
 
   // 🚀 CASE 2: DISTRICT POPULATION VIEW (existing behavior)
+  if (requestId !== activeRequestId) return
+  renderMode = 'district'
+  isVillageMode = false
   if (isDistrictPopulationView()) {
     console.log('Skipping render/clear for district population view')
     hidePointLayer()
@@ -1744,6 +1788,8 @@ async function applyFilters(autoZoomToResults = true) {
 async function resetFilters() {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
+  activeRequestId++
+  renderMode = 'district'
   isVillageMode = false
   selectedDistrict.value = ''
   selectedTaluka.value = ''
@@ -2162,7 +2208,13 @@ function clearClusterSelection() {
 }
 
 function drawClusters(clusters) {
-  if (isVillageMode) return
+  console.log('CLUSTER RENDER CALLED')
+  if (isVillageMode) {
+    console.log('BLOCKED: village mode active')
+    return
+  }
+  if (renderMode !== 'district') return
+  if (selectedVillage.value) return
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearClusterSelection()
   if (!map || !clusters.length) return
@@ -2279,8 +2331,14 @@ function clearClusterMarkers() {
 }
 
 function renderMarkerLayersForCurrentState() {
+  console.log('RENDER DISTRICT CALLED')
+  if (isVillageMode) {
+    console.log('BLOCKED: village mode active')
+    return
+  }
+  if (renderMode !== 'district') return
+  if (selectedVillage.value) return
   if (!map) return
-  if (isVillageMode) return
 
   console.log('--- RENDER START ---')
   console.log('SELECTED VIEW:', selectedView.value)
@@ -2360,7 +2418,11 @@ async function setViewMode(mode) {
   renderMarkerLayersForCurrentState()
   // Ensure map renders properly after layer changes
   await nextTick()
-  setTimeout(() => handleMapResize(), 50)
+  renderTimeout = setTimeout(() => {
+    console.log('DELAYED RENDER TRIGGERED')
+    if (renderMode !== 'district') return
+    handleMapResize()
+  }, 50)
 }
 
 // ── Coordinate Anomaly Detection ─────────────────────────────────────────────
@@ -2507,8 +2569,16 @@ function flyToAnomaly(house) {
 // after the CSS width transition (240ms) so the map fills the reclaimed space.
 function resizeMapAfterTransition() {
   if (map) map.invalidateSize({ animate: false })
-  setTimeout(() => { if (map) map.invalidateSize({ animate: false }) }, 60)
-  setTimeout(() => { if (map) map.invalidateSize({ animate: false }) }, 260)
+  renderTimeout = setTimeout(() => {
+    console.log('DELAYED RENDER TRIGGERED')
+    if (renderMode !== 'district') return
+    if (map) map.invalidateSize({ animate: false })
+  }, 60)
+  renderTimeout = setTimeout(() => {
+    console.log('DELAYED RENDER TRIGGERED')
+    if (renderMode !== 'district') return
+    if (map) map.invalidateSize({ animate: false })
+  }, 260)
 }
 watch(alpCollapsed, resizeMapAfterTransition)
 watch(anomalyDrawerOpen, resizeMapAfterTransition)
@@ -2628,15 +2698,14 @@ async function addDistrictBorders(mapInstance) {
         e.layer.setStyle({ fillOpacity: 0.30, weight: 2.5 })
         e.layer.bindTooltip(
           `<div style="font-weight:700;font-size:0.78rem;color:#1e293b;">${districtName}</div>`,
-          { sticky: true, className: 'map-tooltip district-tooltip', direction: 'top' }
-        ).openTooltip(e.latlng)
+          { sticky: false, className: 'map-tooltip district-tooltip', direction: 'top' }
+        )
       })
       layer.on('mousemove', function (e) {
         e.layer.getTooltip()?.setLatLng(e.latlng)
       })
       layer.on('mouseout', function (e) {
         e.layer.setStyle({ fillOpacity: 0.10, weight: 1.8 })
-        e.layer.closeTooltip()
       })
     })
   } catch (e) {
@@ -2718,13 +2787,14 @@ async function addMaharashtraHighlight(mapInstance) {
 }
 
 function plotMarkers(data) {
-  clearMarkers()
+  clearAllMarkers()
   data.forEach(house => {
     const color  = getMarkerColor(house)
     const marker = L.circleMarker([house.latitude, house.longitude], {
       radius: 5, fillColor: color, color: '#fff',
       weight: 1.5, opacity: 1, fillOpacity: 0.88,
     }).addTo(map)
+    console.log('MARKER CREATED:', house.latitude, house.longitude)
     markerRefs.push({ marker, house })
 
 
@@ -2793,14 +2863,24 @@ function plotMarkers(data) {
       })
     }
     // Ensure map renders properly after zoom operations
-    setTimeout(() => ensureMapReady(), 100)
-    setTimeout(() => ensureMapReady(), 200)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 100)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 200)
   }
 }
 
 // 🚀 Fast path for village household rendering (no clustering, with view-by support)
 function renderVillageHouseholds(rows, viewType = null) {
-  clearMarkers()
+  console.log('RENDER VILLAGE CALLED')
+  renderMode = 'village'
+  clearAllMarkers()
   isVillageMode = true
   
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -2812,10 +2892,13 @@ function renderVillageHouseholds(rows, viewType = null) {
   
   // Create new household layer
   householdLayer = L.layerGroup().addTo(map)
-  if (clusterGroup) {
-    map.removeLayer(clusterGroup)
-    clusterGroup.clearLayers()
+  const markerClusterGroup = clusterGroup
+  if (markerClusterGroup) {
+    map.removeLayer(markerClusterGroup)
+    markerClusterGroup.clearLayers()
+    clusterGroup = null
   }
+  if (map) map.closePopup()
   
   const validPoints = []
   
@@ -2876,23 +2959,21 @@ function renderVillageHouseholds(rows, viewType = null) {
       opacity: 1,
       fillOpacity: 0.8,
     }).addTo(householdLayer)
+    console.log('MARKER CREATED:', lat, lng)
 
-    const headName = row.head_name || row.headName || 'N/A'
-    const houseId = row.family_id || row.id || 'N/A'
-    const tooltipContent = `
-      <div class="custom-tooltip">
-        <div><b>House ID:</b> ${houseId}</div>
-        <div><b>Head:</b> ${headName}</div>
-        ${viewType === 'population_density' && row.members ? `<div><b>Members:</b> ${row.members}</div>` : ''}
+    marker.bindTooltip(`
+      <div class="house-tooltip">
+        <div><b>House:</b> ${row.house_no || '-'}</div>
+        <div><b>Head:</b> ${row.head_name || '-'}</div>
       </div>
-    `
-
-    marker.bindTooltip(tooltipContent, {
-      sticky: true,
+    `, {
+      permanent: false,
+      sticky: false,
       direction: 'top',
-      opacity: 1,
-      className: 'map-tooltip',
-      offset: L.point(0, -6)
+      opacity: 1
+    })
+    marker.on('mouseout', () => {
+      marker.closeTooltip()
     })
 
     markerRefs.push({ marker })
@@ -2900,6 +2981,9 @@ function renderVillageHouseholds(rows, viewType = null) {
   })
 
   console.log(`Rendered ${validPoints.length} household markers`)
+  if (map?._layers) {
+    console.log('TOTAL MAP LAYERS:', map._layers)
+  }
 
   // Auto-zoom to village bounds on every village render.
   if (validPoints.length > 0 && map) {
@@ -2908,7 +2992,11 @@ function renderVillageHouseholds(rows, viewType = null) {
       padding: [40, 40],
       maxZoom: 14,
     })
-    setTimeout(() => ensureMapReady(), 100)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 100)
   }
 }
 
@@ -2952,14 +3040,24 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
     }
 
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
+      renderTimeout = setTimeout(() => {
+        console.log('DELAYED RENDER TRIGGERED')
+        if (renderMode !== 'district') return
+        loadLiveHouseData(attempt + 1, requestToken)
+      }, 3000)
+      retryTimer = renderTimeout
       return
     }
   } catch (e) {
     if (requestToken !== activeHouseLoadToken) return
 
     if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
+      renderTimeout = setTimeout(() => {
+        console.log('DELAYED RENDER TRIGGERED')
+        if (renderMode !== 'district') return
+        loadLiveHouseData(attempt + 1, requestToken)
+      }, 3000)
+      retryTimer = renderTimeout
       return
     }
     console.warn('Houses API not available:', e.message)
@@ -2970,6 +3068,16 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
 }
 
 onMounted(async () => {
+  document.addEventListener('click', () => {
+    console.log('GLOBAL CLICK DETECTED')
+  })
+  modeDebugInterval = setInterval(() => {
+    console.log(
+      'ACTIVE MODE:',
+      'Village:', selectedVillage.value,
+      'isVillageMode:', isVillageMode
+    )
+  }, 3000)
   await nextTick()
   isMapVisualReady.value = false
 
@@ -2978,6 +3086,7 @@ onMounted(async () => {
     const rect = mapContainer.value.getBoundingClientRect()
     if (rect.width < 100 || rect.height < 100) {
       console.warn('Map container too small, waiting for layout...')
+      console.log('DELAYED RENDER TRIGGERED')
       await new Promise(resolve => setTimeout(resolve, 100))
     }
 
@@ -3007,9 +3116,21 @@ onMounted(async () => {
     isMapVisualReady.value = true
 
     // More aggressive size invalidation for reliable rendering
-    setTimeout(() => ensureMapReady(), 50)
-    setTimeout(() => ensureMapReady(), 150)
-    setTimeout(() => ensureMapReady(), 300)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 50)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 150)
+    renderTimeout = setTimeout(() => {
+      console.log('DELAYED RENDER TRIGGERED')
+      if (renderMode !== 'district') return
+      ensureMapReady()
+    }, 300)
     window.addEventListener('resize', handleMapResize)
     window.addEventListener('click', closeDropdowns)
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -3024,7 +3145,15 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (modeDebugInterval) {
+    clearInterval(modeDebugInterval)
+    modeDebugInterval = null
+  }
   clearRetryTimer()
+  if (renderTimeout) {
+    clearTimeout(renderTimeout)
+    renderTimeout = null
+  }
   clearAnomalyLayer()
   clearDistrictCentroids()
   window.removeEventListener('resize', handleMapResize)
@@ -3034,6 +3163,8 @@ onUnmounted(() => {
 })
 
 watch(selectedDistrict, async () => {
+  activeRequestId++
+  renderMode = 'district'
   selectedTaluka.value = ''
   selectedVillage.value = ''
   isVillageMode = false
@@ -3042,6 +3173,8 @@ watch(selectedDistrict, async () => {
 })
 
 watch(selectedTaluka, async () => {
+  activeRequestId++
+  renderMode = 'district'
   selectedVillage.value = ''
   isVillageMode = false
   await loadLocationDropdowns()
@@ -3050,13 +3183,19 @@ watch(selectedTaluka, async () => {
 
 watch(selectedVillage, () => {
   if (selectedVillage.value) {
+    renderMode = 'village'
     isVillageMode = true
+    if (renderTimeout) {
+      clearTimeout(renderTimeout)
+      renderTimeout = null
+    }
     clearMarkers()
     clearDistrictCentroids()
     showNoData.value = false
     return
   }
 
+  renderMode = 'district'
   isVillageMode = false
   showNoData.value = false
   renderMarkerLayersForCurrentState()
@@ -3087,11 +3226,46 @@ watch(analyticsPanelOpen, async () => {
 </script>
 
 <style scoped>
+:deep(.leaflet-container) {
+  pointer-events: auto;
+  z-index: 0 !important;
+}
+
+:deep(.leaflet-pane),
+:deep(.leaflet-top),
+:deep(.leaflet-bottom) {
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+:deep(.leaflet-marker-pane) {
+  pointer-events: auto !important;
+}
+
+.top-bar,
+.filters,
+.dropdown,
+.view-dropdown,
+.header,
+.view-by-dropdown,
+.map-header,
+.map-controls,
+.view-by-container,
+.custom-dropdown {
+  position: relative;
+  z-index: 9999;
+}
+
 .map-page {
   height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
+}
+
+.house-tooltip {
+  font-size: 12px;
+  padding: 4px 6px;
 }
 
 .map-header {

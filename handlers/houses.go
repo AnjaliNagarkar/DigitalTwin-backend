@@ -86,6 +86,14 @@ type HouseMapPoint struct {
 	HeadName string  `json:"head_name"`
 }
 
+type VillageHouseholdPoint struct {
+	FamilyID string  `json:"family_id"`
+	HouseNo  string  `json:"house_no"`
+	HeadName string  `json:"head_name"`
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+}
+
 type MemberRecord struct {
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
@@ -704,13 +712,15 @@ func (h *HouseHandler) GetVillageHouseholds(c *gin.Context) {
 
 	query := `
 		SELECT
-			FAMILY_ID,
-			CAST(LATITUDE AS DECIMAL(10,6)) AS lat,
-			CAST(LONGITUDE AS DECIMAL(10,6)) AS lng,
+			COALESCE(CAST(FAMILY_ID AS CHAR), '') AS family_id,
+			COALESCE(CAST(HOUSE_NO AS CHAR), '') AS house_no,
 			COALESCE(TRIM(CONCAT(
 				COALESCE(FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(LAST_NAME_HOUSEHOLD_HEAD, '')
-			)), '') AS head_name
+			)), '') AS head_name,
+			CAST(LATITUDE AS DECIMAL(10,6)) AS lat,
+			CAST(LONGITUDE AS DECIMAL(10,6)) AS lng
 		FROM FAMILY
 		WHERE
 			VILLAGE_ID = ?
@@ -728,10 +738,10 @@ func (h *HouseHandler) GetVillageHouseholds(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	points := make([]HouseMapPoint, 0, 2000)
+	points := make([]VillageHouseholdPoint, 0, 2000)
 	for rows.Next() {
-		var point HouseMapPoint
-		if err := rows.Scan(&point.ID, &point.Lat, &point.Lng, &point.HeadName); err != nil {
+		var point VillageHouseholdPoint
+		if err := rows.Scan(&point.FamilyID, &point.HouseNo, &point.HeadName, &point.Lat, &point.Lng); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan marker", "detail": err.Error()})
 			return
 		}
@@ -739,7 +749,7 @@ func (h *HouseHandler) GetVillageHouseholds(c *gin.Context) {
 	}
 
 	if points == nil {
-		points = []HouseMapPoint{}
+		points = []VillageHouseholdPoint{}
 	}
 
 	c.JSON(http.StatusOK, points)
