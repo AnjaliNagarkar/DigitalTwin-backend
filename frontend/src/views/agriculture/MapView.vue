@@ -1082,6 +1082,9 @@ let retryTimer      = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
 let activeHouseLoadToken = 0
 let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
+const MARKER_RENDER_CHUNK_SIZE = 100
+let markerRenderToken = 0
+let markerRenderFrame = null
 
 function clearDistrictCentroids() {
   if (map && districtCentroidMarkerLayer) {
@@ -1196,6 +1199,11 @@ async function toggleFullscreen() {
 }
 
 function clearMarkers() {
+  markerRenderToken += 1
+  if (markerRenderFrame !== null) {
+    cancelAnimationFrame(markerRenderFrame)
+    markerRenderFrame = null
+  }
   markerRefs.forEach(({ marker }) => {
     if (map && map.hasLayer(marker)) map.removeLayer(marker)
   })
@@ -1288,36 +1296,17 @@ function getActiveLocationParams() {
 }
 
 async function fetchAllHouses() {
-  // Family members already loaded on mount without filters.
-  // Do NOT reload here with filters — would lose members outside current filter scope.
-
+  // Single filtered fetch per apply/reset cycle to keep marker rendering responsive.
+  const hasLocationFilter = Boolean(
+    selectedDistrict.value || selectedTaluka.value || selectedVillage.value
+  )
   const base = getHouseFilters()
-  const pageLimit = Number(base.limit) || 2000
-  let page = 1
-  const all = []
-  let total = null
-
-  while (true) {
-    const res = await getHouses({ ...base, page, limit: pageLimit })
-    const families = extractFamiliesFromResponse(res)
-    const houseResponseMembers = collectFamilyMembers(res, families)
-    const sourceMembers = houseResponseMembers.length ? houseResponseMembers : familyMembers.value
-
-    const chunk = families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
-
-    if (!chunk.length) break
-    all.push(...chunk)
-
-    if (typeof res.total === 'number') total = res.total
-
-    if (chunk.length < pageLimit) break
-    if (total !== null && all.length >= total) break
-    if (page >= 20) break // hard guard against runaway paging
-
-    page += 1
-  }
-
-  return all
+  const pageLimit = hasLocationFilter ? 500 : 2000
+  const res = await getHouses({ ...base, page: 1, limit: pageLimit })
+  const families = extractFamiliesFromResponse(res)
+  const houseResponseMembers = collectFamilyMembers(res, families)
+  const sourceMembers = houseResponseMembers.length ? houseResponseMembers : familyMembers.value
+  return families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
 }
 
 function applyFilters(autoZoomToResults = true) {
@@ -1335,7 +1324,7 @@ function applyFilters(autoZoomToResults = true) {
     // so the user gets immediate feedback even on full-dataset reloads.
     fitAfterLoad = autoZoomToResults
     loading.value = true
-    loadLiveHouseData(0, requestToken)
+    loadLiveHouseData(requestToken)
     // Hide district markers if any location filter is applied
     if (selectedDistrict.value || selectedTaluka.value || selectedVillage.value) {
       clearDistrictCentroids()
@@ -1360,7 +1349,7 @@ async function resetFilters() {
   clearMarkers()
   if (map) {
     loading.value = true
-    loadLiveHouseData(0, requestToken)
+    loadLiveHouseData(requestToken)
     refreshDistrictCentroids()
     fitToMaharashtra()
   }
@@ -2210,63 +2199,81 @@ async function addMaharashtraHighlight(mapInstance) {
   }
 }
 
-function plotMarkers(data) {
-  clearMarkers()
-  data.forEach(house => {
-    const color  = getMarkerColor(house)
-    const marker = L.circleMarker([house.latitude, house.longitude], {
-      radius: 5, fillColor: color, color: '#fff',
-      weight: 1.5, opacity: 1, fillOpacity: 0.88,
-    }).addTo(map)
-    markerRefs.push({ marker, house })
+function addHouseMarker(house) {
+  const color  = getMarkerColor(house)
+  const marker = L.circleMarker([house.latitude, house.longitude], {
+    radius: 5, fillColor: color, color: '#fff',
+    weight: 1.5, opacity: 1, fillOpacity: 0.88,
+  }).addTo(map)
+  markerRefs.push({ marker, house })
 
+  marker.on('click', (e) => {
+    L.DomEvent.stopPropagation(e)
 
-    marker.on('click', (e) => {
-      L.DomEvent.stopPropagation(e)
+    // If anomaly mode is ON and this is a flagged red dot, enrich the
+    // selectedHouse so the detail panel shows the GPS mismatch reason.
+    if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) {
+      const enriched = anomalies.value.find(a => a.familyId === house.familyId)
+      selectedHouse.value = enriched || house
+      selectedAnomalyId.value = house.familyId
+      // Expand sidebar (if user had it collapsed) so the highlighted row is visible
+      alpCollapsed.value = false
+      scrollAnomalyIntoView(house.familyId)
+    } else {
+      selectedHouse.value = house
+      selectedAnomalyId.value = null
+    }
+  })
 
-      // If anomaly mode is ON and this is a flagged red dot, enrich the
-      // selectedHouse so the detail panel shows the GPS mismatch reason.
-      if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) {
-        const enriched = anomalies.value.find(a => a.familyId === house.familyId)
-        selectedHouse.value = enriched || house
-        selectedAnomalyId.value = house.familyId
-        // Expand sidebar (if user had it collapsed) so the highlighted row is visible
-        alpCollapsed.value = false
-        scrollAnomalyIntoView(house.familyId)
-      } else {
-        selectedHouse.value = house
-        selectedAnomalyId.value = null
-      }
-    })
-
-    // Tooltip: include GPS mismatch warning if anomaly detection is active
-    marker.bindTooltip(() => {
-      const isAnomaly = showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)
-      if (isAnomaly) {
-        const enriched = anomalies.value.find(a => a.familyId === house.familyId)
-        const km = enriched?._distanceKm ?? '?'
-        return `
-          <strong>${house.headName || 'Household'}</strong><br/>
-          <span style="color:#ef4444;font-weight:600;">⚠️ Village Mismatch</span><br/>
-          <span style="color:#ef4444;font-weight:700;">${km} km</span> <span style="color:#64748b;">from registered village</span><br/>
-          <span style="color:#94a3b8;font-size:0.7em;">Click to see details</span>
-        `
-      }
-
-      if (populationFilters.includes(colorMode.value)) {
-        return `
-          <strong>${house.headName || getHouseHeadName(house) || 'Household'}</strong><br/>
-          House No: ${getHouseNumber(house) || 'N/A'}<br/>
-          Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
-        `
-      }
-
+  // Tooltip: include GPS mismatch warning if anomaly detection is active
+  marker.bindTooltip(() => {
+    const isAnomaly = showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)
+    if (isAnomaly) {
+      const enriched = anomalies.value.find(a => a.familyId === house.familyId)
+      const km = enriched?._distanceKm ?? '?'
       return `
         <strong>${house.headName || 'Household'}</strong><br/>
-        Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
+        <span style="color:#ef4444;font-weight:600;">⚠️ Village Mismatch</span><br/>
+        <span style="color:#ef4444;font-weight:700;">${km} km</span> <span style="color:#64748b;">from registered village</span><br/>
+        <span style="color:#94a3b8;font-size:0.7em;">Click to see details</span>
       `
-    }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -6) })
-  })
+    }
+
+    if (populationFilters.includes(colorMode.value)) {
+      return `
+        <strong>${house.headName || getHouseHeadName(house) || 'Household'}</strong><br/>
+        House No: ${getHouseNumber(house) || 'N/A'}<br/>
+        Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
+      `
+    }
+
+    return `
+      <strong>${house.headName || 'Household'}</strong><br/>
+      Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
+    `
+  }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -6) })
+}
+
+function plotMarkers(data) {
+  clearMarkers()
+  const renderToken = markerRenderToken
+  let index = 0
+
+  const renderChunk = () => {
+    if (renderToken !== markerRenderToken || !map) return
+    const end = Math.min(index + MARKER_RENDER_CHUNK_SIZE, data.length)
+    for (let i = index; i < end; i += 1) {
+      addHouseMarker(data[i])
+    }
+    index = end
+    if (index < data.length) {
+      markerRenderFrame = requestAnimationFrame(renderChunk)
+    } else {
+      markerRenderFrame = null
+    }
+  }
+
+  renderChunk()
 
   // Auto-zoom to the filtered results when triggered by applyFilters()
   if (fitAfterLoad && data.length > 0 && map) {
@@ -2298,7 +2305,7 @@ function clearRetryTimer() {
   }
 }
 
-async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToken) {
+async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
   if (requestToken !== activeHouseLoadToken) return
 
   try {
@@ -2315,18 +2322,8 @@ async function loadLiveHouseData(attempt = 0, requestToken = activeHouseLoadToke
       loading.value = false
       return
     }
-
-    if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
-      return
-    }
   } catch (e) {
     if (requestToken !== activeHouseLoadToken) return
-
-    if (attempt < 10 && !selectedDistrict.value && !selectedTaluka.value && !selectedVillage.value) {
-      retryTimer = setTimeout(() => loadLiveHouseData(attempt + 1, requestToken), 3000)
-      return
-    }
     console.warn('Houses API not available:', e.message)
   }
 
@@ -2397,6 +2394,7 @@ onUnmounted(() => {
   clearRetryTimer()
   clearAnomalyLayer()
   clearDistrictCentroids()
+  clearMarkers()
   window.removeEventListener('resize', handleMapResize)
   window.removeEventListener('click', closeDropdowns)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
