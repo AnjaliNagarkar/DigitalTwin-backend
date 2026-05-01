@@ -93,25 +93,28 @@
           </button>
         </div>
 
-        <!-- Color by (only in points mode) -->
+        <!-- View by (only in points mode) -->
         <div class="map-control-group" v-if="viewMode === 'points'">
-          <label class="control-label">Color by</label>
+          <label class="control-label">VIEW BY</label>
           <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
                @click.stop="toggleDropdown('colorMode')">
-            <button class="cs-trigger" type="button">
-              <span class="cs-value">{{ selectedColorModeLabel }}</span>
+            <button class="cs-trigger view-by-btn" type="button" :class="{ 'cs-trigger-placeholder': !colorMode }">
+              <span class="cs-value">{{ selectedColorModeLabel || 'Select a view...' }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div
-                class="cs-option"
-                v-for="option in colorOptions"
-                :key="option.value"
-                :class="{ selected: colorMode === option.value }"
-                @click="selectColorMode(option.value)"
-              >
-                {{ option.label }}
-              </div>
+              <template v-for="group in groupedColorOptions" :key="group.label">
+                <div class="cs-option-group-label">— {{ group.label }} —</div>
+                <div
+                  class="cs-option"
+                  v-for="option in group.options"
+                  :key="option.value"
+                  :class="{ selected: colorMode === option.value }"
+                  @click="selectColorMode(option.value)"
+                >
+                  {{ option.label }}
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -516,7 +519,7 @@ const selectedCluster = ref(null)
 const mapContainer  = ref(null)
 const mapContentRef = ref(null)
 const isMapVisualReady = ref(false)
-const colorMode     = ref('irrigation')
+const colorMode     = ref(null)
 const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
 const isFullscreen = ref(false)
@@ -547,6 +550,29 @@ const colorOptions = [
   { label: 'Divyang Presence', value: 'divyang_presence' },
   { label: 'Employment Status', value: 'employment_status' },
 ]
+
+const groupedColorOptions = computed(() => {
+  const optionByValue = new Map(colorOptions.map(option => [option.value, option]))
+  return [
+    {
+      label: 'Population',
+      options: [
+        optionByValue.get('population_density'),
+        optionByValue.get('bpl_status'),
+        optionByValue.get('divyang_presence'),
+        optionByValue.get('employment_status'),
+      ].filter(Boolean),
+    },
+    {
+      label: 'Agriculture',
+      options: [
+        optionByValue.get('crops'),
+        optionByValue.get('irrigation'),
+        optionByValue.get('land'),
+      ].filter(Boolean),
+    },
+  ]
+})
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
@@ -604,7 +630,7 @@ const selectedVillageLabel = computed(() => {
   if (!selectedVillage.value) return 'All'
   return villageOptions.value.find(v => String(v.value) === String(selectedVillage.value))?.label || 'All'
 })
-const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Irrigation')
+const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
 
 function normalizeText(value) {
@@ -2469,6 +2495,15 @@ watch(analyticsPanelOpen, async () => {
   opacity: 0.7;
 }
 
+.view-by-btn {
+  border-radius: var(--radius-sm);
+}
+
+.cs-trigger-placeholder .cs-value {
+  color: #9ca3af !important;
+  font-style: italic;
+}
+
 .cs-value {
   flex: 1;
   overflow: hidden;
@@ -2503,6 +2538,20 @@ watch(analyticsPanelOpen, async () => {
   isolation: isolate;
 }
 .cs-dropdown-right { left: auto; right: 0; }
+
+/* Option group separator label */
+.cs-option-group-label {
+  padding: 0.3rem 0.75rem 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+  pointer-events: none;
+  user-select: none;
+}
+.cs-option-group-label:first-child { border-top: none; }
 
 /* Option rows — all hardcoded, zero CSS variable inheritance */
 .cs-option {
