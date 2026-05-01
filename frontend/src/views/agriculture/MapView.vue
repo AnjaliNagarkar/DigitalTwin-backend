@@ -21,17 +21,16 @@
         <!-- District -->
         <div class="map-control-group">
           <label class="control-label">District</label>
-          <div class="custom-select" :class="{ open: openDropdown === 'district' }"
-               @click.stop="toggleDropdown('district')">
-            <button class="cs-trigger" type="button">
+          <div class="custom-select" :class="{ open: openDropdown === 'district', disabled: isDistrictLoading }"
+               @click.stop="!isDistrictLoading && toggleDropdown('district')">
+            <button class="cs-trigger" type="button" :disabled="isDistrictLoading">
               <span class="cs-value">{{ selectedDistrictLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedDistrict }" @click="selectDistrict('')">All</div>
-              <div class="cs-option" v-for="d in districtOptions" :key="d.id"
-                   :class="{ selected: String(selectedDistrict) === String(d.id) }"
-                   @click="selectDistrict(d.id)">{{ d.name }}</div>
+              <div class="cs-option" v-for="d in districtOptions" :key="`${d.value ?? ''}`"
+                   :class="{ selected: String(selectedDistrict ?? '') === String(d.value ?? '') }"
+                   @click="selectDistrict(d.value)">{{ d.label }}</div>
             </div>
           </div>
         </div>
@@ -47,9 +46,9 @@
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
               <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">All</div>
-              <div class="cs-option" v-for="t in talukaOptions" :key="t.id"
-                   :class="{ selected: String(selectedTaluka) === String(t.id) }"
-                   @click="selectTaluka(t.id)">{{ t.name }}</div>
+              <div class="cs-option" v-for="t in talukaOptions" :key="t.value"
+                   :class="{ selected: String(selectedTaluka) === String(t.value) }"
+                   @click="selectTaluka(t.value)">{{ t.label }}</div>
             </div>
           </div>
         </div>
@@ -65,9 +64,9 @@
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
               <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">All</div>
-              <div class="cs-option" v-for="v in villageOptions" :key="v.id"
-                   :class="{ selected: String(selectedVillage) === String(v.id) }"
-                   @click="selectVillage(v.id)">{{ v.name }}</div>
+              <div class="cs-option" v-for="v in villageOptions" :key="v.value"
+                   :class="{ selected: String(selectedVillage) === String(v.value) }"
+                   @click="selectVillage(v.value)">{{ v.label }}</div>
             </div>
           </div>
         </div>
@@ -522,6 +521,7 @@ const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
 const isFullscreen = ref(false)
 const districtOptions = ref([])
+const isDistrictLoading = ref(true)
 const talukaOptions = ref([])
 const villageOptions = ref([])
 const selectedDistrict = ref('')
@@ -556,6 +556,11 @@ function closeDropdowns() {
   openDropdown.value = null
 }
 
+let cachedDistrictOptions = null
+let districtOptionsRequest = null
+let talukaLoadToken = 0
+let villageLoadToken = 0
+
 // Selection handlers — the existing watchers handle cascade reset + API refetch
 function selectDistrict(id) {
   selectedDistrict.value = id   // watcher fires: resets taluka/village + reloads options
@@ -589,16 +594,15 @@ function selectColorMode(mode) {
 
 // Human-readable labels shown in the trigger button
 const selectedDistrictLabel = computed(() => {
-  if (!selectedDistrict.value) return 'All'
-  return districtOptions.value.find(d => String(d.id) === String(selectedDistrict.value))?.name || 'All'
+  return districtOptions.value.find(d => String(d.value ?? '') === String(selectedDistrict.value ?? ''))?.label || 'All'
 })
 const selectedTalukaLabel = computed(() => {
   if (!selectedTaluka.value) return 'All'
-  return talukaOptions.value.find(t => String(t.id) === String(selectedTaluka.value))?.name || 'All'
+  return talukaOptions.value.find(t => String(t.value) === String(selectedTaluka.value))?.label || 'All'
 })
 const selectedVillageLabel = computed(() => {
   if (!selectedVillage.value) return 'All'
-  return villageOptions.value.find(v => String(v.id) === String(selectedVillage.value))?.name || 'All'
+  return villageOptions.value.find(v => String(v.value) === String(selectedVillage.value))?.label || 'All'
 })
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || 'Irrigation')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
@@ -1172,17 +1176,71 @@ function clearMarkers() {
   markerRefs.length = 0
 }
 
-async function loadLocationDropdowns() {
+async function loadDistrictOptionsOnce() {
+  if (cachedDistrictOptions) {
+    districtOptions.value = [...cachedDistrictOptions]
+    return
+  }
+
+  if (!districtOptionsRequest) {
+    districtOptionsRequest = getDistricts()
+      .then((apiResponse) => {
+        const normalizedDistrictOptions = (apiResponse || []).map(d => ({
+          label: d.vsDistrictName,
+          value: d.pklDistrictId,
+        }))
+        normalizedDistrictOptions.unshift({ label: 'All', value: null })
+        cachedDistrictOptions = normalizedDistrictOptions
+        return normalizedDistrictOptions
+      })
+      .catch((error) => {
+        districtOptionsRequest = null
+        throw error
+      })
+  }
+
+  districtOptions.value = [...await districtOptionsRequest]
+}
+
+async function loadTalukaOptionsByDistrict(districtId) {
+  const requestToken = ++talukaLoadToken
+  talukaOptions.value = []
+  villageOptions.value = []
+
+  if (!districtId) return
+
+  try {
+    const res = await getLocationOptions({ district_id: districtId })
+    if (requestToken !== talukaLoadToken) return
+    talukaOptions.value = (res?.talukas || []).map(t => ({
+      label: t.taluka_name || t.name || t.TALUKA,
+      value: t.taluka_id || t.id || t.value,
+    }))
+  } catch (e) {
+    if (requestToken !== talukaLoadToken) return
+    console.warn('Taluka options unavailable:', e.message)
+  }
+}
+
+async function loadVillageOptionsByTaluka(districtId, talukaId) {
+  const requestToken = ++villageLoadToken
+  villageOptions.value = []
+
+  if (!talukaId) return
+
   try {
     const res = await getLocationOptions({
-      district_id: selectedDistrict.value,
-      taluka_id: selectedTaluka.value,
+      district_id: districtId || undefined,
+      taluka_id: talukaId,
     })
-    districtOptions.value = res.districts || []
-    talukaOptions.value = res.talukas || []
-    villageOptions.value = res.villages || []
+    if (requestToken !== villageLoadToken) return
+    villageOptions.value = (res?.villages || []).map(v => ({
+      label: v.village_name || v.name || v.VILLAGE,
+      value: v.village_id || v.id || v.value,
+    }))
   } catch (e) {
-    console.warn('Location options unavailable:', e.message)
+    if (requestToken !== villageLoadToken) return
+    console.warn('Village options unavailable:', e.message)
   }
 }
 
@@ -1267,8 +1325,9 @@ async function resetFilters() {
   selectedDistrict.value = ''
   selectedTaluka.value = ''
   selectedVillage.value = ''
+  talukaOptions.value = []
+  villageOptions.value = []
   fitAfterLoad = false          // reset will fly back to Maharashtra, not fitBounds
-  await loadLocationDropdowns()
   // Replot without auto-zoom — fitToMaharashtra() gives the full-state view
   houses.value = []
   selectedHouse.value = null
@@ -2253,6 +2312,14 @@ onMounted(async () => {
   await nextTick()
   isMapVisualReady.value = false
 
+  try {
+    await loadDistrictOptionsOnce()
+  } catch (e) {
+    console.warn('District options unavailable:', e.message)
+  } finally {
+    isDistrictLoading.value = false
+  }
+
   if (mapContainer.value) {
     // Ensure container has proper dimensions before map init
     const rect = mapContainer.value.getBoundingClientRect()
@@ -2297,7 +2364,6 @@ onMounted(async () => {
 
   loading.value = true
   await loadFamilyMembers()
-  await loadLocationDropdowns()
   applyFilters(false)
 })
 
@@ -2314,13 +2380,13 @@ onUnmounted(() => {
 watch(selectedDistrict, async () => {
   selectedTaluka.value = ''
   selectedVillage.value = ''
-  await loadLocationDropdowns()
+  await loadTalukaOptionsByDistrict(selectedDistrict.value)
   refreshDistrictCentroids()
 })
 
 watch(selectedTaluka, async () => {
   selectedVillage.value = ''
-  await loadLocationDropdowns()
+  await loadVillageOptionsByTaluka(selectedDistrict.value, selectedTaluka.value)
   refreshDistrictCentroids()
 })
 
