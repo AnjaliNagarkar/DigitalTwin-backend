@@ -139,7 +139,7 @@
     </header>
 
     <section class="map-shell">
-      <div v-if="!loading && houses.length === 0" class="empty-state">
+      <div v-if="hasAppliedFilters && !loading && houses.length === 0" class="empty-state">
         No live household data returned from the database API.
       </div>
 
@@ -514,6 +514,7 @@ import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
 const loading       = ref(true)
+const hasAppliedFilters = ref(false)
 const houses        = ref([])
 const familyMembers = ref([])
 const populationStatsByFamily = ref(new Map())
@@ -1415,6 +1416,8 @@ async function fetchAllHouses(requestToken = activeHouseLoadToken) {
 function applyFilters(autoZoomToResults = true) {
   console.log('APPLY CLICKED')
 
+  hasAppliedFilters.value = true
+
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
 
@@ -1481,6 +1484,7 @@ function applyFilters(autoZoomToResults = true) {
 async function resetFilters() {
   clearRetryTimer()
   ++activeHouseLoadToken
+  hasAppliedFilters.value = false
   selectedDistrict.value = null
   selectedTaluka.value = null
   selectedVillage.value = null
