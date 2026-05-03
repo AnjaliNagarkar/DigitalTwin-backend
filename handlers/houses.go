@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -191,6 +192,22 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 		familyJoinExpr)
 }
 
+// appendFamilyGeoIDFilter uses equality on numeric ID columns when possible so indexes on
+// DISTRICT_ID / TALUKA_ID / VILLAGE_ID can be used (avoids CAST(... AS CHAR) = ?).
+func appendFamilyGeoIDFilter(where *string, args *[]interface{}, alias, column, raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		*where += fmt.Sprintf(" AND %s.%s = ?", alias, column)
+		*args = append(*args, id)
+		return
+	}
+	*where += fmt.Sprintf(" AND CAST(%s.%s AS CHAR) = ?", alias, column)
+	*args = append(*args, raw)
+}
+
 func (h *HouseHandler) GetHouses(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "500"))
@@ -232,18 +249,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		where += " AND f.OWN_AGRICULTURE_LAND = ?"
 		args = append(args, ownLand)
 	}
-	if districtID != "" {
-		where += " AND CAST(f.DISTRICT_ID AS CHAR) = ?"
-		args = append(args, districtID)
-	}
-	if talukaID != "" {
-		where += " AND CAST(f.TALUKA_ID AS CHAR) = ?"
-		args = append(args, talukaID)
-	}
-	if villageID != "" {
-		where += " AND CAST(f.VILLAGE_ID AS CHAR) = ?"
-		args = append(args, villageID)
-	}
+	appendFamilyGeoIDFilter(&where, &args, "f", "DISTRICT_ID", districtID)
+	appendFamilyGeoIDFilter(&where, &args, "f", "TALUKA_ID", talukaID)
+	appendFamilyGeoIDFilter(&where, &args, "f", "VILLAGE_ID", villageID)
 
 	bboxRaw := strings.TrimSpace(c.Query("bbox"))
 	if bboxRaw != "" {
@@ -281,19 +289,16 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		}
 	}
 
-	// Build population stats subquery (detects optional FAMILY_MEMBER columns at runtime)
-	popStatsSQL := h.buildPopStatsSQL()
-
-	// FAMILY-level optional columns for population context
+	// FAMILY-level optional columns (no FAMILY_MEMBER aggregation in this handler — MapView enriches from population API).
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
 
-	// Use the actual columns present in the FAMILY table.
+	// Single lightweight query: FAMILY + location masters only. Member aggregates return as zeros; occupation ''.
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
-				COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), ''),
-				COALESCE(CAST(f.HOUSE_NO AS CHAR), ''),
+			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), ''),
+			COALESCE(CAST(f.HOUSE_NO AS CHAR), ''),
 			COALESCE(CAST(f.DISTRICT_ID AS CHAR), ''),
 			COALESCE(dm.vsDisplayName, dm.vsDistrictName, ''),
 			COALESCE(CAST(f.TALUKA_ID AS CHAR), ''),
@@ -311,24 +316,16 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
-			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
+			'',
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), ''),
-			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
-			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
-			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
-			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
-			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
-			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
-			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
+			0, 0, 0, 0, 0, 0, 0,
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -340,16 +337,139 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		lngCol,
 		bplExpr,
 		incomeExpr,
-		popStatsSQL,
-		popStatsSQL,
 		where,
 		limit,
 		offset,
 	)
+	queryArgs := args
 
-	log.Println("HOUSES QUERY:", query)
+	if os.Getenv("HOUSES_DIAGNOSTIC") == "1" {
+		log.Println("LAT COL:", latCol, "LNG COL:", lngCol)
+		log.Println("Params:",
+			"district_id=", districtID,
+			"taluka_id=", talukaID,
+			"village_id=", villageID,
+		)
+		log.Println("WHERE:", where)
+		log.Println("ARGS (filters only):", args)
+		log.Println("QUERY ARGS:", queryArgs)
+		log.Println("MAIN SQL:", query)
 
-	rows, err := h.DB.Query(query, args...)
+		// 6. COUNT before coordinate filter — DISTRICT_ID only (same bind pattern as request)
+		if strings.TrimSpace(districtID) != "" {
+			districtOnlyWhere := "WHERE 1=1"
+			districtOnlyArgs := []interface{}{}
+			appendFamilyGeoIDFilter(&districtOnlyWhere, &districtOnlyArgs, "f", "DISTRICT_ID", districtID)
+			var countBeforeCoord int
+			if err := h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f %s", districtOnlyWhere), districtOnlyArgs...).Scan(&countBeforeCoord); err != nil {
+				log.Println("COUNT before coordinate filter error:", err)
+			} else {
+				log.Println("COUNT before coordinate filter (DISTRICT_ID only):", countBeforeCoord)
+			}
+		} else {
+			log.Println("COUNT before coordinate filter (DISTRICT_ID only): skipped (empty district_id)")
+		}
+
+		// 7. COUNT after coordinate filter — identical WHERE + args as main list query
+		var countAfterCoord int
+		if err := h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f %s", where), args...).Scan(&countAfterCoord); err != nil {
+			log.Println("COUNT after coordinate filter error:", err)
+		} else {
+			log.Println("COUNT after coordinate filter (full WHERE):", countAfterCoord)
+		}
+
+		// 8. Sample 5 rows without coordinate filter (resolved lat/lng column names)
+		if strings.TrimSpace(districtID) != "" {
+			sampleNoGeoWhere := "WHERE 1=1"
+			sampleNoGeoArgs := []interface{}{}
+			appendFamilyGeoIDFilter(&sampleNoGeoWhere, &sampleNoGeoArgs, "f", "DISTRICT_ID", districtID)
+			sampleNoGeoSQL := fmt.Sprintf(
+				"SELECT f.FAMILY_ID, f.%s, f.%s FROM FAMILY f %s LIMIT 5",
+				latCol, lngCol, sampleNoGeoWhere,
+			)
+			log.Println("sample (no coord filter) SQL:", sampleNoGeoSQL)
+			sr8, err := h.DB.Query(sampleNoGeoSQL, sampleNoGeoArgs...)
+			if err != nil {
+				log.Println("sample (no coord filter) error:", err)
+			} else {
+				i := 0
+				for sr8.Next() {
+					var fid, la, ln sql.NullString
+					if scanErr := sr8.Scan(&fid, &la, &ln); scanErr != nil {
+						log.Println("sample (no coord filter) scan error:", scanErr)
+						break
+					}
+					log.Println("sample (no coord filter) row:", i+1, "FAMILY_ID=", fid.String, latCol+"=", la.String, lngCol+"=", ln.String)
+					i++
+				}
+				sr8.Close()
+				log.Println("sample (no coord filter) row count:", i)
+			}
+		}
+
+		// 9. Sample 5 rows WITH same WHERE as main query (coordinate filter applied)
+		sampleFullSQL := fmt.Sprintf(
+			"SELECT f.FAMILY_ID, f.%s, f.%s FROM FAMILY f %s LIMIT 5",
+			latCol, lngCol, where,
+		)
+		log.Println("sample (with coord filter) SQL:", sampleFullSQL)
+		sr9, err9 := h.DB.Query(sampleFullSQL, args...)
+		if err9 != nil {
+			log.Println("sample (with coord filter) error:", err9)
+		} else {
+			j := 0
+			for sr9.Next() {
+				var fid, la, ln sql.NullString
+				if scanErr := sr9.Scan(&fid, &la, &ln); scanErr != nil {
+					log.Println("sample (with coord filter) scan error:", scanErr)
+					break
+				}
+				log.Println("sample (with coord filter) row:", j+1, "FAMILY_ID=", fid.String, latCol+"=", la.String, lngCol+"=", ln.String)
+				j++
+			}
+			sr9.Close()
+			log.Println("sample (with coord filter) row count:", j)
+		}
+	}
+
+	if os.Getenv("DIGITAL_TWIN_DEBUG_SQL") == "1" {
+		log.Println("HOUSES QUERY:", query)
+	}
+
+	if os.Getenv("HOUSES_EXPLAIN") == "1" {
+		explainRows, exErr := h.DB.Query("EXPLAIN ANALYZE "+query, queryArgs...)
+		if exErr != nil {
+			log.Println("HOUSES EXPLAIN ANALYZE error:", exErr)
+		} else {
+			cols, _ := explainRows.Columns()
+			for explainRows.Next() {
+				raw := make([]sql.RawBytes, len(cols))
+				scan := make([]interface{}, len(cols))
+				for i := range raw {
+					scan[i] = &raw[i]
+				}
+				if err := explainRows.Scan(scan...); err != nil {
+					log.Println("HOUSES EXPLAIN scan error:", err)
+					break
+				}
+				var b strings.Builder
+				for i, c := range cols {
+					if i > 0 {
+						b.WriteString(" | ")
+					}
+					b.WriteString(c)
+					b.WriteString("=")
+					if i < len(raw) && raw[i] != nil {
+						b.Write(raw[i])
+					}
+				}
+				log.Println("HOUSES EXPLAIN ANALYZE:", b.String())
+			}
+			explainRows.Close()
+		}
+	}
+
+	rows, err := h.DB.Query(query, queryArgs...)
 	if err != nil {
 		log.Println("HOUSES QUERY ERROR:", err)
 		c.JSON(http.StatusOK, gin.H{
@@ -408,12 +528,12 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		houses = []HouseRecord{}
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f %s", where)
-	var total int
-	if err := h.DB.QueryRow(countQuery, args...).Scan(&total); err != nil {
-		log.Println("COUNT QUERY ERROR:", err)
-		total = 0
+	if os.Getenv("HOUSES_DIAGNOSTIC") == "1" {
+		log.Println("Rows returned:", len(houses))
 	}
+
+	// Avoid COUNT(*) over filtered FAMILY (expensive at scale). Clients use pagination by page/limit; total reflects this page only.
+	total := len(houses)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  houses,
@@ -441,18 +561,9 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 	)
 	args := []interface{}{}
 
-	if districtID := strings.TrimSpace(c.Query("district_id")); districtID != "" {
-		where += " AND CAST(f.DISTRICT_ID AS CHAR) = ?"
-		args = append(args, districtID)
-	}
-	if talukaID := strings.TrimSpace(c.Query("taluka_id")); talukaID != "" {
-		where += " AND CAST(f.TALUKA_ID AS CHAR) = ?"
-		args = append(args, talukaID)
-	}
-	if villageID := strings.TrimSpace(c.Query("village_id")); villageID != "" {
-		where += " AND CAST(f.VILLAGE_ID AS CHAR) = ?"
-		args = append(args, villageID)
-	}
+	appendFamilyGeoIDFilter(&where, &args, "f", "DISTRICT_ID", strings.TrimSpace(c.Query("district_id")))
+	appendFamilyGeoIDFilter(&where, &args, "f", "TALUKA_ID", strings.TrimSpace(c.Query("taluka_id")))
+	appendFamilyGeoIDFilter(&where, &args, "f", "VILLAGE_ID", strings.TrimSpace(c.Query("village_id")))
 
 	query := fmt.Sprintf(`
 		SELECT

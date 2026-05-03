@@ -29,8 +29,8 @@
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
               <div class="cs-option" v-for="d in districtOptions" :key="`${d.value ?? ''}`"
-                   :class="{ selected: String(selectedDistrict ?? '') === String(d.value ?? '') }"
-                   @click="selectDistrict(d.value)">{{ d.label }}</div>
+                   :class="{ selected: isDistrictRowSelected(selectedDistrict, d) }"
+                   @click="selectDistrict(d)">{{ d.label }}</div>
             </div>
           </div>
         </div>
@@ -45,10 +45,10 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">All</div>
+              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka(null)">All</div>
               <div class="cs-option" v-for="t in talukaOptions" :key="t.value"
-                   :class="{ selected: String(selectedTaluka) === String(t.value) }"
-                   @click="selectTaluka(t.value)">{{ t.label }}</div>
+                   :class="{ selected: isGeoOptionSelected(selectedTaluka, t) }"
+                   @click="selectTaluka(t)">{{ t.label }}</div>
             </div>
           </div>
         </div>
@@ -63,10 +63,10 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">All</div>
+              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage(null)">All</div>
               <div class="cs-option" v-for="v in villageOptions" :key="v.value"
-                   :class="{ selected: String(selectedVillage) === String(v.value) }"
-                   @click="selectVillage(v.value)">{{ v.label }}</div>
+                   :class="{ selected: isGeoOptionSelected(selectedVillage, v) }"
+                   @click="selectVillage(v)">{{ v.label }}</div>
             </div>
           </div>
         </div>
@@ -527,9 +527,9 @@ const districtOptions = ref([])
 const isDistrictLoading = ref(true)
 const talukaOptions = ref([])
 const villageOptions = ref([])
-const selectedDistrict = ref('')
-const selectedTaluka = ref('')
-const selectedVillage = ref('')
+const selectedDistrict = ref(null)
+const selectedTaluka = ref(null)
+const selectedVillage = ref(null)
 const showAnomalies        = ref(false)
 const anomalyDrawerOpen    = ref(false)   // panel visible/hidden
 const alpCollapsed         = ref(false)   // panel body collapsed (header-only mode)
@@ -587,19 +587,40 @@ let districtOptionsRequest = null
 let talukaLoadToken = 0
 let villageLoadToken = 0
 
-// Selection handlers — the existing watchers handle cascade reset + API refetch
-function selectDistrict(id) {
-  selectedDistrict.value = id   // watcher fires: resets taluka/village + reloads options
+/** Highlight helper: district list includes "All" row with value null. */
+function isDistrictRowSelected(sel, row) {
+  const isAllRow = row.value === undefined || row.value === null || row.value === ''
+  if (isAllRow) {
+    return sel == null || sel.value === undefined || sel.value === null || sel.value === ''
+  }
+  return sel != null && String(sel.value) === String(row.value)
+}
+
+/** Highlight helper for taluka/village rows (no "All" in list). */
+function isGeoOptionSelected(sel, row) {
+  if (row == null || row.value === undefined || row.value === null || row.value === '') return false
+  return sel != null && String(sel.value) === String(row.value)
+}
+
+// Selection handlers — store full { label, value }; watchers cascade reset + API refetch
+function selectDistrict(option) {
+  selectedDistrict.value = option
+    ? { label: String(option.label ?? ''), value: option.value }
+    : null
   closeDropdowns()
 }
 
-function selectTaluka(id) {
-  selectedTaluka.value = id     // watcher fires: resets village + reloads options
+function selectTaluka(option) {
+  selectedTaluka.value = option
+    ? { label: String(option.label ?? ''), value: option.value }
+    : null
   closeDropdowns()
 }
 
-function selectVillage(id) {
-  selectedVillage.value = id
+function selectVillage(option) {
+  selectedVillage.value = option
+    ? { label: String(option.label ?? ''), value: option.value }
+    : null
   closeDropdowns()
 }
 
@@ -619,17 +640,9 @@ function selectColorMode(mode) {
 }
 
 // Human-readable labels shown in the trigger button
-const selectedDistrictLabel = computed(() => {
-  return districtOptions.value.find(d => String(d.value ?? '') === String(selectedDistrict.value ?? ''))?.label || 'All'
-})
-const selectedTalukaLabel = computed(() => {
-  if (!selectedTaluka.value) return 'All'
-  return talukaOptions.value.find(t => String(t.value) === String(selectedTaluka.value))?.label || 'All'
-})
-const selectedVillageLabel = computed(() => {
-  if (!selectedVillage.value) return 'All'
-  return villageOptions.value.find(v => String(v.value) === String(selectedVillage.value))?.label || 'All'
-})
+const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || 'All')
+const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || 'All')
+const selectedVillageLabel = computed(() => selectedVillage.value?.label || 'All')
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
 
@@ -925,6 +938,7 @@ function inferExternalFamilyId(family) {
 }
 
 function enrichHouseholdForPopulation(family, familyMembers) {
+  // Wall time for all households is aggregated as console.time("enrichLoop") in fetchAllHouses()
   const familyId = resolveFamilyId(family)
   const inferredExternalFamilyId = inferExternalFamilyId(family)
   const stats = getPopulationStats(
@@ -1081,6 +1095,22 @@ let highlightCircle = null // currently highlighted village circle
 let retryTimer      = null
 let fitAfterLoad    = false  // set true by applyFilters; consumed once by plotMarkers
 let activeHouseLoadToken = 0
+/** Profiling for Apply button only (applyFilters with autoZoomToResults true). Matched by request token. */
+let applyClickProfile = null
+
+function logApplyProfileSummary(p, t8) {
+  if (!p || p.t0 == null || p.t1 == null || p.t7 == null) return
+  const apiMs = p.t2 - p.t1
+  const mappingMs = p.t4 - p.t3
+  const enrichmentMs = p.t6 - p.t5
+  const renderingMs = t8 - p.t7
+  console.log('=== Apply profile summary ===')
+  console.log('API time:', apiMs, 'ms')
+  console.log('Enrichment time:', enrichmentMs, 'ms')
+  console.log('Mapping time:', mappingMs, 'ms')
+  console.log('Rendering time:', renderingMs, 'ms')
+  console.log('Total:', t8 - p.t0, 'ms')
+}
 let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
 const MARKER_RENDER_CHUNK_SIZE = 100
 let markerRenderToken = 0
@@ -1247,8 +1277,9 @@ async function loadTalukaOptionsByDistrict(districtId) {
     const res = await getLocationOptions({ district_id: districtId })
     if (requestToken !== talukaLoadToken) return
     talukaOptions.value = (res?.talukas || []).map(t => ({
-      label: t.taluka_name || t.name || t.TALUKA,
-      value: t.taluka_id || t.id || t.value,
+      label: t.name ?? t.taluka_name ?? t.TALUKA ?? '',
+      // API returns LocationOption { id, name } — prefer id, not label fields.
+      value: t.id ?? t.pklTalukaId ?? t.taluka_id ?? t.value,
     }))
   } catch (e) {
     if (requestToken !== talukaLoadToken) return
@@ -1269,8 +1300,8 @@ async function loadVillageOptionsByTaluka(districtId, talukaId) {
     })
     if (requestToken !== villageLoadToken) return
     villageOptions.value = (res?.villages || []).map(v => ({
-      label: v.village_name || v.name || v.VILLAGE,
-      value: v.village_id || v.id || v.value,
+      label: v.name ?? v.village_name ?? v.VILLAGE ?? '',
+      value: v.id ?? v.pklVillageId ?? v.village_id ?? v.value,
     }))
   } catch (e) {
     if (requestToken !== villageLoadToken) return
@@ -1278,40 +1309,103 @@ async function loadVillageOptionsByTaluka(districtId, talukaId) {
   }
 }
 
+function geoFilterParam(sel) {
+  const v = sel?.value
+  if (v === undefined || v === null || v === '') return undefined
+  return v
+}
+
 function getHouseFilters() {
+  console.log('Selected values:', selectedDistrict.value, selectedTaluka.value, selectedVillage.value)
+
+  const district_id = geoFilterParam(selectedDistrict.value)
+  const taluka_id = geoFilterParam(selectedTaluka.value)
+  const village_id = geoFilterParam(selectedVillage.value)
+
+  console.log('Filters sent:', { district_id, taluka_id, village_id })
+
   return {
     limit: 2000,
-    district_id: selectedDistrict.value || undefined,
-    taluka_id: selectedTaluka.value || undefined,
-    village_id: selectedVillage.value || undefined,
+    district_id,
+    taluka_id,
+    village_id,
   }
 }
 
 function getActiveLocationParams() {
   return {
-    district_id: selectedDistrict.value || undefined,
-    taluka_id: selectedTaluka.value || undefined,
-    village_id: selectedVillage.value || undefined,
+    district_id: geoFilterParam(selectedDistrict.value),
+    taluka_id: geoFilterParam(selectedTaluka.value),
+    village_id: geoFilterParam(selectedVillage.value),
   }
 }
 
-async function fetchAllHouses() {
+async function fetchAllHouses(requestToken = activeHouseLoadToken) {
+  const profile =
+    applyClickProfile &&
+    applyClickProfile.token === requestToken
+
+  if (profile) {
+    applyClickProfile.t1 = performance.now()
+    console.log('Before API call')
+  }
+
   // Single filtered fetch per apply/reset cycle to keep marker rendering responsive.
   const hasLocationFilter = Boolean(
-    selectedDistrict.value || selectedTaluka.value || selectedVillage.value
+    geoFilterParam(selectedDistrict.value) ||
+      geoFilterParam(selectedTaluka.value) ||
+      geoFilterParam(selectedVillage.value),
   )
   const base = getHouseFilters()
   const pageLimit = hasLocationFilter ? 500 : 2000
   const res = await getHouses({ ...base, page: 1, limit: pageLimit })
+
+  if (profile) {
+    applyClickProfile.t2 = performance.now()
+    console.log('API response time:', applyClickProfile.t2 - applyClickProfile.t1, 'ms')
+  }
+
+  if (profile) {
+    applyClickProfile.t3 = performance.now()
+    console.log('Before marker mapping')
+  }
   const families = extractFamiliesFromResponse(res)
   const houseResponseMembers = collectFamilyMembers(res, families)
   const sourceMembers = houseResponseMembers.length ? houseResponseMembers : familyMembers.value
-  return families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
+  if (profile) {
+    applyClickProfile.t4 = performance.now()
+    console.log('Mapping time:', applyClickProfile.t4 - applyClickProfile.t3, 'ms')
+  }
+
+  if (profile) {
+    applyClickProfile.t5 = performance.now()
+    console.log('Before enrichment')
+    console.time('enrichLoop')
+  }
+  const enriched = families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
+  if (profile) console.timeEnd('enrichLoop')
+  if (profile) {
+    applyClickProfile.t6 = performance.now()
+    console.log('Enrichment time:', applyClickProfile.t6 - applyClickProfile.t5, 'ms')
+  }
+
+  return enriched
 }
 
 function applyFilters(autoZoomToResults = true) {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
+
+  if (autoZoomToResults) {
+    const t0 = performance.now()
+    console.log('Apply clicked')
+    console.log('Apply triggered')
+    setTimeout(() => console.log('UI free'), 0)
+    applyClickProfile = { t0, token: requestToken }
+  } else {
+    applyClickProfile = null
+  }
+
   houses.value = []
   selectedHouse.value = null
   selectedCluster.value = null
@@ -1326,7 +1420,11 @@ function applyFilters(autoZoomToResults = true) {
     loading.value = true
     loadLiveHouseData(requestToken)
     // Hide district markers if any location filter is applied
-    if (selectedDistrict.value || selectedTaluka.value || selectedVillage.value) {
+    if (
+      geoFilterParam(selectedDistrict.value) ||
+      geoFilterParam(selectedTaluka.value) ||
+      geoFilterParam(selectedVillage.value)
+    ) {
       clearDistrictCentroids()
     } else {
       refreshDistrictCentroids()
@@ -1337,9 +1435,9 @@ function applyFilters(autoZoomToResults = true) {
 async function resetFilters() {
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
-  selectedDistrict.value = ''
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
+  selectedDistrict.value = null
+  selectedTaluka.value = null
+  selectedVillage.value = null
   talukaOptions.value = []
   villageOptions.value = []
   fitAfterLoad = false          // reset will fly back to Maharashtra, not fitBounds
@@ -2254,13 +2352,34 @@ function addHouseMarker(house) {
   }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -6) })
 }
 
-function plotMarkers(data) {
+function plotMarkers(data, profileRequestToken = null) {
+  console.time('plotMarkers')
   clearMarkers()
   const renderToken = markerRenderToken
   let index = 0
 
+  const finishPlotMarkersTiming = (withSummary) => {
+    console.timeEnd('plotMarkers')
+    if (
+      withSummary &&
+      profileRequestToken != null &&
+      applyClickProfile &&
+      applyClickProfile.token === profileRequestToken &&
+      applyClickProfile.t7 != null
+    ) {
+      const t8 = performance.now()
+      console.log('Rendering time:', t8 - applyClickProfile.t7, 'ms')
+      console.log('Total time:', t8 - applyClickProfile.t0, 'ms')
+      logApplyProfileSummary(applyClickProfile, t8)
+      applyClickProfile = null
+    }
+  }
+
   const renderChunk = () => {
-    if (renderToken !== markerRenderToken || !map) return
+    if (renderToken !== markerRenderToken || !map) {
+      finishPlotMarkersTiming(false)
+      return
+    }
     const end = Math.min(index + MARKER_RENDER_CHUNK_SIZE, data.length)
     for (let i = index; i < end; i += 1) {
       addHouseMarker(data[i])
@@ -2270,6 +2389,7 @@ function plotMarkers(data) {
       markerRenderFrame = requestAnimationFrame(renderChunk)
     } else {
       markerRenderFrame = null
+      finishPlotMarkersTiming(true)
     }
   }
 
@@ -2308,23 +2428,49 @@ function clearRetryTimer() {
 async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
   if (requestToken !== activeHouseLoadToken) return
 
+  const profile =
+    applyClickProfile &&
+    applyClickProfile.token === requestToken
+
   try {
-    const real = await fetchAllHouses()
+    const real = await fetchAllHouses(requestToken)
     if (requestToken !== activeHouseLoadToken) return
+
+    console.log('Households count:', real.length)
 
     if (real.length > 0) {
       clearRetryTimer()
       houses.value = real
-      plotMarkers(real)
+      if (profile) {
+        applyClickProfile.t7 = performance.now()
+        console.log('Before rendering markers')
+      }
+      plotMarkers(real, profile ? requestToken : null)
       if (viewMode.value === 'villages') {
         drawClusters(buildVillageClusters(real))
       }
       loading.value = false
       return
     }
+
+    // Successful fetch with zero households — no plotMarkers run
+    if (profile && applyClickProfile && applyClickProfile.token === requestToken) {
+      applyClickProfile.t7 = performance.now()
+      console.log('Before rendering markers')
+      const t8 = performance.now()
+      console.log('Rendering time:', t8 - applyClickProfile.t7, 'ms')
+      console.log('Total time:', t8 - applyClickProfile.t0, 'ms')
+      logApplyProfileSummary(applyClickProfile, t8)
+      applyClickProfile = null
+    }
+    loading.value = false
+    return
   } catch (e) {
     if (requestToken !== activeHouseLoadToken) return
     console.warn('Houses API not available:', e.message)
+    if (applyClickProfile && applyClickProfile.token === requestToken) {
+      applyClickProfile = null
+    }
   }
 
   if (requestToken !== activeHouseLoadToken) return
@@ -2402,15 +2548,18 @@ onUnmounted(() => {
 })
 
 watch(selectedDistrict, async () => {
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
-  await loadTalukaOptionsByDistrict(selectedDistrict.value)
+  selectedTaluka.value = null
+  selectedVillage.value = null
+  await loadTalukaOptionsByDistrict(geoFilterParam(selectedDistrict.value))
   refreshDistrictCentroids()
 })
 
 watch(selectedTaluka, async () => {
-  selectedVillage.value = ''
-  await loadVillageOptionsByTaluka(selectedDistrict.value, selectedTaluka.value)
+  selectedVillage.value = null
+  await loadVillageOptionsByTaluka(
+    geoFilterParam(selectedDistrict.value),
+    geoFilterParam(selectedTaluka.value),
+  )
   refreshDistrictCentroids()
 })
 
