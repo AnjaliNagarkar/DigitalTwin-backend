@@ -4,7 +4,12 @@
       <div class="map-title-area">
         <h1 class="page-title">Geo-Intelligence Map</h1>
         <p class="page-subtitle">
-          {{ houses.length.toLocaleString() }} households plotted from the live database
+          <template v-if="loading && houses.length === 0">
+            Loading household data from the live database…
+          </template>
+          <template v-else>
+            {{ houses.length.toLocaleString() }} households plotted from the live database
+          </template>
         </p>
       </div>
       <div class="map-controls">
@@ -72,7 +77,7 @@
         </div>
 
         <div class="map-control-group">
-          <button class="apply-btn" @click="applyFilters">Apply</button>
+          <button class="apply-btn" @click="() => applyFilters(true)">Apply</button>
           <button class="reset-btn" @click="resetFilters">Reset</button>
         </div>
 
@@ -134,7 +139,7 @@
     </header>
 
     <section class="map-shell">
-      <div v-if="!loading && !houses.length" class="empty-state">
+      <div v-if="!loading && houses.length === 0" class="empty-state">
         No live household data returned from the database API.
       </div>
 
@@ -1175,6 +1180,7 @@ async function refreshDistrictCentroids() {
   } catch (error) {
     console.warn('District centroids unavailable:', error?.message || error)
   }
+  console.log('AFTER CENTROIDS:', houses.value.length)
 }
 
 function handleFullscreenChange() {
@@ -1310,9 +1316,14 @@ async function loadVillageOptionsByTaluka(districtId, talukaId) {
 }
 
 function geoFilterParam(sel) {
-  const v = sel?.value
-  if (v === undefined || v === null || v === '') return undefined
-  return v
+  if (!sel) return undefined
+
+  // IMPORTANT: treat null / empty as no filter (e.g. Village = "All")
+  if (sel.value === null || sel.value === undefined || sel.value === '') {
+    return undefined
+  }
+
+  return sel.value
 }
 
 function getHouseFilters() {
@@ -1322,6 +1333,7 @@ function getHouseFilters() {
   const taluka_id = geoFilterParam(selectedTaluka.value)
   const village_id = geoFilterParam(selectedVillage.value)
 
+  console.log('FINAL FILTERS:', { district_id, taluka_id, village_id })
   console.log('Filters sent:', { district_id, taluka_id, village_id })
 
   return {
@@ -1358,7 +1370,15 @@ async function fetchAllHouses(requestToken = activeHouseLoadToken) {
   )
   const base = getHouseFilters()
   const pageLimit = hasLocationFilter ? 500 : 2000
-  const res = await getHouses({ ...base, page: 1, limit: pageLimit })
+  const apiParams = { ...base, page: 1, limit: pageLimit }
+  const cleanedEntries = Object.entries(apiParams).filter(([, value]) => {
+    if (value === undefined || value === null) return false
+    if (typeof value === 'string' && value.trim() === '') return false
+    return true
+  })
+  const queryString = new URLSearchParams(cleanedEntries).toString()
+  console.log('API CALL:', queryString ? `/houses?${queryString}` : '/houses')
+  const res = await getHouses(apiParams)
 
   if (profile) {
     applyClickProfile.t2 = performance.now()
@@ -1393,61 +1413,85 @@ async function fetchAllHouses(requestToken = activeHouseLoadToken) {
 }
 
 function applyFilters(autoZoomToResults = true) {
+  console.log('APPLY CLICKED')
+
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
 
-  if (autoZoomToResults) {
+  const useProfile = autoZoomToResults === true
+  if (useProfile) {
     const t0 = performance.now()
-    console.log('Apply clicked')
-    console.log('Apply triggered')
     setTimeout(() => console.log('UI free'), 0)
     applyClickProfile = { t0, token: requestToken }
   } else {
     applyClickProfile = null
   }
 
+  const district_id = geoFilterParam(selectedDistrict.value)
+  if (!district_id) {
+    console.log('No district selected, skipping API')
+    loading.value = false
+    fitAfterLoad = false
+    houses.value = []
+    selectedHouse.value = null
+    selectedCluster.value = null
+    clearClusterSelection()
+    if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
+    clearMarkers()
+    refreshDistrictCentroids()
+    console.log('AFTER APPLY:', houses.value.length)
+    return
+  }
+
+  if (!map) {
+    loading.value = false
+    houses.value = []
+    selectedHouse.value = null
+    selectedCluster.value = null
+    clearClusterSelection()
+    if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
+    clearMarkers()
+    console.log('AFTER APPLY:', houses.value.length)
+    return
+  }
+
+  // House fetch path: set loading before clearing houses so empty-state never flashes
+  loading.value = true
   houses.value = []
   selectedHouse.value = null
   selectedCluster.value = null
   clearClusterSelection()
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearMarkers()
-  if (map) {
-    // Signal plotMarkers to auto-zoom once new data arrives.
-    // Always fit when any filter is active; also fit on a plain Apply click
-    // so the user gets immediate feedback even on full-dataset reloads.
-    fitAfterLoad = autoZoomToResults
-    loading.value = true
-    loadLiveHouseData(requestToken)
-    // Hide district markers if any location filter is applied
-    if (
-      geoFilterParam(selectedDistrict.value) ||
-      geoFilterParam(selectedTaluka.value) ||
-      geoFilterParam(selectedVillage.value)
-    ) {
-      clearDistrictCentroids()
-    } else {
-      refreshDistrictCentroids()
-    }
+
+  fitAfterLoad = useProfile
+  loadLiveHouseData(requestToken)
+  if (
+    geoFilterParam(selectedDistrict.value) ||
+    geoFilterParam(selectedTaluka.value) ||
+    geoFilterParam(selectedVillage.value)
+  ) {
+    clearDistrictCentroids()
+  } else {
+    refreshDistrictCentroids()
   }
+  console.log('AFTER APPLY:', houses.value.length)
 }
 
 async function resetFilters() {
   clearRetryTimer()
-  const requestToken = ++activeHouseLoadToken
+  ++activeHouseLoadToken
   selectedDistrict.value = null
   selectedTaluka.value = null
   selectedVillage.value = null
   talukaOptions.value = []
   villageOptions.value = []
   fitAfterLoad = false          // reset will fly back to Maharashtra, not fitBounds
-  // Replot without auto-zoom — fitToMaharashtra() gives the full-state view
   houses.value = []
   selectedHouse.value = null
   clearMarkers()
+  loading.value = false
   if (map) {
-    loading.value = true
-    loadLiveHouseData(requestToken)
     refreshDistrictCentroids()
     fitToMaharashtra()
   }
@@ -2441,6 +2485,7 @@ async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
     if (real.length > 0) {
       clearRetryTimer()
       houses.value = real
+      console.log('AFTER LOAD:', houses.value.length)
       if (profile) {
         applyClickProfile.t7 = performance.now()
         console.log('Before rendering markers')
@@ -2454,6 +2499,7 @@ async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
     }
 
     // Successful fetch with zero households — no plotMarkers run
+    console.log('AFTER LOAD:', houses.value.length)
     if (profile && applyClickProfile && applyClickProfile.token === requestToken) {
       applyClickProfile.t7 = performance.now()
       console.log('Before rendering markers')
@@ -2533,7 +2579,7 @@ onMounted(async () => {
 
   loading.value = true
   await loadFamilyMembers()
-  applyFilters(false)
+  loading.value = false
 })
 
 onUnmounted(() => {
@@ -2551,7 +2597,6 @@ watch(selectedDistrict, async () => {
   selectedTaluka.value = null
   selectedVillage.value = null
   await loadTalukaOptionsByDistrict(geoFilterParam(selectedDistrict.value))
-  refreshDistrictCentroids()
 })
 
 watch(selectedTaluka, async () => {
@@ -2560,11 +2605,14 @@ watch(selectedTaluka, async () => {
     geoFilterParam(selectedDistrict.value),
     geoFilterParam(selectedTaluka.value),
   )
-  refreshDistrictCentroids()
 })
 
 watch(selectedVillage, () => {
-  refreshDistrictCentroids()
+  // Dropdown only — no API (household load is Apply-only)
+})
+
+watch(houses, (val) => {
+  console.log('HOUSES CHANGED:', val?.length)
 })
 
 watch(analyticsPanelOpen, async () => {

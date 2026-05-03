@@ -289,6 +289,14 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		}
 	}
 
+	log.Println("REQUEST PARAMS:",
+		"district_id =", districtID,
+		"taluka_id =", talukaID,
+		"village_id =", villageID,
+	)
+	log.Println("WHERE:", where)
+	log.Println("ARGS:", args)
+
 	// FAMILY-level optional columns (no FAMILY_MEMBER aggregation in this handler — MapView enriches from population API).
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
