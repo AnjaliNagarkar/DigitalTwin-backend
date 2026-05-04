@@ -92,12 +92,32 @@ func (h *DashboardSummaryHandler) ensureSummaryIndexes() {
 
 func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	started := time.Now()
-	districtID := normalizeFilterValue(c.Query("district_id"))
-	talukaID := normalizeFilterValue(c.Query("taluka_id"))
-	villageID := normalizeFilterValue(c.Query("village_id"))
-	log.Printf("[dashboard/summary] request district=%q taluka=%q village=%q", districtID, talukaID, villageID)
 
-	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s", nonEmpty(districtID, "all"), nonEmpty(talukaID, "all"), nonEmpty(villageID, "all"))
+	// Support both singular and plural parameter names
+	districtID := normalizeFilterValue(c.Query("district_id"))
+	districtIDs := c.Query("district_ids")
+	talukaID := normalizeFilterValue(c.Query("taluka_id"))
+	talukaIDs := c.Query("taluka_ids")
+	villageID := normalizeFilterValue(c.Query("village_id"))
+	villageIDs := c.Query("village_ids")
+
+	log.Printf("[dashboard/summary] request district=%q districts=%q taluka=%q talukas=%q village=%q villages=%q",
+		districtID, districtIDs, talukaID, talukaIDs, villageID, villageIDs)
+
+	districtCacheKey := nonEmpty(districtID, districtIDs)
+	if districtCacheKey == "" {
+		districtCacheKey = "all"
+	}
+	talukaCacheKey := nonEmpty(talukaID, talukaIDs)
+	if talukaCacheKey == "" {
+		talukaCacheKey = "all"
+	}
+	villageCacheKey := nonEmpty(villageID, villageIDs)
+	if villageCacheKey == "" {
+		villageCacheKey = "all"
+	}
+
+	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s", districtCacheKey, talukaCacheKey, villageCacheKey)
 
 	h.cacheMux.RLock()
 	if item, ok := h.cache[cacheKey]; ok && time.Now().Before(item.ExpiresAt) {
@@ -121,7 +141,7 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	whereF, args := buildOptionalLocationFilter("f", districtID, talukaID, villageID)
+	whereF, args := buildOptionalLocationFilterWithArrays("f", districtID, districtIDs, talukaID, talukaIDs, villageID, villageIDs)
 
 	result := defaultDashboardSummaryResponse()
 	resultMux := sync.Mutex{}
@@ -225,6 +245,77 @@ func buildOptionalLocationFilter(alias, districtID, talukaID, villageID string) 
 	if village := normalizeFilterValue(villageID); village != "" {
 		where += fmt.Sprintf(" AND %s.VILLAGE_ID = ?", alias)
 		args = append(args, village)
+	}
+
+	return where, args
+}
+
+// buildOptionalLocationFilterWithArrays builds WHERE clause supporting both single values and comma-separated arrays
+func buildOptionalLocationFilterWithArrays(alias, districtID, districtIDs, talukaID, talukaIDs, villageID, villageIDs string) (string, []interface{}) {
+	where := "1=1"
+	args := []interface{}{}
+
+	// Handle district IDs - support both single and multiple
+	var districtIDList []string
+	if districtIDs != "" {
+		for _, id := range strings.Split(districtIDs, ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				districtIDList = append(districtIDList, trimmed)
+			}
+		}
+	} else if district := normalizeFilterValue(districtID); district != "" {
+		districtIDList = []string{district}
+	}
+
+	if len(districtIDList) > 0 {
+		placeholders := make([]string, len(districtIDList))
+		for i, id := range districtIDList {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where += fmt.Sprintf(" AND %s.DISTRICT_ID IN (%s)", alias, strings.Join(placeholders, ","))
+	}
+
+	// Handle taluka IDs - support both single and multiple
+	var talukaIDList []string
+	if talukaIDs != "" {
+		for _, id := range strings.Split(talukaIDs, ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				talukaIDList = append(talukaIDList, trimmed)
+			}
+		}
+	} else if taluka := normalizeFilterValue(talukaID); taluka != "" {
+		talukaIDList = []string{taluka}
+	}
+
+	if len(talukaIDList) > 0 {
+		placeholders := make([]string, len(talukaIDList))
+		for i, id := range talukaIDList {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where += fmt.Sprintf(" AND %s.TALUKA_ID IN (%s)", alias, strings.Join(placeholders, ","))
+	}
+
+	// Handle village IDs - support both single and multiple
+	var villageIDList []string
+	if villageIDs != "" {
+		for _, id := range strings.Split(villageIDs, ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				villageIDList = append(villageIDList, trimmed)
+			}
+		}
+	} else if village := normalizeFilterValue(villageID); village != "" {
+		villageIDList = []string{village}
+	}
+
+	if len(villageIDList) > 0 {
+		placeholders := make([]string, len(villageIDList))
+		for i, id := range villageIDList {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where += fmt.Sprintf(" AND %s.VILLAGE_ID IN (%s)", alias, strings.Join(placeholders, ","))
 	}
 
 	return where, args

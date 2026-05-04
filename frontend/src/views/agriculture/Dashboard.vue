@@ -14,39 +14,108 @@
     <section class="card dashboard-filter">
       <div class="dashboard-filter-head">Location Filter</div>
       <div class="dashboard-filter-grid">
-        <select v-model="selectedDistrict" class="dashboard-filter-select" @change="onDistrictChange">
-          <option value="">Select District</option>
-          <option v-for="district in districtOptions" :key="district.id" :value="String(district.id)">
-            {{ district.name }}
-          </option>
-        </select>
+        <!-- Districts Multi-Select -->
+        <div class="filter-dropdown-wrapper">
+          <div class="filter-dropdown-trigger" @click="toggleDropdown('district')">
+            <span class="filter-trigger-text">
+              {{ selectedDistrictDisplay || 'Select District' }}
+            </span>
+            <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'district' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div v-if="openDropdown === 'district'" class="filter-dropdown-menu">
+            <div class="filter-dropdown-search">
+              <input
+                v-model="districtSearchText"
+                type="text"
+                placeholder="Search District"
+                class="filter-search-input"
+              />
+            </div>
+            <div class="filter-dropdown-options">
+              <label v-for="district in filteredDistricts" :key="district.id" class="filter-option">
+                <input
+                  type="checkbox"
+                  :checked="selectedDistricts.includes(Number(district.id))"
+                  @change="toggleDistrict(Number(district.id))"
+                  class="filter-checkbox"
+                />
+                <span class="filter-option-label">{{ district.name }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
 
-        <select
-          v-model="selectedTaluka"
-          class="dashboard-filter-select"
-          :disabled="!selectedDistrict"
-          @change="onTalukaChange"
-        >
-          <option value="">Select Taluka</option>
-          <option v-for="taluka in talukaOptions" :key="taluka.id" :value="String(taluka.id)">
-            {{ taluka.name }}
-          </option>
-        </select>
+        <!-- Talukas Multi-Select -->
+        <div class="filter-dropdown-wrapper">
+          <div class="filter-dropdown-trigger" :class="{ disabled: selectedDistricts.length === 0 }" @click="selectedDistricts.length > 0 && toggleDropdown('taluka')">
+            <span class="filter-trigger-text">
+              {{ selectedTalukaDisplay || 'Select Taluka' }}
+            </span>
+            <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'taluka' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div v-if="openDropdown === 'taluka'" class="filter-dropdown-menu">
+            <div class="filter-dropdown-search">
+              <input
+                v-model="talukaSearchText"
+                type="text"
+                placeholder="Search Taluka"
+                class="filter-search-input"
+              />
+            </div>
+            <div class="filter-dropdown-options">
+              <label v-for="taluka in filteredTalukas" :key="taluka.id" class="filter-option">
+                <input
+                  type="checkbox"
+                  :checked="selectedTalukas.includes(Number(taluka.id))"
+                  @change="toggleTaluka(Number(taluka.id))"
+                  class="filter-checkbox"
+                />
+                <span class="filter-option-label">{{ taluka.name }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
 
-        <select
-          v-model="selectedVillage"
-          class="dashboard-filter-select"
-          :disabled="!selectedTaluka"
-        >
-          <option value="">Select Village</option>
-          <option v-for="village in villageOptions" :key="village.id" :value="String(village.id)">
-            {{ village.name }}
-          </option>
-        </select>
+        <!-- Villages Multi-Select -->
+        <div class="filter-dropdown-wrapper">
+          <div class="filter-dropdown-trigger" :class="{ disabled: selectedTalukas.length === 0 }" @click="selectedTalukas.length > 0 && toggleDropdown('village')">
+            <span class="filter-trigger-text">
+              {{ selectedVillageDisplay || 'Select Village' }}
+            </span>
+            <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'village' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div v-if="openDropdown === 'village'" class="filter-dropdown-menu">
+            <div class="filter-dropdown-search">
+              <input
+                v-model="villageSearchText"
+                type="text"
+                placeholder="Search Village"
+                class="filter-search-input"
+              />
+            </div>
+            <div class="filter-dropdown-options">
+              <label v-for="village in filteredVillages" :key="village.id" class="filter-option">
+                <input
+                  type="checkbox"
+                  :checked="selectedVillages.includes(Number(village.id))"
+                  @change="toggleVillage(Number(village.id))"
+                  class="filter-checkbox"
+                />
+                <span class="filter-option-label">{{ village.name }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
 
         <div class="dashboard-filter-actions">
-          <button type="button" class="dashboard-apply-btn" @click="applyLocationFilters">Apply</button>
-          <button type="button" class="dashboard-reset-btn" @click="resetLocationFilters">Reset</button>
+          <button type="button" class="dashboard-apply-btn" @click="applyFilters">Apply</button>
+          <button type="button" class="dashboard-reset-btn" @click="resetFilters">Reset</button>
         </div>
       </div>
     </section>
@@ -359,20 +428,36 @@ const employment = ref({
   },
 })
 const bplDistribution = ref({ bpl: 0, non_bpl: 0, total_households: 0 })
-const selectedDistrict = ref('')
-const selectedTaluka = ref('')
-const selectedVillage = ref('')
+
+// Multi-select filter state
+const selectedDistricts = ref([])
+const selectedTalukas = ref([])
+const selectedVillages = ref([])
+
+// Dropdown options
 const districtOptions = ref([])
 const talukaOptions = ref([])
 const villageOptions = ref([])
+
+// Search and UI state
+const districtSearchText = ref('')
+const talukaSearchText = ref('')
+const villageSearchText = ref('')
+const openDropdown = ref(null)
+
 const ageIncomeGenderCanvas = ref(null)
 let isActive = true
 let ageIncomeGenderChart = null
 const AGE_GROUP_ORDER = ['18-30', '31-45', '46-60', '60+']
 
+let handleClickOutside = null
+
 onUnmounted(() => {
   isActive = false
   destroyAgeIncomeGenderChart()
+  if (handleClickOutside) {
+    document.removeEventListener('click', handleClickOutside)
+  }
 })
 
 function applyDemographicsData(data) {
@@ -583,27 +668,115 @@ function isValidFilterValue(value) {
 function buildLocationParams() {
   const params = {}
 
-  if (isValidFilterValue(selectedDistrict.value)) {
-    params.district_id = String(selectedDistrict.value).trim()
+  if (selectedDistricts.value.length > 0) {
+    params.district_ids = selectedDistricts.value.join(',')
   }
-  if (isValidFilterValue(selectedTaluka.value)) {
-    params.taluka_id = String(selectedTaluka.value).trim()
+  if (selectedTalukas.value.length > 0) {
+    params.taluka_ids = selectedTalukas.value.join(',')
   }
-  if (isValidFilterValue(selectedVillage.value)) {
-    params.village_id = String(selectedVillage.value).trim()
+  if (selectedVillages.value.length > 0) {
+    params.village_ids = selectedVillages.value.join(',')
   }
 
   return params
 }
 
+function toggleDropdown(dropdown) {
+  openDropdown.value = openDropdown.value === dropdown ? null : dropdown
+}
+
+function toggleDistrict(districtId) {
+  const index = selectedDistricts.value.indexOf(districtId)
+  if (index > -1) {
+    selectedDistricts.value.splice(index, 1)
+  } else {
+    selectedDistricts.value.push(districtId)
+  }
+}
+
+function toggleTaluka(talukaId) {
+  const index = selectedTalukas.value.indexOf(talukaId)
+  if (index > -1) {
+    selectedTalukas.value.splice(index, 1)
+  } else {
+    selectedTalukas.value.push(talukaId)
+  }
+}
+
+function toggleVillage(villageId) {
+  const index = selectedVillages.value.indexOf(villageId)
+  if (index > -1) {
+    selectedVillages.value.splice(index, 1)
+  } else {
+    selectedVillages.value.push(villageId)
+  }
+}
+
+// Computed display text for selected filters
+const selectedDistrictDisplay = computed(() => {
+  if (selectedDistricts.value.length === 0) return ''
+  const names = selectedDistricts.value
+    .map(id => {
+      const district = districtOptions.value.find(d => d.id === String(id))
+      return district?.name || ''
+    })
+    .filter(Boolean)
+  return names.join(', ')
+})
+
+const selectedTalukaDisplay = computed(() => {
+  if (selectedTalukas.value.length === 0) return ''
+  const names = selectedTalukas.value
+    .map(id => {
+      const taluka = talukaOptions.value.find(t => t.id === String(id))
+      return taluka?.name || ''
+    })
+    .filter(Boolean)
+  return names.join(', ')
+})
+
+const selectedVillageDisplay = computed(() => {
+  if (selectedVillages.value.length === 0) return ''
+  const names = selectedVillages.value
+    .map(id => {
+      const village = villageOptions.value.find(v => v.id === String(id))
+      return village?.name || ''
+    })
+    .filter(Boolean)
+  return names.join(', ')
+})
+
+// Filtered dropdown options based on search
+const filteredDistricts = computed(() => {
+  if (!districtSearchText.value) return districtOptions.value
+  const search = districtSearchText.value.toLowerCase()
+  return districtOptions.value.filter(d => d.name.toLowerCase().includes(search))
+})
+
+const filteredTalukas = computed(() => {
+  if (!talukaSearchText.value) return talukaOptions.value
+  const search = talukaSearchText.value.toLowerCase()
+  return talukaOptions.value.filter(t => t.name.toLowerCase().includes(search))
+})
+
+const filteredVillages = computed(() => {
+  if (!villageSearchText.value) return villageOptions.value
+  const search = villageSearchText.value.toLowerCase()
+  return villageOptions.value.filter(v => v.name.toLowerCase().includes(search))
+})
+
 async function loadLocationOptions() {
   try {
     const optionParams = {}
-    if (isValidFilterValue(selectedDistrict.value)) {
-      optionParams.district_id = String(selectedDistrict.value).trim()
+    
+    // Only pass district IDs if selected
+    if (selectedDistricts.value.length > 0) {
+      optionParams.district_ids = selectedDistricts.value.join(',')
     }
-    if (isValidFilterValue(selectedTaluka.value)) {
-      optionParams.taluka_id = String(selectedTaluka.value).trim()
+    
+    // Only pass taluka IDs if selected
+    if (selectedTalukas.value.length > 0) {
+      optionParams.taluka_ids = selectedTalukas.value.join(',')
     }
 
     const options = await getLocationOptions(optionParams)
@@ -639,25 +812,21 @@ async function fetchDashboardData(params = {}) {
   loading.value = false
 }
 
-async function onDistrictChange() {
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
-  await loadLocationOptions()
+async function applyFilters() {
+  openDropdown.value = null
+  const params = buildLocationParams()
+  await fetchDashboardData(params)
 }
 
-async function onTalukaChange() {
-  selectedVillage.value = ''
-  await loadLocationOptions()
-}
-
-async function applyLocationFilters() {
-  await fetchDashboardData(buildLocationParams())
-}
-
-async function resetLocationFilters() {
-  selectedDistrict.value = ''
-  selectedTaluka.value = ''
-  selectedVillage.value = ''
+async function resetFilters() {
+  selectedDistricts.value = []
+  selectedTalukas.value = []
+  selectedVillages.value = []
+  districtSearchText.value = ''
+  talukaSearchText.value = ''
+  villageSearchText.value = ''
+  openDropdown.value = null
+  
   const dashboardPromise = fetchDashboardData()
   const optionsPromise = loadLocationOptions()
   await Promise.allSettled([dashboardPromise, optionsPromise])
@@ -667,7 +836,45 @@ onMounted(async () => {
   const dashboardPromise = fetchDashboardData()
   const optionsPromise = loadLocationOptions()
   await Promise.allSettled([dashboardPromise, optionsPromise])
+  
+  // Close dropdowns when clicking outside the filter section
+  handleClickOutside = (e) => {
+    const filterSection = document.querySelector('.dashboard-filter')
+    if (filterSection && !filterSection.contains(e.target)) {
+      openDropdown.value = null
+    }
+  }
+  
+  document.addEventListener('click', handleClickOutside)
 })
+
+// Watch for district changes - clear child filters and reload talukas
+watch(
+  () => selectedDistricts.value.length,
+  async () => {
+    // Clear child filters when district changes
+    selectedTalukas.value = []
+    selectedVillages.value = []
+    talukaSearchText.value = ''
+    villageSearchText.value = ''
+    
+    // Reload taluka options based on selected districts
+    await loadLocationOptions()
+  }
+)
+
+// Watch for taluka changes - clear villages and reload village options
+watch(
+  () => selectedTalukas.value.length,
+  async () => {
+    // Clear child filters when taluka changes
+    selectedVillages.value = []
+    villageSearchText.value = ''
+    
+    // Reload village options based on selected talukas
+    await loadLocationOptions()
+  }
+)
 
 watch(
   [loading, ageIncomeGenderSegments],
@@ -1543,6 +1750,125 @@ function landPct(count) {
 .dashboard-filter-select:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+/* Multi-select Checkbox Dropdown */
+.filter-dropdown-wrapper {
+  position: relative;
+}
+
+.filter-dropdown-trigger {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-body);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.78rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.filter-dropdown-trigger:hover:not(.disabled) {
+  border-color: var(--border-light);
+}
+
+.filter-dropdown-trigger.disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.filter-trigger-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-trigger-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  color: var(--text-muted);
+}
+
+.filter-trigger-icon.open {
+  transform: rotate(180deg);
+}
+
+.filter-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.filter-dropdown-search {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-search-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-body);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.filter-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-dropdown-options {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.4rem 0;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  user-select: none;
+}
+
+.filter-option:hover {
+  background: var(--bg-surface);
+}
+
+.filter-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--teal);
+}
+
+.filter-option-label {
+  flex: 1;
+  font-size: 0.76rem;
+  color: var(--text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dashboard-filter-actions {

@@ -136,6 +136,34 @@ export function getLocationOptions(params = {}) {
   return fetchJSON(qs ? `/location-options?${qs}` : '/location-options', TIMEOUT_DATA)
 }
 
+/**
+ * Fetch talukas for multiple selected districts
+ * Accepts comma-separated district IDs (e.g., "1,2,3")
+ * Backend should support: ?district_ids=1,2,3 or similar
+ */
+export function getTalukasByDistricts(districtIds) {
+  if (!districtIds || districtIds.length === 0) {
+    return Promise.resolve({ talukas: [] })
+  }
+  
+  const ids = Array.isArray(districtIds) ? districtIds.join(',') : String(districtIds)
+  return fetchJSON(`/location-options?district_ids=${encodeURIComponent(ids)}`, TIMEOUT_DATA)
+}
+
+/**
+ * Fetch villages for multiple selected talukas
+ * Accepts comma-separated taluka IDs (e.g., "1,2,3")
+ * Backend should support: ?taluka_ids=1,2,3 or similar
+ */
+export function getVillagesByTalukas(talukaIds) {
+  if (!talukaIds || talukaIds.length === 0) {
+    return Promise.resolve({ villages: [] })
+  }
+  
+  const ids = Array.isArray(talukaIds) ? talukaIds.join(',') : String(talukaIds)
+  return fetchJSON(`/location-options?taluka_ids=${encodeURIComponent(ids)}`, TIMEOUT_DATA)
+}
+
 export function getDistricts() {
   return fetchJSON('/districts', TIMEOUT_DATA)
 }

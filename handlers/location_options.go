@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -57,16 +58,43 @@ func (h *LocationHandler) GetDistricts(c *gin.Context) {
 
 // GetLocationOptions returns district/taluka/village dropdown options.
 // Optional filters:
-// - district_id: narrows taluka/village options
-// - taluka_id: narrows village options
+// - district_id or district_ids: single or comma-separated district IDs (narrows taluka/village options)
+// - taluka_id or taluka_ids: single or comma-separated taluka IDs (narrows village options)
+// - village_id or village_ids: single or comma-separated village IDs (for filtering)
 func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
+	// Get parameters - support both singular and plural forms
 	districtID := c.Query("district_id")
+	districtIDs := c.Query("district_ids")
 	talukaID := c.Query("taluka_id")
+	talukaIDs := c.Query("taluka_ids")
+
+	// Normalize district IDs (support both single and multiple)
+	var districtIDList []string
+	if districtIDs != "" {
+		districtIDList = strings.Split(districtIDs, ",")
+		for i, id := range districtIDList {
+			districtIDList[i] = strings.TrimSpace(id)
+		}
+	} else if districtID != "" {
+		districtIDList = []string{strings.TrimSpace(districtID)}
+	}
+
+	// Normalize taluka IDs (support both single and multiple)
+	var talukaIDList []string
+	if talukaIDs != "" {
+		talukaIDList = strings.Split(talukaIDs, ",")
+		for i, id := range talukaIDList {
+			talukaIDList[i] = strings.TrimSpace(id)
+		}
+	} else if talukaID != "" {
+		talukaIDList = []string{strings.TrimSpace(talukaID)}
+	}
 
 	districts := []LocationOption{}
 	talukas := []LocationOption{}
 	villages := []LocationOption{}
 
+	// Fetch all districts
 	dRows, err := h.DB.Query(`
 		SELECT CAST(dm.pklDistrictId AS CHAR), COALESCE(dm.vsDisplayName, dm.vsDistrictName, '')
 		FROM district_master dm
@@ -84,16 +112,24 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		districts = append(districts, o)
 	}
 
+	// Build taluka query with support for multiple districts
 	tQuery := `
 		SELECT CAST(tm.pklTalukaId AS CHAR), COALESCE(tm.vsDisplayName, tm.vsTalukaName, '')
 		FROM taluka_master tm
 		WHERE tm.bEnabled = 1
 	`
 	tArgs := []interface{}{}
-	if districtID != "" {
-		tQuery += " AND CAST(tm.fklDistrictId AS CHAR) = ?"
-		tArgs = append(tArgs, districtID)
+
+	// Apply district filter if provided
+	if len(districtIDList) > 0 {
+		placeholders := make([]string, len(districtIDList))
+		for i, id := range districtIDList {
+			placeholders[i] = "?"
+			tArgs = append(tArgs, id)
+		}
+		tQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + strings.Join(placeholders, ",") + ")"
 	}
+
 	tQuery += " ORDER BY COALESCE(tm.vsDisplayName, tm.vsTalukaName)"
 
 	tRows, err := h.DB.Query(tQuery, tArgs...)
@@ -108,6 +144,7 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		talukas = append(talukas, o)
 	}
 
+	// Build village query with support for multiple talukas and districts
 	vQuery := `
 		SELECT DISTINCT CAST(vm.pklVillageId AS CHAR), COALESCE(vm.vsDisplayName, vm.vsVillageName, '')
 		FROM village_master vm
@@ -116,14 +153,27 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		WHERE vm.bEnabled = 1
 	`
 	vArgs := []interface{}{}
-	if districtID != "" {
-		vQuery += " AND CAST(tm.fklDistrictId AS CHAR) = ?"
-		vArgs = append(vArgs, districtID)
+
+	// Apply district filter if provided
+	if len(districtIDList) > 0 {
+		placeholders := make([]string, len(districtIDList))
+		for i, id := range districtIDList {
+			placeholders[i] = "?"
+			vArgs = append(vArgs, id)
+		}
+		vQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + strings.Join(placeholders, ",") + ")"
 	}
-	if talukaID != "" {
-		vQuery += " AND CAST(tm.pklTalukaId AS CHAR) = ?"
-		vArgs = append(vArgs, talukaID)
+
+	// Apply taluka filter if provided
+	if len(talukaIDList) > 0 {
+		placeholders := make([]string, len(talukaIDList))
+		for i, id := range talukaIDList {
+			placeholders[i] = "?"
+			vArgs = append(vArgs, id)
+		}
+		vQuery += " AND CAST(tm.pklTalukaId AS CHAR) IN (" + strings.Join(placeholders, ",") + ")"
 	}
+
 	vQuery += " ORDER BY COALESCE(vm.vsDisplayName, vm.vsVillageName)"
 
 	vRows, err := h.DB.Query(vQuery, vArgs...)
