@@ -1625,6 +1625,22 @@ const COLOR_MODE_LABELS = {
   income_bracket:      'Family Income Status',
 }
 
+const VIEW_TO_COLOR_MODE = {
+  population_density:  'population_density',
+  education:           'education_level',
+  divyang:             'divyang_presence',
+  occupation:          'occupation',
+  crop:                'crops',
+  irrigation:          'irrigation',
+  land:                'land',
+  bpl_status:          'bpl_status',
+  ration:              'ration',
+  sanitation:          'sanitation',
+  lighting:            'lighting',
+  infrastructure:      'infrastructure',
+  income_bracket:      'income_bracket',
+}
+
 const COLOR_MODE_TO_VIEW = Object.fromEntries(
   Object.entries(VIEW_TO_COLOR_MODE).map(([view, mode]) => [mode, view])
 )
@@ -1674,6 +1690,10 @@ function applyColorFilter(mode) {
     closeDropdowns()
     return
   }
+  applyMappedColorMode(mode)
+}
+
+const selectColorMode = (mode) => {
   applyMappedColorMode(mode)
 }
 

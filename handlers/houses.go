@@ -261,6 +261,7 @@ func appendFamilyGeoIDFilter(where *string, args *[]interface{}, alias, column, 
 	}
 	*where += fmt.Sprintf(" AND CAST(%s.%s AS CHAR) = ?", alias, column)
 	*args = append(*args, raw)
+}
 func (h *HouseHandler) buildHouseCacheQuery() string {
 	latCol := h.CC.LatCol
 	lngCol := h.CC.LngCol
@@ -832,13 +833,14 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 }
 
 func (h *HouseHandler) GetHouseByID(c *gin.Context) {
-idStr := strings.TrimSpace(c.Param("id"))
+	idStr := strings.TrimSpace(c.Param("id"))
 
-numericID, err := strconv.Atoi(idStr)
-if err != nil {
-    c.JSON(400, gin.H{"error": "invalid id"})
-    return
-}	cc := h.CC
+	numericID, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid id"})
+		return
+	}
+	cc := h.CC
 
 	latCol := cc.LatCol
 	lngCol := cc.LngCol
@@ -908,7 +910,7 @@ if err != nil {
 	)
 
 	var house HouseRecord
-    err := h.DB.QueryRow(query, numericID).Scan(
+	err = h.DB.QueryRow(query, numericID).Scan(
 		&house.FamilyID,
 		&house.ExternalFamilyID,
 		&house.HouseNo,
@@ -931,54 +933,54 @@ if err != nil {
 	}
 
 	// ✅ CACHE FIRST (must be at top)
-value, ok := houseCache.Load(numericID)
-if !ok {
-    c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
-    return
-}
+	value, ok := houseCache.Load(numericID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
+		return
+	}
 
-houseDetail := value.(*HouseDetail)
+	houseDetail := value.(*HouseDetail)
 
-// ✅ MEMBER FILTER LOGIC
-memberWhere := []string{}
-memberArgs := []interface{}{}
+	// ✅ MEMBER FILTER LOGIC
+	memberWhere := []string{}
+	memberArgs := []interface{}{}
 
-hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
-hasFamilyID := h.memberColExists("FAMILY_ID")
+	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+	hasFamilyID := h.memberColExists("FAMILY_ID")
 
-if hasExternalFamilyID {
-    memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
-}
-if hasFamilyID {
-    memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
-}
+	if hasExternalFamilyID {
+		memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
+	}
+	if hasFamilyID {
+		memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
+	}
 
-// ✅ use idStr (string) for member matching
-memberExternalID := idStr
-memberFamilyID := idStr
+	// ✅ use idStr (string) for member matching
+	memberExternalID := idStr
+	memberFamilyID := idStr
 
-if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
-    _ = h.DB.QueryRow(
-        "SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?",
-        numericID,
-    ).Scan(&memberExternalID)
-}
+	if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
+		_ = h.DB.QueryRow(
+			"SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?",
+			numericID,
+		).Scan(&memberExternalID)
+	}
 
-if hasExternalFamilyID {
-    memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
-}
-if hasFamilyID {
-    memberArgs = append(memberArgs, memberFamilyID)
-}
+	if hasExternalFamilyID {
+		memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
+	}
+	if hasFamilyID {
+		memberArgs = append(memberArgs, memberFamilyID)
+	}
 
-// ✅ HANDLE NO MEMBER CASE
-if len(memberWhere) == 0 {
-    c.JSON(http.StatusOK, HouseDetail{
-        HouseRecord: houseDetail.HouseRecord,
-        Members:     []MemberRecord{},
-    })
-    return
-}
+	// ✅ HANDLE NO MEMBER CASE
+	if len(memberWhere) == 0 {
+		c.JSON(http.StatusOK, HouseDetail{
+			HouseRecord: houseDetail.HouseRecord,
+			Members:     []MemberRecord{},
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, value)
 }
