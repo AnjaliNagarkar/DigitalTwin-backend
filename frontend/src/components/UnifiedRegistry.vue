@@ -44,9 +44,9 @@
           <input v-model="search" placeholder="Search by name…" class="search-input"/>
         </div>
 
-        <template v-if="activeSubFilters.length">
+        <template v-if="dynamicSubFilters.length">
           <div class="subfilter-bar">
-            <template v-for="sf in activeSubFilters" :key="sf.key">
+            <template v-for="sf in dynamicSubFilters" :key="sf.key">
               <span class="subfilter-label">{{ sf.label }}:</span>
               <button v-for="opt in sf.options" :key="opt.value"
                 class="chip"
@@ -90,7 +90,7 @@
         </svg>
         <input v-model="search" placeholder="Search…" class="search-input"/>
       </div>
-      <template v-for="sf in activeSubFilters" :key="sf.key">
+      <template v-for="sf in dynamicSubFilters" :key="sf.key">
         <button v-for="opt in sf.options" :key="opt.value"
           class="chip"
           :class="{ active: isSubFilterActive(sf.key, opt.value) }"
@@ -110,10 +110,22 @@
     <!-- ── Table ──────────────────────────────────────────────────────── -->
     <div v-else class="table-container">
       <div class="table-info">
-        <span>
-          Showing <strong>{{ filteredRecords.length }}</strong> of {{ categoryRecords.length }}
-          <em>{{ activeCategoryConfig.label.toLowerCase() }}</em> citizens
-        </span>
+        <div class="table-info-main">
+          <span>
+            Showing <strong>{{ filteredRecords.length }}</strong> of {{ categoryRecords.length }}
+            <em>{{ activeCategoryConfig.label.toLowerCase() }}</em> citizens
+          </span>
+          <div class="gender-legend" style="display: flex; gap: 1.2rem; align-items: center;">
+            <span class="legend-item"><span class="gender-dot male"></span> Male</span>
+            <span class="legend-item"><span class="gender-dot female"></span> Female</span>
+            <span class="legend-item"><span class="gender-dot other"></span> Other</span>
+          </div>
+          <div class="income-legend" style="display:flex;gap:1rem;align-items:center;font-size:0.75rem;color:var(--text-dim);border-left:1px solid var(--border);padding-left:1rem">
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#20c997"></span> High</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ffc107"></span> Mid</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ff4d4f"></span> Low</span>
+          </div>
+        </div>
         <!-- Active category pill -->
         <span v-if="category" class="active-cat-pill" :style="{ background: activeCategoryConfig.color + '22', color: activeCategoryConfig.color, borderColor: activeCategoryConfig.color + '55' }">
           {{ activeCategoryConfig.icon }} {{ activeCategoryConfig.label }}
@@ -192,7 +204,7 @@ const CATEGORIES = [
   { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
   { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
   { value: 'disabled', label: 'Divyang',          fullLabel: 'Divyang',         icon: '♿' },
-  { value: 'housewife',label: 'Housewives',       fullLabel: 'Housewives',      icon: '🏠' },
+  { value: 'housewife',label: 'Homemakers',       fullLabel: 'Homemakers',      icon: '🏠' },
   { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
 ]
 
@@ -205,59 +217,25 @@ const CATEGORY_CONFIG = {
     rowFilter: () => true,
     columns: [
       { key: 'fullName',     label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
-      { key: 'age',          label: 'Age',            tdClass: 'td-num' },
-      { key: 'gender',       label: 'Gender' },
+      { key: 'age',          label: 'Age',            tdClass: 'td-num' }, // Re-add age column
       { key: 'occupation',   label: 'Occupation' },
       { key: 'maritalStatus', label: 'Marital Status' },
       { key: 'annualIncome', label: 'Annual Income',  tdClass: 'td-num' },
     ],
     subFilters: [
-      {
-        key: 'gender', label: 'Gender',
-        options: [
-          { label: 'Male',   value: 'Male'   },
-          { label: 'Female', value: 'Female' },
-        ],
-      },
-      {
-        key: 'incomeRange', label: 'Income Range',
-        options: [
-          { label: 'Low  (<₹21k)',      value: 'low'    },
-          { label: 'Mid  (₹21k–50k)',   value: 'medium' },
-          { label: 'High (>₹50k)',      value: 'high'   },
-        ],
-      },
-      
-      {
-        key: 'occupationType', label: 'Occupation',
-        options: [
-          { label: 'Farmer',        value: 'Farmer'        },
-          { label: 'Student',       value: 'Student'       },
-          { label: 'Housewife',     value: 'Housewife'     },
-          { label: 'Salaried Job',  value: 'Salaried Job'  },
-          { label: 'Wage Work',     value: 'Wage Work'     },
-          { label: 'Unemployed',    value: 'Unemployed'    },
-          { label: 'Not Working',   value: 'Not Working'   },
-        ],
-      },
-      
-      {
-        key: 'isDivyang', label: 'Divyang',
-        options: [
-          { label: 'Yes', value: 'true'  },
-          { label: 'No',  value: 'false' },
-        ],
-      },
-      
+      { key: 'incomeRange', label: 'Income Range' },
+      { key: 'gender', label: 'Gender' },
+      { key: 'occupationType', label: 'Occupation' },
+      { key: 'isDivyang', label: 'Divyang' },
     ],
   },
 
   farmer: {
     label: 'Farmer',
-    subtitle: 'Citizen-level records in land-owning households (count differs from 3D household total)',
+    subtitle: 'Citizens bucketed as Farmer by occupation',
     icon: '🌾',
     color: '#16a34a',
-    rowFilter: r => r.isFarmer,
+    rowFilter: r => getOccupationBucket(r.occupation) === 'Farmer',
     columns: [
       { key: 'fullName',       label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
       { key: 'totalLand',      label: 'Land (Acre)',    tdClass: 'td-num' },
@@ -268,47 +246,12 @@ const CATEGORY_CONFIG = {
       { key: 'occupation',     label: 'Occupation' },
     ],
     subFilters: [
-      {
-        key: 'landSize', label: 'Land Size',
-        options: [
-          { label: '>2 Acres',   value: 'large'    },
-          { label: '1–2 Acres',  value: 'medium'   },
-          { label: '<1 Acre',    value: 'marginal' },
-        ],
-      },
-      {
-        key: 'irrigationType', label: 'Irrigation',
-        options: [
-          { label: 'Irrigated', value: 'Irrigated' },
-          { label: 'Rain-fed',  value: 'Rain-fed'  },
-        ],
-      },
-      {
-        key: 'cropType', label: 'Crop',
-        options: [
-          { label: 'Kharif', value: 'kharif' },
-          { label: 'Rabi',   value: 'rabi'   },
-          { label: 'Both',   value: 'both'   },
-        ],
-      },
-      {
-        key: 'incomeRange', label: 'Income Range',
-        options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
-        ],
-      },
-      {
-        key: 'maritalStatus', label: 'Marital Status',
-        options: [
-          { label: 'Married',  value: 'Married'  },
-          { label: 'Single',   value: 'Single'   },
-          { label: 'Widowed',  value: 'Widowed'  },
-          { label: 'Divorced', value: 'Divorced' },
-        ],
-      },
-
+      { key: 'landSize', label: 'Land Size' },
+      { key: 'irrigationType', label: 'Irrigation' },
+      { key: 'cropType', label: 'Crop' },
+      { key: 'gender', label: 'Gender' },
+      { key: 'incomeRange', label: 'Income Range' },
+      { key: 'maritalStatus', label: 'Marital Status' },
     ],
   },
 
@@ -320,43 +263,16 @@ const CATEGORY_CONFIG = {
     rowFilter: r => r.isStudent,
     columns: [
       { key: 'fullName',       label: 'Full Name',        minWidth: true, tdClass: 'td-name' },
-      { key: 'age',            label: 'Age',               tdClass: 'td-num' },
-      { key: 'gender',         label: 'Gender' },
+      { key: 'age',            label: 'Age',              tdClass: 'td-num' },
       { key: 'educationLevel', label: 'Education Level' },
       { key: 'schoolName',     label: 'School / College' },
       { key: 'scholarship',    label: 'Scholarship' },
     ],
     subFilters: [
-      {
-        key: 'educationLevel', label: 'Level',
-        options: [
-          { label: 'Graduate',          value: 'Graduate'          },
-          { label: 'Undergraduate',     value: 'Undergraduate'     },
-          { label: 'Anganwadi/Primary', value: 'Anganwadi/Primary' },
-        ],
-      },
-      {
-        key: 'gender', label: 'Gender',
-        options: [
-          { label: 'Male',   value: 'Male'   },
-          { label: 'Female', value: 'Female' },
-        ],
-      },
-      {
-        key: 'scholarship', label: 'Scholarship',
-        options: [
-          { label: 'Yes', value: 'Yes' },
-          { label: 'No',  value: 'No'  },
-        ],
-      },
-      {
-        key: 'ageGroup', label: 'Age Group',
-        options: [
-          { label: '0-10',  value: '0-10'  },
-          { label: '11-17', value: '11-17' },
-          { label: '18+',   value: '18+'   },
-        ],
-      },
+      { key: 'educationLevel', label: 'Level' },
+      { key: 'scholarship', label: 'Scholarship' },
+      { key: 'ageGroup', label: 'Age Group' },
+      { key: 'gender', label: 'Gender' },
     ],
   },
 
@@ -370,119 +286,41 @@ const CATEGORY_CONFIG = {
       { key: 'fullName',          label: 'Full Name',         minWidth: true, tdClass: 'td-name' },
       { key: 'disabilityType',    label: 'Disability Type' },
       { key: 'disabilityPercent', label: 'Disability %',      tdClass: 'td-num' },
+      { key: 'annualIncome',      label: 'Annual Income',     tdClass: 'td-num' },
       { key: 'pensionStatus',     label: 'Pension Status' },
       { key: 'govtPensionAmount', label: 'Govt. Pension Amt', tdClass: 'td-num' },
       { key: 'caretakerName',     label: 'Caretaker' },
       { key: 'divyangCertificate', label: 'Divyang Certificate' },
     ],
     subFilters: [
-      {
-        key: 'gender', label: 'Gender',
-        options: [
-          { label: 'Male',   value: 'Male'   },
-          { label: 'Female', value: 'Female' },
-        ],
-      },
-      {
-        key: 'pensionStatus', label: 'Pension',
-        options: [
-          { label: 'Eligible',     value: 'Eligible'     },
-          { label: 'Not Eligible', value: 'Not Eligible' },
-        ],
-      },
-      {
-        key: 'disabilitySeverity', label: 'Disability %',
-        options: [
-          { label: 'Low (<40%)',      value: 'low'      },
-          { label: 'Moderate (40-70%)', value: 'moderate' },
-          { label: 'High (>70%)',     value: 'high'     },
-          { label: 'Not Recorded',    value: 'unknown'  },
-        ],
-      },
-      {
-        key: 'divyangCertificate', label: 'Certificate',
-        options: [
-          { label: 'Available',     value: 'yes' },
-          { label: 'Not Available', value: 'no'  },
-        ],
-      },
-      {
-        key: 'incomeRange', label: 'Income Range',
-        options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
-        ],
-      },
-      {
-        key: 'maritalStatus', label: 'Marital Status',
-        options: [
-          { label: 'Married',  value: 'Married'  },
-          { label: 'Single',   value: 'Single'   },
-          { label: 'Widowed',  value: 'Widowed'  },
-          { label: 'Divorced', value: 'Divorced' },
-        ],
-      },
-
+      { key: 'pensionStatus', label: 'Pension' },
+      { key: 'disabilitySeverity', label: 'Disability %' },
+      { key: 'divyangCertificate', label: 'Certificate' },
+      { key: 'gender', label: 'Gender' },
+      { key: 'incomeRange', label: 'Income Range' },
+      { key: 'maritalStatus', label: 'Marital Status' },
     ],
   },
 
   housewife: {
-    label: 'Housewife',
-    subtitle: 'Citizens with occupation recorded as housewife / homemaker',
+    label: 'Homemaker',
+    subtitle: 'Citizens with occupation recorded as homemaker',
     icon: '🏠',
     color: '#db2777',
     rowFilter: r => r.isHousewife,
     columns: [
       { key: 'fullName',       label: 'Full Name',       minWidth: true, tdClass: 'td-name' },
-      { key: 'age',            label: 'Age',              tdClass: 'td-num' },
-      { key: 'gender',         label: 'Gender' },
+      { key: 'age',            label: 'Age',              tdClass: 'td-num' }, // Re-add age column
       { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
       { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
       { key: 'maritalStatus',  label: 'Marital Status' },
     ],
     subFilters: [
-      {
-        key: 'gender', label: 'Gender',
-        options: [
-          { label: 'Male',   value: 'Male'   },
-          { label: 'Female', value: 'Female' },
-        ],
-      },
-      {
-        key: 'ageGroup', label: 'Age Group',
-        options: [
-          { label: '18-35', value: 'young'  },
-          { label: '36-55', value: 'middle' },
-          { label: '56+',   value: 'senior' },
-        ],
-      },
-      {
-        key: 'childrenGroup', label: 'Children',
-        options: [
-          { label: 'No Children', value: 'none'     },
-          { label: '1-2',         value: 'oneToTwo' },
-          { label: '3+',          value: 'threePlus' },
-        ],
-      },
-      {
-        key: 'incomeRange', label: 'Income Range',
-        options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
-        ],
-      },
-      {
-        key: 'maritalStatus', label: 'Marital Status',
-        options: [
-          { label: 'Married',  value: 'Married'  },
-          { label: 'Single',   value: 'Single'   },
-          { label: 'Widowed',  value: 'Widowed'  },
-          { label: 'Divorced', value: 'Divorced' },
-        ],
-      },
-
+      { key: 'ageGroup', label: 'Age Group' },
+      { key: 'childrenGroup', label: 'Children' },
+      { key: 'gender', label: 'Gender' },
+      { key: 'incomeRange', label: 'Income Range' },
+      { key: 'maritalStatus', label: 'Marital Status' },
     ],
   },
 
@@ -494,31 +332,13 @@ const CATEGORY_CONFIG = {
     rowFilter: r => r.isSenior,
     columns: [
       { key: 'fullName',      label: 'Full Name',      minWidth: true, tdClass: 'td-name' },
-      { key: 'age',           label: 'Age',             tdClass: 'td-num' },
-      { key: 'gender',        label: 'Gender' },
-      { key: 'occupation',    label: 'Occupation' },
+      { key: 'age',           label: 'Age',             tdClass: 'td-num' }, // Re-add age column
       { key: 'pensionStatus', label: 'Pension Status' },
       { key: 'annualIncome',  label: 'Annual Income',   tdClass: 'td-num' },
     ],
     subFilters: [
-      {
-        key: 'incomeRange', label: 'Income Range',
-        options: [
-          { label: 'Low  (<₹21k)',    value: 'low'    },
-          { label: 'Mid  (₹21k–50k)', value: 'medium' },
-          { label: 'High (>₹50k)',    value: 'high'   },
-        ],
-      },
-      {
-        key: 'maritalStatus', label: 'Marital Status',
-        options: [
-          { label: 'Married',  value: 'Married'  },
-          { label: 'Single',   value: 'Single'   },
-          { label: 'Widowed',  value: 'Widowed'  },
-          { label: 'Divorced', value: 'Divorced' },
-        ],
-      },
-
+      { key: 'incomeRange', label: 'Income Range' },
+      { key: 'maritalStatus', label: 'Marital Status' },
     ],
   },
 }
@@ -607,9 +427,7 @@ function mapLegacyCitizenToUnified(row) {
     scholarship: 'No',
     disabilityType: '',
     disabilityPercent: '',
-    pensionStatus: 'Not Eligible',
     caretakerName: 'Not Available',
-    govtPensionAmount: 'N/A',
     maritalStatus: '', // New field
     sourceOfIncome: 'None',
   }
@@ -637,8 +455,22 @@ async function loadRegistryData() {
 }
 
 // ── Derived config ─────────────────────────────────────────────────────────
-const activeCategoryConfig = computed(() => CATEGORY_CONFIG[category.value] || CATEGORY_CONFIG[''])
-const activeSubFilters     = computed(() => activeCategoryConfig.value.subFilters || [])
+const hasPensionData = computed(() => records.value.some(r => {
+  if (!r || typeof r !== 'object') return false
+  return Object.prototype.hasOwnProperty.call(r, 'pensionStatus') ||
+    Object.prototype.hasOwnProperty.call(r, 'govtPensionAmount')
+}))
+
+const activeCategoryConfig = computed(() => {
+  const base = CATEGORY_CONFIG[category.value] || CATEGORY_CONFIG['']
+  if (category.value !== 'disabled' || hasPensionData.value) return base
+
+  return {
+    ...base,
+    columns: base.columns.filter(col => col.key !== 'pensionStatus' && col.key !== 'govtPensionAmount'),
+    subFilters: (base.subFilters || []).filter(filter => filter.key !== 'pensionStatus'),
+  }
+})
 
 // ── Data loading ───────────────────────────────────────────────────────────
 async function ensureRegistryData() {
@@ -682,20 +514,15 @@ function parseIncome(v) {
 }
 
 // classifyIncome: maps an income string to 'low' | 'medium' | 'high' | ''
-function classifyIncome(v) {
-  const raw = String(v ?? '').toLowerCase().trim()
-  if (!raw) return ''
-
-  // Handle text labels stored in the DB (e.g. "Less than 21,000", "21001 to 50000")
-  if (raw.includes('less than') && raw.includes('21')) return 'low'
-  if ((raw.includes('21') || raw.includes('21001')) && raw.includes('50')) return 'medium'
-  if (raw.includes('50,001') || raw.includes('50001') || raw.includes('above') || raw.includes('50,000+')) return 'high'
-
-  const n = parseIncome(v)
-  if (!Number.isFinite(n) || n === 0) return ''
-  if (n <= 21000)  return 'low'
-  if (n <= 50000)  return 'medium'
-  return 'high'
+function classifyIncome(inc) {
+  const v = String(inc || '').toLowerCase();
+  if (!v) return '';
+  // Strictly define what is High
+  if (v.includes('100001') || v.includes('250000') || v.includes('above') || v.includes('high')) return 'High';
+  // Strictly define what is Mid
+  if (v.includes('50001') || v.includes('100000') || v.includes('to 50000') || v.includes('mid')) return 'Mid';
+  // Everything else is Low
+  return 'Low';
 }
 
 function classifyDisabilitySeverity(v) {
@@ -725,6 +552,65 @@ function classifyChildrenGroup(v) {
   if (!Number.isFinite(n) || n <= 0) return 'none'
   if (n <= 2) return 'oneToTwo'
   return 'threePlus'
+}
+
+function getGenderDotClass(gender) {
+  const g = (gender || '').toLowerCase().trim();
+  if (g === 'male' || g === 'm') return 'male';
+  if (g === 'female' || g === 'f') return 'female';
+  return 'other';
+}
+
+function getOccupationBucket(rawOccupation) {
+  const v = String(rawOccupation || '').toLowerCase().trim();
+  if (!v || v === 'not working' || v === 'none' || v === 'n/a') return 'Not Working';
+  if (v.includes('farm') || v.includes('agri') || v.includes('sheti')) return 'Farmer';
+  if (v.includes('student') || v.includes('study') || v.includes('education')) return 'Student';
+  if (v.includes('housewife') || v.includes('homemaker')) return 'Housewife';
+  if (v.includes('wage') || v.includes('labor') || v.includes('labour') || v.includes('majoor') || v.includes('majuri') || v.includes('worker')) return 'Wage Work';
+  if (v.includes('salary') || v.includes('salaried') || v.includes('service') || v.includes('teacher') || v.includes('asha') || v.includes('police') || v.includes('job') || v.includes('anganwadi')) return 'Salaried Job';
+  if (v.includes('business') || v.includes('shop') || v.includes('shg') || v.includes('tailor') || v.includes('vendor') || v.includes('vyapar')) return 'Business/SHG';
+  if (v.includes('unemployed')) return 'Unemployed';
+  return 'Other'; // Catch-all for anything else
+}
+
+function normalizeOccupationText(record) {
+  return String(record?.occupation || '').toLowerCase().trim()
+}
+
+function matchesOccupationType(record, value) {
+  const occupation = normalizeOccupationText(record)
+  const selected = String(value || '').toLowerCase()
+
+  if (selected === 'farmer') {
+    return Boolean(record?.isFarmer)
+  }
+
+  if (selected === 'student') {
+    return Boolean(record?.isStudent || occupation.includes('student') || occupation.includes('studying'))
+  }
+
+  if (selected === 'housewife') {
+    return Boolean(record?.isHousewife || occupation.includes('housewife') || occupation.includes('homemaker'))
+  }
+
+  if (selected === 'salaried job') {
+    return occupation.includes('salaried') || occupation.includes('salary') || occupation.includes('service')
+  }
+
+  if (selected === 'wage work') {
+    return occupation.includes('wage') || occupation.includes('labour') || occupation.includes('labor')
+  }
+
+  if (selected === 'unemployed') {
+    return occupation.includes('unemployed')
+  }
+
+  if (selected === 'not working') {
+    return occupation === 'not working' || occupation === ''
+  }
+
+  return occupation === selected
 }
 
 function toggleSort(key) {
@@ -777,6 +663,84 @@ const categoryRecords = computed(() =>
   records.value.filter(activeCategoryConfig.value.rowFilter)
 )
 
+function isBooleanFilterKey(key) {
+  return key === 'isDivyang' || key === 'isFarmer' || key === 'isStudent' || key === 'isHousewife' || key === 'isSenior'
+}
+
+function formatDynamicLabel(value) {
+  const str = String(value || '').trim()
+  if (!str) return ''
+  if (str === 'true') return 'Yes'
+  if (str === 'false') return 'No'
+
+  return str
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, ch => ch.toUpperCase())
+}
+
+function dynamicValueForFilter(key, record) {
+  if (key === 'incomeRange') return classifyIncome(record.annualIncome)
+  if (key === 'ageGroup') return classifyAgeGroup(record.age)
+  if (key === 'childrenGroup') return classifyChildrenGroup(record.childrenCount)
+  if (key === 'disabilitySeverity') return classifyDisabilitySeverity(record.disabilityPercent)
+  if (key === 'divyangCertificate') return hasDivyangCertificate(record) ? 'yes' : 'no'
+
+  if (key === 'landSize') {
+    const ac = parseLand(record.totalLand)
+    if (ac > 2) return 'large'
+    if (ac >= 1 && ac <= 2) return 'medium'
+    if (ac > 0 && ac < 1) return 'marginal'
+    return ''
+  }
+
+  if (key === 'occupationType') {
+    return getOccupationBucket(record.occupation)
+  }
+
+  if (key === 'cropType') {
+    const hasKharif = record.kharifCrop && record.kharifCrop !== 'N/A'
+    const hasRabi = record.rabiCrop && record.rabiCrop !== 'N/A'
+    if (hasKharif && hasRabi) return 'both'
+    if (hasKharif) return 'kharif'
+    if (hasRabi) return 'rabi'
+    return ''
+  }
+
+  if (isBooleanFilterKey(key)) {
+    return record[key] ? 'true' : 'false'
+  }
+
+  return String(record[key] ?? '').trim()
+}
+
+const dynamicSubFilters = computed(() => {
+  const base = activeCategoryConfig.value.subFilters || []
+  return base
+    .map((sf) => {
+      const unique = new Set()
+      for (const record of categoryRecords.value) {
+        const value = sf.key === 'occupationType'
+          ? getOccupationBucket(record.occupation)
+          : dynamicValueForFilter(sf.key, record)
+        if (value !== '' && value !== 'N/A' && value != null) {
+          unique.add(String(value))
+        }
+      }
+
+      const sortedValues = Array.from(unique).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      const options = sortedValues.map((value) => ({
+        label: sf.key === 'occupationType' ? (value === 'Housewife' ? 'Homemaker' : value) : formatDynamicLabel(value),
+        value,
+      }))
+
+      return { ...sf, options }
+    })
+    .filter((sf) => sf.options.length > 0)
+})
+
 // ── Full filtered + sorted list ────────────────────────────────────────────
 const filteredRecords = computed(() => {
   let list = [...categoryRecords.value]
@@ -792,166 +756,16 @@ const filteredRecords = computed(() => {
   const selected = (key) => Array.isArray(sf[key]) ? sf[key] : []
   const hasAny = (key) => selected(key).length > 0
 
-  // Gender sub-filter
-  if (hasAny('gender')) {
-    const genderSet = new Set(selected('gender').map(v => String(v).toLowerCase()))
-    list = list.filter(r => genderSet.has(String(r.gender || '').toLowerCase()))
-  }
-
-  // Land size sub-filter (farmer category)
-  if (hasAny('landSize')) {
-    const sizeSet = new Set(selected('landSize'))
-    list = list.filter(r => {
-      const ac = parseLand(r.totalLand)
-      const matchesLarge = sizeSet.has('large') && ac > 2
-      const matchesMedium = sizeSet.has('medium') && ac >= 1 && ac <= 2
-      const matchesMarginal = sizeSet.has('marginal') && ac > 0 && ac < 1
-      if (matchesLarge || matchesMedium || matchesMarginal) return true
-      return false
-    })
-  }
-
-  // Irrigation type sub-filter (farmer category)
-  if (hasAny('irrigationType')) {
-    const irrigSet = new Set(selected('irrigationType'))
-    list = list.filter(r => irrigSet.has(r.irrigationType))
-  }
-
-  // Crop type sub-filter (farmer category)
-  if (hasAny('cropType')) {
-    const cropSet = new Set(selected('cropType'))
-    list = list.filter(r => {
-      const hasKharif = r.kharifCrop && r.kharifCrop !== 'N/A'
-      const hasRabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A'
-      const matchesKharif = cropSet.has('kharif') && hasKharif
-      const matchesRabi = cropSet.has('rabi') && hasRabi
-      const matchesBoth = cropSet.has('both') && hasKharif && hasRabi
-      if (matchesKharif || matchesRabi || matchesBoth) return true
-      return false
-    })
-  }
-
-  // Education level sub-filter (student category)
-  if (hasAny('educationLevel')) {
-    const eduSet = new Set(selected('educationLevel'))
-    list = list.filter(r => eduSet.has(r.educationLevel))
-  }
-
-  // Scholarship sub-filter (student category)
-  if (hasAny('scholarship')) {
-    const scholSet = new Set(selected('scholarship'))
-    list = list.filter(r => scholSet.has(r.scholarship))
-  }
-
-  // Pension status sub-filter (divyang/senior categories)
-  if (hasAny('pensionStatus')) {
-    const pensionSet = new Set(selected('pensionStatus').map(v => String(v).toLowerCase()))
-    list = list.filter(r => pensionSet.has(String(r.pensionStatus || '').toLowerCase()))
-  }
-
-  // Disability severity sub-filter (divyang category)
-  if (hasAny('disabilitySeverity')) {
-    const severitySet = new Set(selected('disabilitySeverity'))
-    list = list.filter(r => severitySet.has(classifyDisabilitySeverity(r.disabilityPercent)))
-  }
-
-  // Divyang certificate sub-filter (divyang category)
-  if (hasAny('divyangCertificate')) {
-    const certSet = new Set(selected('divyangCertificate'))
-    list = list.filter(r => {
-      const hasCert = hasDivyangCertificate(r)
-      return (certSet.has('yes') && hasCert) || (certSet.has('no') && !hasCert)
-    })
-  }
-
-  // Age-group sub-filter (housewife category)
-  if (hasAny('ageGroup')) {
-    const ageSet = new Set(selected('ageGroup'))
-    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
-  }
-
-  // Children-group sub-filter (housewife category)
-  if (hasAny('childrenGroup')) {
-    const childrenSet = new Set(selected('childrenGroup'))
-    list = list.filter(r => childrenSet.has(classifyChildrenGroup(r.childrenCount)))
-  }
-
-  // Source-of-income sub-filter (housewife category)
-  if (hasAny('sourceOfIncome')) {
-    const sourceSet = new Set(selected('sourceOfIncome'))
-    list = list.filter(r => sourceSet.has(r.sourceOfIncome))
-  }
-
-  // Education level sub-filter (All Citizens category)
-  if (hasAny('educationLevel')) {
-    const eduSet = new Set(selected('educationLevel'))
-    list = list.filter(r => eduSet.has(r.educationLevel))
-  }
-
-  // Sanitation status sub-filter (All Citizens category)
-  if (hasAny('sanitationStatus')) {
-    const sanitSet = new Set(selected('sanitationStatus'))
-    list = list.filter(r => {
-      const status = String(r.sanitationStatus || '').trim()
-      if (sanitSet.has('Has Toilet') && (status !== 'No Latrine' && status !== 'Not Available' && status !== '')) return true
-      if (sanitSet.has('No Toilet') && status === 'No Latrine') return true
-      if (sanitSet.has('Not Available') && (status === 'Not Available' || status === '')) return true
-      return false
-    })
-  }
-
-  // Occupation type sub-filter (All Citizens category)
   if (hasAny('occupationType')) {
-    const occSet = new Set(selected('occupationType').map(v => String(v).toLowerCase()))
-    list = list.filter(r => occSet.has(String(r.occupation || '').toLowerCase()))
+    const selectedBuckets = new Set(selected('occupationType'));
+    list = list.filter(r => selectedBuckets.has(getOccupationBucket(r.occupation)));
   }
 
-  // IsFarmer sub-filter (All Citizens category)
-  if (hasAny('isFarmer')) {
-    const farmerSet = new Set(selected('isFarmer'))
-    list = list.filter(r => (farmerSet.has('true') && r.isFarmer) || (farmerSet.has('false') && !r.isFarmer))
-  }
-
-  // IsStudent sub-filter (All Citizens category)
-  if (hasAny('isStudent')) {
-    const studentSet = new Set(selected('isStudent'))
-    list = list.filter(r => (studentSet.has('true') && r.isStudent) || (studentSet.has('false') && !r.isStudent))
-  }
-
-  // IsDivyang sub-filter (All Citizens category)
-  if (hasAny('isDivyang')) {
-    const divyangSet = new Set(selected('isDivyang'))
-    list = list.filter(r => (divyangSet.has('true') && r.isDivyang) || (divyangSet.has('false') && !r.isDivyang))
-  }
-
-  // IsHousewife sub-filter (All Citizens category)
-  if (hasAny('isHousewife')) {
-    const housewifeSet = new Set(selected('isHousewife'))
-    list = list.filter(r => (housewifeSet.has('true') && r.isHousewife) || (housewifeSet.has('false') && !r.isHousewife))
-  }
-
-  // IsSenior sub-filter (All Citizens category)
-  if (hasAny('isSenior')) {
-    const seniorSet = new Set(selected('isSenior'))
-    list = list.filter(r => (seniorSet.has('true') && r.isSenior) || (seniorSet.has('false') && !r.isSenior))
-  }
-
-  // Age group sub-filter (student category)
-  if (hasAny('ageGroup') && activeCategoryConfig.value.label === 'Student') {
-    const ageSet = new Set(selected('ageGroup'))
-    list = list.filter(r => ageSet.has(classifyAgeGroup(r.age)))
-  }
-
-  // Income range — global, works across ALL categories
-  if (hasAny('incomeRange')) {
-    const incomeSet = new Set(selected('incomeRange'))
-    list = list.filter(r => incomeSet.has(classifyIncome(r.annualIncome)))
-  }
-
-  // Marital Status sub-filter (All Citizens and Housewives categories)
-  if (hasAny('maritalStatus')) {
-    const maritalSet = new Set(selected('maritalStatus').map(v => String(v).toLowerCase()))
-    list = list.filter(r => maritalSet.has(String(r.maritalStatus || '').toLowerCase()))
+  for (const sfKey of Object.keys(sf)) {
+    if (sfKey === 'occupationType') continue
+    if (!hasAny(sfKey)) continue
+    const selectedSet = new Set(selected(sfKey).map(v => String(v)))
+    list = list.filter(r => selectedSet.has(String(dynamicValueForFilter(sfKey, r))))
   }
 
   // Sort
@@ -1002,8 +816,11 @@ function renderCell(r, col) {
   const v = r[col.key]
 
   switch (col.key) {
-    case 'fullName':
-      return `<span class="name-text">${esc(r.fullName)}</span>`
+    case 'fullName': {
+      const gCls = getGenderDotClass(r.gender);
+      const nameCls = gCls === 'male' ? 'name-male' : (gCls === 'female' ? 'name-female' : 'name-other');
+      return `<div class="name-cell"><span class="gender-dot ${gCls}" title="${r.gender || 'Other'}"></span> <span class="name-text ${nameCls}">${esc(r.fullName)}</span></div>`;
+    }
 
     case 'totalLand': {
       const ac = parseLand(v)
@@ -1028,11 +845,6 @@ function renderCell(r, col) {
 
     case 'waterSource':
       return `<span class="text-dim-sm">${esc(v || '—')}</span>`
-
-    case 'gender': {
-      const cls = genderClass(v)
-      return v ? `<span class="badge ${cls}">${esc(v)}</span>` : '—'
-    }
 
     case 'educationLevel': {
       const map = { Graduate: 'badge-blue', Undergraduate: 'badge-teal', 'Anganwadi/Primary': 'badge-orange', 'Not Available': 'badge-muted' }
@@ -1086,19 +898,23 @@ function renderCell(r, col) {
     case 'schoolName':
       return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">Not Recorded</span>`
 
-    case 'occupation':
+       case 'occupation':
+      if (String(v || '').trim() === 'Housewife') return esc('Homemaker')
       return esc(v || 'Not Working')
 
     case 'age':
       return v && v > 0 ? String(v) : '—'
 
     case 'annualIncome': {
-      if (!v || v === '0') return `<span class="text-dim-sm">—</span>`
-      const rangeMap = { low: 'badge-rainfed', medium: 'badge-orange', high: 'badge-green' }
-      const rangeCls = rangeMap[classifyIncome(v)] || ''
-      const rangeLabel = { low: 'Low', medium: 'Mid', high: 'High' }[classifyIncome(v)] || ''
-      const rangePill = rangeCls ? `<span class="badge ${rangeCls}" style="margin-left:0.35rem;font-size:0.62rem">${rangeLabel}</span>` : ''
-      return `<span>${esc(v)}</span>${rangePill}`
+      const inc = r.annualIncome;
+      if (!inc) return '<span class="text-muted">Not Recorded</span>';
+      
+      const b = classifyIncome(inc);
+      let color = '#ff4d4f'; // Default to Low
+      if (b === 'High') color = '#20c997';
+      else if (b === 'Mid') color = '#ffc107';
+      
+      return `<span style="color: ${color}; font-weight: 500;">${esc(inc)}</span>`;
     }
     
     case 'maritalStatus': {
@@ -1111,13 +927,6 @@ function renderCell(r, col) {
     default:
       return esc(String(v ?? '—'))
   }
-}
-
-function genderClass(g) {
-  const v = String(g || '').toLowerCase()
-  if (v === 'male')   return 'gender-male'
-  if (v === 'female') return 'gender-female'
-  return 'gender-other'
 }
 
 // Minimal HTML escaping for v-html cells
@@ -1354,10 +1163,17 @@ function esc(s) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.75rem;
   color: var(--text-dim);
+}
+.table-info-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 .table-info strong { color: var(--text-body); }
 .table-info em { font-style: normal; }
@@ -1414,7 +1230,22 @@ function esc(s) {
 /* ── Cell micro-components (rendered via v-html) ─────────────────────────── */
 /* These are NOT scoped — they live inside v-html, so we need :deep or global.  */
 /* We use unique class names prefixed with `badge` / `text-*` to avoid leaks. */
-:deep(.name-text) { color: var(--text-body); }
+:deep(.name-text) {
+  color: var(--text-body);
+  transition: color 0.15s ease-out;
+}
+:deep(.name-male) { color: #1e40af; }
+:deep(.name-female) { color: #be185d; }
+:deep(.name-other) { color: var(--text-body); }
+
+/* ── Gender Legend ───────────────────────────────────────────────────────── */
+.gender-legend { display: flex; gap: 1.2rem; align-items: center; font-size: 0.75rem; color: var(--text-dim); }
+.legend-item { display: flex; align-items: center; gap: 0.4rem; }
+.gender-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.gender-dot.male { background-color: #1e40af; }
+.gender-dot.female { background-color: #be185d; }
+.gender-dot.other { background-color: var(--text-dim, #6c757d); }
+:deep(.name-cell) { display: flex; align-items: center; gap: 0.6rem; }
 
 :deep(.gender-tag),
 :deep(.badge) {
@@ -1426,10 +1257,6 @@ function esc(s) {
   white-space: nowrap;
   line-height: 1.4;
 }
-
-:deep(.gender-male)   { background: #dbeafe; color: #1d4ed8; }
-:deep(.gender-female) { background: #fce7f3; color: #be185d; }
-:deep(.gender-other)  { background: var(--bg-surface); color: var(--text-dim); }
 
 :deep(.badge-green)    { background: #dcfce7; color: #15803d; }
 :deep(.badge-blue)     { background: #dbeafe; color: #1e40af; }

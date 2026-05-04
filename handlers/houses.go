@@ -99,6 +99,68 @@ type HouseHandler struct {
 	memberColCache   map[string]bool
 }
 
+var houseCache sync.Map
+
+func (h *HouseHandler) firstNonEmptyExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.CC != nil && h.CC.Has(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(f.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	return fmt.Sprintf("COALESCE(%s, '')", strings.Join(parts, ", "))
+}
+
+func (h *HouseHandler) yesNoExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.CC != nil && h.CC.Has(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(f.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	raw := fmt.Sprintf("LOWER(TRIM(COALESCE(%s, '')))", strings.Join(parts, ", "))
+	return fmt.Sprintf(`CASE
+		WHEN %s IN ('', '0', 'false', 'no', 'none', 'na', 'n/a', 'kerosene', 'no electricity', 'no lighting') THEN 'No'
+		ELSE 'Yes'
+	END`, raw)
+}
+
+func (h *HouseHandler) memberFirstNonEmptyExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.memberColExists(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(fm.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	return fmt.Sprintf("COALESCE(%s, '')", strings.Join(parts, ", "))
+}
+
+func (h *HouseHandler) memberYesNoExpr(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, col := range columns {
+		if h.memberColExists(col) {
+			parts = append(parts, fmt.Sprintf("NULLIF(TRIM(COALESCE(fm.%s, '')), '')", col))
+		}
+	}
+	if len(parts) == 0 {
+		return "''"
+	}
+	raw := fmt.Sprintf("LOWER(TRIM(COALESCE(%s, '')))", strings.Join(parts, ", "))
+	return fmt.Sprintf(`CASE
+		WHEN %s IN ('', '0', 'false', 'no', 'none', 'na', 'n/a') THEN 'No'
+		ELSE 'Yes'
+	END`, raw)
+}
+
 func (h *HouseHandler) memberColExists(col string) bool {
 	h.memberColCacheMu.RLock()
 	if h.memberColCache != nil {
@@ -129,16 +191,9 @@ func (h *HouseHandler) memberColExists(col string) bool {
 // and falls back to 0 when they are absent, so the main query never errors.
 func (h *HouseHandler) buildPopStatsSQL() string {
 	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
-	hasFamilyID := h.memberColExists("FAMILY_ID")
-
 	familyJoinExpr := "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
-	switch {
-	case hasExternalFamilyID && hasFamilyID:
-		familyJoinExpr = "CAST(COALESCE(fm.EXTERNAL_FAMILY_ID, fm.FAMILY_ID) AS CHAR)"
-	case hasFamilyID:
-		familyJoinExpr = "CAST(fm.FAMILY_ID AS CHAR)"
-	case hasExternalFamilyID:
-		familyJoinExpr = "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	if !hasExternalFamilyID {
+		familyJoinExpr = "''"
 	}
 
 	illiterateExpr := "0"
@@ -206,6 +261,170 @@ func appendFamilyGeoIDFilter(where *string, args *[]interface{}, alias, column, 
 	}
 	*where += fmt.Sprintf(" AND CAST(%s.%s AS CHAR) = ?", alias, column)
 	*args = append(*args, raw)
+func (h *HouseHandler) buildHouseCacheQuery() string {
+	latCol := h.CC.LatCol
+	lngCol := h.CC.LngCol
+	if latCol == "" {
+		latCol = "LATITUDE"
+	}
+	if lngCol == "" {
+		lngCol = "LONGITUDE"
+	}
+
+	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
+	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
+	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
+	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
+	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+
+	// Build head name from household head columns (matches GetHouses)
+	headNameExpr := `COALESCE(TRIM(CONCAT(
+		COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+		COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
+		COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
+	)), '')`
+
+	// Build family member aggregation (matches GetHouses dual-join strategy)
+	popStatsSQL := h.buildPopStatsSQL()
+
+	return fmt.Sprintf(`
+		SELECT
+			f.FAMILY_ID,
+			COALESCE(CAST(f.DISTRICT_ID AS CHAR), ''),
+			COALESCE(dm.vsDisplayName, dm.vsDistrictName, ''),
+			COALESCE(CAST(f.TALUKA_ID AS CHAR), ''),
+			COALESCE(tm.vsDisplayName, tm.vsTalukaName, ''),
+			COALESCE(CAST(f.VILLAGE_ID AS CHAR), ''),
+			COALESCE(vm.vsDisplayName, vm.vsVillageName, ''),
+			COALESCE(f.%s, 0),
+			COALESCE(f.%s, 0),
+			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
+			COALESCE(f.LAND_UNDER_CULTIVATION_ACRES, ''),
+			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
+			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
+			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			%s,
+			%s,
+			%s,
+			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
+			%s,
+			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
+			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
+			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
+			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
+			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
+			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
+			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
+			%s,
+			%s
+		FROM FAMILY f
+		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
+		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
+		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
+		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
+		ORDER BY f.FAMILY_ID
+	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr, popStatsSQL, popStatsSQL)
+}
+
+func (h *HouseHandler) PreloadHouseCache() error {
+	houseCache = sync.Map{}
+
+	rows, err := h.DB.Query(h.buildHouseCacheQuery())
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	details := make(map[int]*HouseDetail, 4096)
+	for rows.Next() {
+		var detail HouseDetail
+		if err := rows.Scan(
+			&detail.FamilyID,
+			&detail.DistrictID, &detail.DistrictName,
+			&detail.TalukaID, &detail.TalukaName,
+			&detail.VillageID, &detail.VillageName,
+			&detail.Latitude, &detail.Longitude,
+			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
+			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
+			&detail.Latrine, &detail.Lighting, &detail.RationCard,
+			&detail.Occupation, &detail.HeadName,
+			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
+			&detail.WorkingMembers, &detail.IlliterateMembers, &detail.DivyangMembers,
+			&detail.UnemployedMembers,
+			&detail.BplCategory, &detail.AnnualIncome,
+		); err != nil {
+			return err
+		}
+		detail.Members = []MemberRecord{}
+		details[detail.FamilyID] = &detail
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Query individual members using dual-join strategy (EXTERNAL_FAMILY_ID preferred, fallback to FAMILY_ID)
+	memberFirstNameExpr := "COALESCE(fm.FIRST_NAME, '')"
+	memberLastNameExpr := "COALESCE(fm.LAST_NAME, '')"
+	if !h.memberColExists("FIRST_NAME") {
+		memberFirstNameExpr = "''"
+	}
+	if !h.memberColExists("LAST_NAME") {
+		memberLastNameExpr = "''"
+	}
+
+	memberQuery := fmt.Sprintf(`
+		SELECT
+			CAST(fm.EXTERNAL_FAMILY_ID AS CHAR),
+			%s,
+			%s
+		FROM FAMILY_MEMBER fm
+		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
+		ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID
+	`, memberFirstNameExpr, memberLastNameExpr)
+
+	memberRows, err := h.DB.Query(memberQuery)
+	if err != nil {
+		return err
+	}
+	defer memberRows.Close()
+
+	for memberRows.Next() {
+		var familyIDRaw string
+		var firstName string
+		var lastName string
+		if err := memberRows.Scan(&familyIDRaw, &firstName, &lastName); err != nil {
+			continue
+		}
+
+		familyID, convErr := strconv.Atoi(strings.TrimSpace(familyIDRaw))
+		if convErr != nil {
+			continue
+		}
+
+		detail := details[familyID]
+		if detail == nil {
+			continue
+		}
+
+		detail.Members = append(detail.Members, MemberRecord{
+			FirstName: strings.TrimSpace(firstName),
+			LastName:  strings.TrimSpace(lastName),
+		})
+	}
+	if err := memberRows.Err(); err != nil {
+		return err
+	}
+
+	for id, detail := range details {
+		if detail.Members == nil {
+			detail.Members = []MemberRecord{}
+		}
+		houseCache.Store(id, detail)
+	}
+
+	return nil
 }
 
 func (h *HouseHandler) GetHouses(c *gin.Context) {
@@ -267,7 +486,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	} else {
 		minLatRaw := strings.TrimSpace(c.Query("min_lat"))
 		maxLatRaw := strings.TrimSpace(c.Query("max_lat"))
-		minLngRaw := strings.TrimSpace(c.Query("min_lng"))
+		minLngRaw := strings.TrimSpace(c.Query("mLalit Sir pan bye-byein_lng"))
 		maxLngRaw := strings.TrimSpace(c.Query("max_lng"))
 		if minLatRaw != "" && maxLatRaw != "" && minLngRaw != "" && maxLngRaw != "" {
 			minLat, errMinLat := strconv.ParseFloat(minLatRaw, 64)
@@ -300,6 +519,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	// FAMILY-level optional columns (no FAMILY_MEMBER aggregation in this handler — MapView enriches from population API).
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
+	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
+	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
 	// Single lightweight query: FAMILY + location masters only. Member aggregates return as zeros; occupation ''.
 	query := fmt.Sprintf(`
@@ -321,10 +543,10 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
-			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
-			COALESCE(f.ELECTRICITY_CONNECTION, ''),
-			COALESCE(f.RATION_CARD_TYPE, ''),
-			'',
+			%s,
+			%s,
+			%s,
+			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
@@ -343,6 +565,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	`,
 		latCol,
 		lngCol,
+		sanitationExpr,
+		lightingExpr,
+		rationExpr,
 		bplExpr,
 		incomeExpr,
 		where,
@@ -607,8 +832,13 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 }
 
 func (h *HouseHandler) GetHouseByID(c *gin.Context) {
-	id := c.Param("id")
-	cc := h.CC
+idStr := strings.TrimSpace(c.Param("id"))
+
+numericID, err := strconv.Atoi(idStr)
+if err != nil {
+    c.JSON(400, gin.H{"error": "invalid id"})
+    return
+}	cc := h.CC
 
 	latCol := cc.LatCol
 	lngCol := cc.LngCol
@@ -678,7 +908,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	)
 
 	var house HouseRecord
-	err := h.DB.QueryRow(query, id).Scan(
+    err := h.DB.QueryRow(query, numericID).Scan(
 		&house.FamilyID,
 		&house.ExternalFamilyID,
 		&house.HouseNo,
@@ -700,66 +930,57 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		return
 	}
 
-	memberWhere := []string{}
-	memberArgs := []interface{}{}
-	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
-	hasFamilyID := h.memberColExists("FAMILY_ID")
+	// ✅ CACHE FIRST (must be at top)
+value, ok := houseCache.Load(numericID)
+if !ok {
+    c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
+    return
+}
 
-	if hasExternalFamilyID {
-		memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
-	}
-	if hasFamilyID {
-		memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
-	}
+houseDetail := value.(*HouseDetail)
 
-	memberExternalID := id
-	memberFamilyID := id
-	if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
-		_ = h.DB.QueryRow("SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?", id).Scan(&memberExternalID)
-	}
+// ✅ MEMBER FILTER LOGIC
+memberWhere := []string{}
+memberArgs := []interface{}{}
 
-	if hasExternalFamilyID {
-		memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
-	}
-	if hasFamilyID {
-		memberArgs = append(memberArgs, memberFamilyID)
-	}
+hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+hasFamilyID := h.memberColExists("FAMILY_ID")
 
-	if len(memberWhere) == 0 {
-		c.JSON(http.StatusOK, HouseDetail{
-			HouseRecord: house,
-			Members:     []MemberRecord{},
-		})
-		return
-	}
+if hasExternalFamilyID {
+    memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
+}
+if hasFamilyID {
+    memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
+}
 
-	memberQuery := fmt.Sprintf(`
-		SELECT COALESCE(FIRST_NAME, ''), COALESCE(LAST_NAME, '')
-		FROM FAMILY_MEMBER
-		WHERE %s
-	`, strings.Join(memberWhere, " OR "))
+// ✅ use idStr (string) for member matching
+memberExternalID := idStr
+memberFamilyID := idStr
 
-	memberRows, err := h.DB.Query(memberQuery, memberArgs...)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch members"})
-		return
-	}
-	defer memberRows.Close()
+if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
+    _ = h.DB.QueryRow(
+        "SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?",
+        numericID,
+    ).Scan(&memberExternalID)
+}
 
-	var members []MemberRecord
-	for memberRows.Next() {
-		var m MemberRecord
-		memberRows.Scan(&m.FirstName, &m.LastName)
-		members = append(members, m)
-	}
-	if members == nil {
-		members = []MemberRecord{}
-	}
+if hasExternalFamilyID {
+    memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
+}
+if hasFamilyID {
+    memberArgs = append(memberArgs, memberFamilyID)
+}
 
-	c.JSON(http.StatusOK, HouseDetail{
-		HouseRecord: house,
-		Members:     members,
-	})
+// ✅ HANDLE NO MEMBER CASE
+if len(memberWhere) == 0 {
+    c.JSON(http.StatusOK, HouseDetail{
+        HouseRecord: houseDetail.HouseRecord,
+        Members:     []MemberRecord{},
+    })
+    return
+}
+
+	c.JSON(http.StatusOK, value)
 }
 
 // GetHousesSummary — GET /houses/summary

@@ -54,182 +54,191 @@
 
           <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 Zoom to Location</button>
 
-          <!-- ── Section A: Population ── -->
-          <div class="dp-section-label">
-            <span class="dp-section-icon">👥</span> Family Details
-          </div>
-
-          <div class="dp-stat-row">
-            <div class="dp-stat">
-              <div class="dp-stat-val">{{ selectedHouse.totalMembers || 0 }}</div>
-              <div class="dp-stat-key">Members</div>
-            </div>
-            <div class="dp-stat">
-              <div class="dp-stat-val">{{ selectedHouse.maleMembers || 0 }}</div>
-              <div class="dp-stat-key">Male</div>
-            </div>
-            <div class="dp-stat">
-              <div class="dp-stat-val">{{ selectedHouse.femaleMembers || 0 }}</div>
-              <div class="dp-stat-key">Female</div>
-            </div>
-          </div>
-
-          <div class="dp-field-row">
-            <span class="dp-field-icon">💼</span>
-            <span class="dp-field-key">Working Members</span>
-            <span class="dp-field-val" :class="selectedHouse.workingMembers > 0 ? 'dp-ok' : 'dp-warn'">
-              {{ selectedHouse.workingMembers || 0 }}
-            </span>
-          </div>
-          <div class="dp-field-row" v-if="selectedHouse.divyangMembers > 0">
-            <span class="dp-field-icon">♿</span>
-            <span class="dp-field-key">Divyang Members</span>
-            <span class="dp-field-val dp-warn">{{ selectedHouse.divyangMembers }}</span>
-          </div>
-          <div class="dp-field-row">
-            <span class="dp-field-icon">📚</span>
-            <span class="dp-field-key">Illiterate Members</span>
-            <span class="dp-field-val" :class="selectedHouse.illiterateMembers > 0 ? 'dp-warn' : 'dp-ok'">
-              {{ selectedHouse.illiterateMembers || 0 }}
-            </span>
-          </div>
-          <div class="dp-field-row" v-if="selectedHouse.bplCategory">
-            <span class="dp-field-icon">🧾</span>
-            <span class="dp-field-key">BPL Category</span>
-            <span class="dp-field-val" :class="isBPL(selectedHouse) ? 'dp-warn' : 'dp-ok'">
-              {{ selectedHouse.bplCategory }}
-            </span>
-          </div>
-          <div class="dp-field-row" v-if="selectedHouse.annualIncome">
-            <span class="dp-field-icon">₹</span>
-            <span class="dp-field-key">Annual Income</span>
-            <span class="dp-field-val">{{ selectedHouse.annualIncome }}</span>
-          </div>
-
-          <!-- ── Section B: Agriculture ── -->
-          <div class="dp-section-label">
-            <span class="dp-section-icon">🌾</span> Farming Details
-          </div>
-
-          <div class="dp-stat-row">
-            <div class="dp-stat">
-              <div class="dp-stat-val">{{ displayLandValue(selectedHouse.totalLand) }} <small v-if="displayLandValue(selectedHouse.totalLand) !== '—'">ac</small></div>
-              <div class="dp-stat-key">Total Land</div>
-            </div>
-            <div class="dp-stat">
-              <div class="dp-stat-val">{{ displayLandValue(selectedHouse.cultivatedLand) }} <small v-if="displayLandValue(selectedHouse.cultivatedLand) !== '—'">ac</small></div>
-              <div class="dp-stat-key">Cultivated</div>
-            </div>
-          </div>
-
-          <div class="dp-chip-row">
-            <div class="dp-chip-block">
-              <div class="dp-chip-label">Kharif Crop</div>
-              <div class="dp-chip dp-chip-kharif">{{ displayCropValue(selectedHouse.kharif) }}</div>
-            </div>
-            <div class="dp-chip-block">
-              <div class="dp-chip-label">Rabi Crop</div>
-              <div class="dp-chip dp-chip-rabi">{{ displayCropValue(selectedHouse.rabi) }}</div>
-            </div>
-          </div>
-
-          <div v-if="selectedHouseFarmingNote" class="dp-empty-note">{{ selectedHouseFarmingNote }}</div>
-
-          <!-- Irrigation source full-width -->
-          <div class="dp-field-row">
-            <span class="dp-field-icon">💧</span>
-            <span class="dp-field-key">Irrigation Source</span>
-            <span class="dp-field-val"
-                  :class="isIrrigated(selectedHouse) ? 'dp-ok' : 'dp-warn'">
-              {{ selectedHouse.waterSource || '—' }}
-            </span>
-          </div>
-
-          <!-- ── Infrastructure ── -->
-          <div class="dp-section-label">
-            <span class="dp-section-icon">🏠</span> Infrastructure
-          </div>
-
-          <div class="dp-field-row">
-            <span class="dp-field-icon">🚽</span>
-            <span class="dp-field-key">Latrine / Sanitation</span>
-            <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
-              {{ selectedHouse.latrine || '—' }}
-            </span>
-          </div>
-
-          <div class="dp-field-row">
-            <span class="dp-field-icon">⚡</span>
-            <span class="dp-field-key">Lighting / Electricity</span>
-            <span class="dp-field-val"
-                  :class="(selectedHouse.lighting || '').toLowerCase() === 'electricity' ? 'dp-ok' : 'dp-warn'">
-              {{ selectedHouse.lighting || '—' }}
-            </span>
-          </div>
-
-          <div class="dp-field-row">
-            <span class="dp-field-icon">🪪</span>
-            <span class="dp-field-key">Ration Card</span>
-            <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
-          </div>
-
-          <!-- ── Farm Advisory (DB-driven) ── -->
-          <div class="dp-section-label">
-            <span class="dp-section-icon">⚠️</span> Farm Advisory
-          </div>
-
-          <!-- Loading -->
-          <div v-if="advisoryCache[selectedHouse.familyId]?.loading" class="advisory-loading">
-            <span class="advisory-spinner"></span> Loading advisory…
-          </div>
-
-          <!-- Issues -->
-          <template v-else-if="advisoryCache[selectedHouse.familyId]?.issues?.length">
-            <div
-              class="advisory-card"
-              v-for="iss in advisoryCache[selectedHouse.familyId].issues"
-              :key="iss.problemKey"
-              :style="{ borderLeftColor: iss.color }"
-            >
-              <!-- Title row -->
-              <div class="advisory-title-row">
-                <span class="advisory-title" :style="{ color: iss.color }">{{ iss.problemLabel }}</span>
-                <span v-if="iss.cropContext" class="advisory-crop-tag">🌾 {{ iss.cropContext }}</span>
+          <div class="drawer-content">
+            <div v-if="!isHouseDetailsLoading">
+              <!-- ── Section A: Population ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">👥</span> Family Details
               </div>
 
-              <!-- Cause -->
-              <div class="advisory-row">
-                <span class="advisory-tag cause">Cause</span>
-                <span class="advisory-text">{{ iss.cause }}</span>
+              <div class="dp-stat-row">
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.totalMembers || 0 }}</div>
+                  <div class="dp-stat-key">Members</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.maleMembers || 0 }}</div>
+                  <div class="dp-stat-key">Male</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.femaleMembers || 0 }}</div>
+                  <div class="dp-stat-key">Female</div>
+                </div>
               </div>
 
-              <!-- Solution -->
-              <div class="advisory-row">
-                <span class="advisory-tag solution">Solution</span>
-                <span class="advisory-text">{{ iss.solution }}</span>
-              </div>
-
-              <!-- Scheme / Source footer -->
-              <div class="advisory-footer">
-                <span class="advisory-scheme-pill"
-                      :class="iss.schemeType === 'government_scheme' ? 'pill-gov' : 'pill-tech'"
-                      :style="{ borderColor: iss.color + '55' }">
-                  <span class="pill-icon">{{ iss.schemeType === 'government_scheme' ? '🏛' : '🔬' }}</span>
-                  {{ iss.schemeName }}
-                </span>
-                <span class="advisory-source-tag"
-                      :class="iss.source === 'advisory_master' ? 'src-db' : iss.source === 'scheme_criteria' ? 'src-scheme' : 'src-curated'">
-                  {{ iss.source === 'advisory_master' ? '● Agriculture Dept DB' :
-                     iss.source === 'scheme_criteria' ? '● Scheme Database' :
-                     '● Agriculture Dept' }}
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💼</span>
+                <span class="dp-field-key">Working Members</span>
+                <span class="dp-field-val" :class="selectedHouse.workingMembers > 0 ? 'dp-ok' : 'dp-warn'">
+                  {{ selectedHouse.workingMembers || 0 }}
                 </span>
               </div>
-            </div>
-          </template>
+              <div class="dp-field-row" v-if="selectedHouse.divyangMembers > 0">
+                <span class="dp-field-icon">♿</span>
+                <span class="dp-field-key">Divyang Members</span>
+                <span class="dp-field-val dp-warn">{{ selectedHouse.divyangMembers }}</span>
+              </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">📚</span>
+                <span class="dp-field-key">Illiterate Members</span>
+                <span class="dp-field-val" :class="selectedHouse.illiterateMembers > 0 ? 'dp-warn' : 'dp-ok'">
+                  {{ selectedHouse.illiterateMembers || 0 }}
+                </span>
+              </div>
+              <div class="dp-field-row" v-if="selectedHouse.bplCategory">
+                <span class="dp-field-icon">🧾</span>
+                <span class="dp-field-key">BPL Category</span>
+                <span class="dp-field-val" :class="isBPL(selectedHouse) ? 'dp-warn' : 'dp-ok'">
+                  {{ selectedHouse.bplCategory }}
+                </span>
+              </div>
+              <div class="dp-field-row" v-if="selectedHouse.annualIncome">
+                <span class="dp-field-icon">₹</span>
+                <span class="dp-field-key">Annual Income</span>
+                <span class="dp-field-val">{{ selectedHouse.annualIncome }}</span>
+              </div>
 
-          <!-- No issues -->
-          <div v-else-if="advisoryCache[selectedHouse.familyId] && !advisoryCache[selectedHouse.familyId].issues?.length" class="all-good">
-            <span>✓</span> This household looks well-resourced
+              <!-- ── Section B: Agriculture ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🌾</span> Farming Details
+              </div>
+
+              <div class="dp-stat-row">
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ displayLandValue(selectedHouse.totalLand) }} <small v-if="displayLandValue(selectedHouse.totalLand) !== '—'">ac</small></div>
+                  <div class="dp-stat-key">Total Land</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ displayLandValue(selectedHouse.cultivatedLand) }} <small v-if="displayLandValue(selectedHouse.cultivatedLand) !== '—'">ac</small></div>
+                  <div class="dp-stat-key">Cultivated</div>
+                </div>
+              </div>
+
+              <div class="dp-chip-row">
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Kharif Crop</div>
+                  <div class="dp-chip dp-chip-kharif">{{ displayCropValue(selectedHouse.kharif) }}</div>
+                </div>
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Rabi Crop</div>
+                  <div class="dp-chip dp-chip-rabi">{{ displayCropValue(selectedHouse.rabi) }}</div>
+                </div>
+              </div>
+
+              <div v-if="selectedHouseFarmingNote" class="dp-empty-note">{{ selectedHouseFarmingNote }}</div>
+
+              <!-- Irrigation source full-width -->
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Irrigation Source</span>
+                <span class="dp-field-val"
+                      :class="isIrrigated(selectedHouse) ? 'dp-ok' : 'dp-warn'">
+                  {{ selectedHouse.waterSource || '—' }}
+                </span>
+              </div>
+
+              <!-- ── Infrastructure ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🏠</span> Infrastructure
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🚽</span>
+                <span class="dp-field-key">Latrine / Sanitation</span>
+                <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
+                  {{ selectedHouse.latrine || '—' }}
+                </span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">⚡</span>
+                <span class="dp-field-key">Lighting / Electricity</span>
+                <span class="dp-field-val"
+                      :class="getLightingStatusClass(selectedHouse)">
+                  {{ getLightingStatusLabel(selectedHouse) }}
+                </span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🪪</span>
+                <span class="dp-field-key">Ration Card</span>
+                <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
+              </div>
+
+              <!-- ── Farm Advisory (DB-driven) ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">⚠️</span> Farm Advisory
+              </div>
+
+              <!-- Loading -->
+              <div v-if="advisoryCache[selectedHouse.familyId]?.loading" class="advisory-loading">
+                <span class="advisory-spinner"></span> Loading advisory…
+              </div>
+
+              <!-- Issues -->
+              <template v-else-if="advisoryCache[selectedHouse.familyId]?.issues?.length">
+                <div
+                  class="advisory-card"
+                  v-for="iss in advisoryCache[selectedHouse.familyId].issues"
+                  :key="iss.problemKey"
+                  :style="{ borderLeftColor: iss.color }"
+                >
+                  <!-- Title row -->
+                  <div class="advisory-title-row">
+                    <span class="advisory-title" :style="{ color: iss.color }">{{ iss.problemLabel }}</span>
+                    <span v-if="iss.cropContext" class="advisory-crop-tag">🌾 {{ iss.cropContext }}</span>
+                  </div>
+
+                  <!-- Cause -->
+                  <div v-if="iss.cause && String(iss.cause).trim() && iss.source === 'scheme_criteria'" class="advisory-row">
+                    <span class="advisory-tag cause">Cause</span>
+                    <span class="advisory-text">{{ iss.cause }}</span>
+                  </div>
+
+                  <!-- Solution -->
+                  <div class="advisory-row">
+                    <span class="advisory-tag solution">Solution</span>
+                    <span class="advisory-text">{{ iss.solution }}</span>
+                  </div>
+
+                  <!-- Scheme / Source footer -->
+                  <div class="advisory-footer">
+                    <span class="advisory-scheme-pill"
+                          :class="iss.schemeType === 'government_scheme' ? 'pill-gov' : 'pill-tech'"
+                          :style="{ borderColor: iss.color + '55' }">
+                      <span class="pill-icon">{{ iss.schemeType === 'government_scheme' ? '🏛' : '🔬' }}</span>
+                      {{ iss.schemeName }}
+                    </span>
+                    <span class="advisory-source-tag"
+                          :class="iss.source === 'advisory_master' ? 'src-db' : iss.source === 'scheme_criteria' ? 'src-scheme' : 'src-curated'">
+                      {{ iss.source === 'advisory_master' ? '● Agriculture Dept DB' :
+                         iss.source === 'scheme_criteria' ? '● Scheme Database' :
+                         '● Agriculture Dept' }}
+                    </span>
+                  </div>
+                </div>
+              </template>
+
+              <!-- No issues -->
+              <div v-else-if="advisoryCache[selectedHouse.familyId] && !advisoryCache[selectedHouse.familyId].issues?.length" class="all-good">
+                <span>✓</span> This household looks well-resourced
+              </div>
+            </div>
+
+            <div v-else class="drawer-loading-state loading-state">
+              <span class="spinner"></span>
+              <span>Fetching household details...</span>
+            </div>
           </div>
 
         </div>
@@ -326,10 +335,14 @@
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
               <div class="cs-option-group-label">— Population —</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'population_density' }" @click="selectView('population_density')">Population Density</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'education' }"          @click="selectView('education')">Education Level</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'divyang' }"            @click="selectView('divyang')">Divyang Presence</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'occupation' }"         @click="selectView('occupation')">Occupation</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectColorMode('education_level')">Education Level</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }"   @click="selectColorMode('divyang_presence')">Divyang Presence</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'occupation' }"         @click="selectColorMode('occupation')">Occupation</div>
+              <div class="cs-option-group-label">— Infrastructure —</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }"        @click="selectColorMode('sanitation')">Sanitation / Toilet</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'lighting' }"          @click="selectColorMode('lighting')">Electricity</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'ration' }"            @click="selectColorMode('ration')">Ration Card</div>
               <div class="cs-option-group-label">— Agriculture —</div>
               <div class="cs-option" :class="{ selected: selectedView === 'crop' }"               @click="selectView('crop')">Crop Type</div>
               <div class="cs-option" :class="{ selected: selectedView === 'irrigation' }"         @click="selectView('irrigation')">Irrigation</div>
@@ -528,8 +541,8 @@
           </div>
           <transition-group name="fi-fade" tag="div" class="fi-list">
           <div v-for="issue in issueList" :key="issue.key">
-            <div class="issue-row" :class="{ active: colorMode === issue.mode }"
-                 @click="colorMode = issue.mode; toggleSchemeDrawer(issue.key)">
+              <div class="issue-row" :class="{ active: colorMode === issue.mode }"
+                @click="toggleSchemeDrawer(issue.key)">
               <span class="mini-house mini-house-sm" :style="{ '--mh-roof': issue.color }">
                 <span class="mh-roof"></span>
                 <span class="mh-wall"></span>
@@ -547,44 +560,39 @@
               <span class="issue-chevron" :class="{ open: schemeDrawer === issue.key }">›</span>
             </div>
             <transition name="drawer">
-              <div v-if="schemeDrawer === issue.key" class="issue-drawer scheme-drawer" :style="{ borderLeftColor: issue.color }">
-                <!-- Cause — from API (DB-verified or fallback) -->
-                <div v-if="schemeCache[issue.key]">
-                  <p class="drawer-cause">
-                    <strong>Cause:</strong>
-                    {{ schemeCache[issue.key].loading ? 'Analysing…' : schemeCache[issue.key].cause }}
-                  </p>
-
-                  <!-- Scheme list -->
-                  <template v-if="!schemeCache[issue.key].loading">
-                    <div class="scheme-header">
-                      <span class="scheme-header-icon">🏛</span>
-                      <span class="scheme-header-text">Recommended Schemes based on eligibility</span>
-                      <span class="scheme-source-tag" :class="schemeCache[issue.key].source === 'db' ? 'tag-db' : 'tag-fb'">
-                        {{ schemeCache[issue.key].source === 'db' ? '● Live DB' : '● Curated' }}
-                      </span>
-                    </div>
-                    <div v-if="schemeCache[issue.key].schemes.length === 0" class="scheme-empty">
-                      No matching schemes found. Contact the local Gram Panchayat for assistance.
-                    </div>
-                    <div v-for="s in schemeCache[issue.key].schemes" :key="s.name" class="scheme-card" :style="{ borderLeftColor: issue.color }">
-                      <div class="scheme-card-name">{{ s.name }}</div>
-                      <div class="scheme-card-desc">{{ s.description }}</div>
-                      <div class="scheme-card-row">
-                        <span class="scheme-tag scheme-tag-benefit">💰 {{ s.benefit }}</span>
-                      </div>
-                      <div class="scheme-card-row">
-                        <span class="scheme-tag scheme-tag-eligibility">✅ {{ s.eligibility }}</span>
-                      </div>
-                      <div class="scheme-card-reason" :style="{ color: issue.color }">
-                        <span class="scheme-reason-icon">🎯</span> {{ s.matchReason }}
-                      </div>
-                    </div>
-                  </template>
-                  <div v-else class="scheme-loading">
-                    <span class="scheme-spinner"></span> Loading schemes…
-                  </div>
+              <div v-if="schemeDrawer === issue.key && schemeCache[issue.key] && (schemeCache[issue.key].loading || schemeCache[issue.key].schemes.length > 0)" class="issue-drawer scheme-drawer" :style="{ borderLeftColor: issue.color }">
+                <div v-if="schemeCache[issue.key].cause && String(schemeCache[issue.key].cause).trim()" class="drawer-cause">
+                  <strong>Cause:</strong>
+                  {{ schemeCache[issue.key].cause }}
                 </div>
+
+                <div v-if="schemeCache[issue.key].loading" class="scheme-loading">
+                  <span class="scheme-spinner"></span> Loading schemes…
+                </div>
+
+                <template v-else>
+                  <div class="scheme-header">
+                    <span class="scheme-header-icon">🏛</span>
+                    <span class="scheme-header-text">Recommended Schemes based on eligibility</span>
+                    <span class="scheme-source-tag" :class="schemeCache[issue.key].source === 'db' ? 'tag-db' : 'tag-empty'">
+                      {{ schemeCache[issue.key].source === 'db' ? '● Live DB' : '● No DB Data' }}
+                    </span>
+                  </div>
+
+                  <div v-for="s in schemeCache[issue.key].schemes" :key="s.name" class="scheme-card" :style="{ borderLeftColor: issue.color }">
+                    <div class="scheme-card-name">{{ s.name }}</div>
+                    <div class="scheme-card-desc">{{ s.description }}</div>
+                    <div class="scheme-card-row">
+                      <span class="scheme-tag scheme-tag-benefit">💰 {{ s.benefit }}</span>
+                    </div>
+                    <div class="scheme-card-row">
+                      <span class="scheme-tag scheme-tag-eligibility">✅ {{ s.eligibility }}</span>
+                    </div>
+                    <div class="scheme-card-reason" :style="{ color: issue.color }">
+                      <span class="scheme-reason-icon">🎯</span> {{ s.matchReason }}
+                    </div>
+                  </div>
+                </template>
               </div>
             </transition>
           </div>
@@ -644,7 +652,7 @@
         </div>
         <div class="hc-cell">
           <span class="hc-dot" :style="{
-            background: (() => { const r=(hoveredHouse.rationCard||'').toLowerCase(); return r.includes('bpl')||r.includes('antyodaya') ? '#ef4444' : r.includes('apl') ? '#16a34a' : '#94a3b8' })()
+            background: normalizeRationCardValue(hoveredHouse) ? '#16a34a' : '#94a3b8'
           }"></span>
           <span class="hc-ck">Ration</span>
           <span class="hc-cv">{{ hoveredHouse.rationCard || '—' }}</span>
@@ -658,10 +666,10 @@
         </div>
         <div class="hc-cell">
           <span class="hc-dot" :style="{
-            background: (hoveredHouse.lighting||'').toLowerCase() === 'electricity' ? '#16a34a' : '#f59e0b'
+            background: hasElectricityConnection(hoveredHouse) ? '#16a34a' : '#f59e0b'
           }"></span>
           <span class="hc-ck">Power</span>
-          <span class="hc-cv">{{ hoveredHouse.lighting || '—' }}</span>
+          <span class="hc-cv">{{ hasElectricityConnection(hoveredHouse) ? 'Yes' : 'No' }}</span>
         </div>
       </div>
 
@@ -692,6 +700,27 @@
           </div>
           <div class="cluster-location-pill" v-if="selectedCluster.lat">
             📍 {{ selectedCluster.lat.toFixed(4) }}°, {{ selectedCluster.lng.toFixed(4) }}°
+          </div>
+        </div>
+
+        <div v-if="selectedCluster.houses && selectedCluster.houses.length" class="cluster-house-section">
+          <div class="cluster-house-title">Households in this cluster</div>
+          <div class="cluster-house-list">
+            <div v-for="house in selectedCluster.houses" :key="house.familyId" class="cluster-house-item">
+              <div class="cluster-house-top">
+                <span class="cluster-house-name">{{ house.headName || `Household ${house.familyId}` }}</span>
+                <span class="cluster-house-id">ID {{ house.familyId }}</span>
+              </div>
+              <div class="cluster-house-meta">
+                <span>{{ house.villageName || 'Unknown village' }}</span>
+                <span>Members: {{ house.totalMembers || 0 }}</span>
+                <span>Land: {{ house.totalLand || '—' }}</span>
+              </div>
+              <div class="cluster-house-meta cluster-house-meta-muted">
+                <span>{{ house.occupation || 'Not Working' }}</span>
+                <span>{{ house.annualIncome || '—' }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -728,7 +757,7 @@
             </div>
 
             <!-- Cause -->
-            <div class="cp-cause-row">
+            <div v-if="action.cause && String(action.cause).trim() && action.source === 'scheme_criteria'" class="cp-cause-row">
               <span class="cp-tag cp-tag-cause">Cause</span>
               <span class="cp-cause-text">{{ action.cause }}</span>
             </div>
@@ -793,6 +822,7 @@ const hasUserSelectedView = ref(false)
 const colorMode           = ref(null)
 const activeIssue         = ref(null)
 const agriOverviewOpen    = ref(false)
+const isHouseDetailsLoading = ref(false)
 
 // ── Scheme recommendations ────────────────────────────────────────────────────
 // Cache: problemKey → { loading, cause, source, schemes[] }
@@ -851,18 +881,7 @@ async function loadAdvisoryForHouse(house) {
     const data = await getAdvisory(problems, profile)
     advisoryCache[cacheKey] = { loading: false, issues: data.issues || [] }
   } catch {
-    // Fallback: build advisory locally from getIssues() if API fails
-    advisoryCache[cacheKey] = { loading: false, issues: getIssues(house).map(i => ({
-      problemKey: i.label,
-      problemLabel: i.label,
-      color: i.color,
-      cause: i.cause,
-      solution: i.solution,
-      schemeName: i.scheme,
-      schemeType: 'curated',
-      source: 'curated',
-      cropContext: '',
-    }))}
+    advisoryCache[cacheKey] = { loading: false, issues: [] }
   }
 }
 const demoOverviewOpen    = ref(true)
@@ -925,6 +944,7 @@ let retryTimer         = null
 let twinLoadSeq        = 0
 let viewportSeq        = 0
 let viewportDebounce   = null
+let viewportPrimeTimer = null
 let lastLoadedBbox     = null
 let isInitialLoadDone  = false   // true after first page of data has been fetched and rendered
 let vpInFlight         = 0       // count of loadViewportData calls currently awaiting a fetch
@@ -1589,14 +1609,20 @@ const filtersDirty = computed(() =>
   pendingVillage.value !== filterVillage.value
 )
 
-const VIEW_TO_COLOR_MODE = {
-  population_density: 'population_density',
-  education:          'education_level',
-  divyang:            'divyang_presence',
-  occupation:         'occupation',
-  crop:               'crops',
-  irrigation:         'irrigation',
-  land:               'land',
+const COLOR_MODE_LABELS = {
+  irrigation:          'Irrigation',
+  occupation:          'Occupation',
+  sanitation:          'Sanitation / Toilet',
+  lighting:            'Electricity',
+  ration:              'Ration Card',
+  infrastructure:      'Infrastructure',
+  crops:               'Crop Type',
+  land:                'Land Holdings',
+  population_density:  'Population Density',
+  bpl_status:          'BPL Status',
+  education_level:     'Education Level',
+  divyang_presence:    'Divyang Presence',
+  income_bracket:      'Family Income Status',
 }
 
 const COLOR_MODE_TO_VIEW = Object.fromEntries(
@@ -1605,20 +1631,26 @@ const COLOR_MODE_TO_VIEW = Object.fromEntries(
 
 // Category group for each color mode — used to reset problem filters on category switch
 const COLOR_MODE_CATEGORY = {
+  income_bracket:     'financial',
+  bpl_status:         'financial',
+  ration:             'infrastructure',
   population_density: 'population',
   education_level:    'population',
   divyang_presence:   'population',
   occupation:         'population',
+  sanitation:         'infrastructure',
+  lighting:           'infrastructure',
+  infrastructure:     'infrastructure',
   crops:              'agriculture',
   irrigation:         'agriculture',
   land:               'agriculture',
 }
 
-const DISABLED_COLOR_MODES = new Set(['sanitation', 'lighting'])
+const DISABLED_COLOR_MODES = new Set([])
 
 function isColorModeEnabled(mode) {
   if (!mode) return false
-  return !DISABLED_COLOR_MODES.has(String(mode)) && String(mode) !== 'ration'
+  return !DISABLED_COLOR_MODES.has(String(mode))
 }
 
 function applyMappedColorMode(mode) {
@@ -1701,9 +1733,11 @@ const activeProblemFilters = ref([])
 const PROBLEM_FILTER_META = [
   // Agri problems
   { key: 'noSanitation',      label: 'No Sanitation',      color: '#ef4444' },
+  { key: 'noElectricity',     label: 'No Electricity',     color: '#f59e0b' },
   { key: 'noRationCard',      label: 'No Ration Card',     color: '#f97316' },
   { key: 'noIrrigation',      label: 'No Irrigation',      color: '#a78bfa' },
   { key: 'noLand',            label: 'No Own Land',        color: '#ef4444' },
+  { key: 'farmers',           label: 'Farmers',            color: '#22c55e' },
   { key: 'unemployed',        label: 'Unemployed',         color: '#ef4444' },
   { key: 'laborers',          label: 'Laborers',           color: '#f59e0b' },
   // Population problems
@@ -1716,7 +1750,11 @@ const PROBLEM_FILTER_META = [
 const PROBLEM_FILTERS_BY_MODE = {
   irrigation:         ['noIrrigation', 'noLand'],
   crops:              ['noIrrigation', 'noLand'],
-  occupation:         ['unemployed', 'laborers'],
+  occupation:         ['farmers', 'unemployed', 'laborers'],
+  sanitation:         ['noSanitation', 'noRationCard'],
+  lighting:           ['noElectricity', 'noRationCard'],
+  ration:             ['bplFamilies', 'noRationCard'],
+  infrastructure:     ['noSanitation', 'noElectricity', 'noRationCard'],
   population_density: ['bplFamilies', 'illiterateMembers', 'unemployedMembers', 'divyangMembers'],
   bpl_status:         ['bplFamilies', 'noRationCard'],
   education_level:    ['illiterateMembers'],
@@ -1738,6 +1776,78 @@ function getOccupationText(house) {
   return String(house.occupation || '').toLowerCase().trim()
 }
 
+function hasSanitationFacility(house) {
+  const latrine = String(house?.latrine || '').toLowerCase().trim()
+  return Boolean(latrine && latrine !== 'no latrine' && latrine !== 'none' && latrine !== 'na')
+}
+
+function normalizeInfrastructureValue(value) {
+  return String(value || '').toLowerCase().trim()
+}
+
+function getLightingCategory(house) {
+  const lighting = normalizeInfrastructureValue(house?.lighting)
+  if (!lighting || lighting === 'unknown' || lighting === 'not available') return 'unknown'
+  if (
+    lighting === 'none' ||
+    lighting === 'no' ||
+    lighting === 'false' ||
+    lighting === '0' ||
+    lighting === 'no electricity' ||
+    lighting === 'no lighting' ||
+    lighting === 'n/a' ||
+    lighting === 'na'
+  ) return 'none'
+  if (lighting === 'kerosene' || lighting === 'solar' || lighting === 'generator') return 'limited'
+  return 'grid'
+}
+
+function getLightingStatusLabel(house) {
+  const category = getLightingCategory(house)
+  if (category === 'grid') return 'Yes'
+  if (category === 'none' || category === 'limited') return 'No'
+  return 'Unknown'
+}
+
+function getLightingStatusClass(house) {
+  const category = getLightingCategory(house)
+  if (category === 'grid') return 'dp-ok'
+  if (category === 'none' || category === 'limited') return 'dp-warn'
+  return ''
+}
+
+function normalizeRationCardValue(house) {
+  const card = String(house?.rationCard || '').toLowerCase().trim()
+  if (
+    !card ||
+    card === 'none' ||
+    card === 'na' ||
+    card === 'n/a' ||
+    card === 'no' ||
+    card === 'false' ||
+    card === '0' ||
+    card === 'unknown' ||
+    card === 'not available' ||
+    card === 'no ration card'
+  ) return ''
+  return card
+}
+
+function hasElectricityConnection(house) {
+  return getLightingCategory(house) === 'grid'
+}
+
+function hasRationCardRecord(house) {
+  return Boolean(normalizeRationCardValue(house))
+}
+
+function isFarmerHouse(house) {
+  const occ = getOccupationText(house)
+  const totalLand = parseFloat(house?.totalLand) || 0
+  const ownLand = String(house?.ownLand || '').toLowerCase().trim()
+  return totalLand > 0 || ownLand === 'yes' || occ.includes('farm') || occ.includes('cultivator') || occ.includes('agri')
+}
+
 function isUnemployedHouse(house) {
   const occ = getOccupationText(house)
   return occ.includes('unemploy') || occ.includes('not working') || occ.includes('no work') || occ.includes('jobless')
@@ -1751,12 +1861,13 @@ function isLaborHouse(house) {
 // Returns true if the house matches the given problem key
 function matchesProblemFilter(house, key) {
   if (key === 'noSanitation') {
-    const s = (house.latrine || '').toLowerCase().trim()
-    return !s || s === 'no latrine' || s === 'none'
+    return !hasSanitationFacility(house)
+  }
+  if (key === 'noElectricity') {
+    return !hasElectricityConnection(house)
   }
   if (key === 'noRationCard') {
-    const r = (house.rationCard || '').toLowerCase().trim()
-    return !r || r === 'none' || r === 'na' || r === 'no ration card'
+    return !hasRationCardRecord(house)
   }
   if (key === 'noIrrigation') return isRainFed(house)
   if (key === 'noLand') {
@@ -1764,6 +1875,7 @@ function matchesProblemFilter(house, key) {
     const own  = (house.ownLand || '').toLowerCase()
     return land <= 0 || own !== 'yes'
   }
+  if (key === 'farmers') return isFarmerHouse(house)
   if (key === 'unemployed') return isUnemployedHouse(house)
   if (key === 'laborers')   return isLaborHouse(house)
   // Population problem filters
@@ -1807,7 +1919,7 @@ async function getSolutionsByCriteria(problemKey) {
   } catch {
     schemeCache[problemKey] = {
       loading: false,
-      cause: `Data analysis suggests a gap in this area. Please review with the relevant department.`,
+      cause: '',
       source: 'error',
       schemes: [],
     }
@@ -2102,7 +2214,7 @@ const literacyRate      = computed(() => {
 })
 
 function isBPL(house) {
-  const v = String(house.bplCategory || house.rationCard || '').toLowerCase()
+  const v = String(house.bplCategory || '').toLowerCase()
   return v.includes('bpl') || v.includes('antyodaya') || v === 'yes'
 }
 
@@ -2229,6 +2341,7 @@ const issueListAll = computed(() => {
   if (!stats.value) return []
   const { total, noToilet, noElec, noIrrig, bpl } = stats.value
   const list = filteredHouses.value
+  const farmers         = list.filter(h => isFarmerHouse(h)).length
   const noLand           = list.filter(h => matchesProblemFilter(h, 'noLand')).length
   const noRationCard     = list.filter(h => matchesProblemFilter(h, 'noRationCard')).length
   const unemployed       = list.filter(h => isUnemployedHouse(h)).length
@@ -2242,12 +2355,13 @@ const issueListAll = computed(() => {
   const pct = (n) => Math.round(n / total * 100)
   return [
     { key: 'noSanitation',      label: 'No Sanitation',      count: noToilet,     pct: pct(noToilet),     color: '#ef4444', mode: 'sanitation',         ...ISSUE_META.sanitation    },
+    { key: 'noElectricity',     label: 'No Electricity',     count: noElec,       pct: pct(noElec),       color: '#f59e0b', mode: 'lighting',           ...ISSUE_META.lighting      },
     { key: 'noRationCard',      label: 'No Ration Card',     count: noRationCard,  pct: pct(noRationCard), color: '#f97316', mode: 'sanitation',         ...ISSUE_META.noRationCard  },
     { key: 'noIrrigation',      label: 'No Irrigation',      count: noIrrig,       pct: pct(noIrrig),      color: '#a78bfa', mode: 'irrigation',         ...ISSUE_META.irrigation    },
     { key: 'noLand',            label: 'No Own Land',        count: noLand,        pct: pct(noLand),       color: '#ef4444', mode: 'land',               ...ISSUE_META.land          },
+    { key: 'farmers',           label: 'Farmers',            count: farmers,       pct: pct(farmers),      color: '#22c55e', mode: 'occupation',         cause: 'Farm-owning or farm-working households drive agricultural output.', solution: 'Link farmers to irrigation, crop diversification, and market support.', scheme: 'PM-KISAN · FPO Support' },
     { key: 'unemployed',        label: 'Unemployed',         count: unemployed,    pct: pct(unemployed),   color: '#ef4444', mode: 'occupation',         ...ISSUE_META.occupation    },
     { key: 'laborers',          label: 'Laborers',           count: laborers,      pct: pct(laborers),     color: '#f59e0b', mode: 'occupation',         ...ISSUE_META.occupation    },
-    { key: 'noElectricity',     label: 'No Electricity',     count: noElec,        pct: pct(noElec),       color: '#f59e0b', mode: 'lighting',           ...ISSUE_META.lighting      },
     { key: 'bplHouseholds',     label: 'BPL Households',     count: bpl,           pct: pct(bpl),          color: '#60a5fa', mode: 'ration',             ...ISSUE_META.ration        },
     { key: 'bplFamilies',       label: 'BPL Families',       count: bplFamilies,   pct: pct(bplFamilies),  color: '#60a5fa', mode: 'bpl_status',         cause: 'Household classified as BPL — economically vulnerable.',           solution: 'Ensure NFSA ration card, Ayushman Bharat, and PM-KISAN enrollment.', scheme: 'NFSA · Ayushman Bharat' },
     { key: 'illiterateMembers', label: 'Illiterate Members', count: illiterateCnt, pct: pct(illiterateCnt),color: '#f59e0b', mode: 'education_level',    cause: 'Households with illiterate members — limits income opportunities.', solution: 'Enroll in adult literacy programs and Anganwadi services.', scheme: 'Saakshar Bharat Mission' },
@@ -2259,7 +2373,11 @@ const issueListAll = computed(() => {
 const FIELD_ISSUES_BY_MODE = {
   irrigation:         ['noIrrigation', 'noLand'],
   crops:              ['noIrrigation', 'noLand'],
-  occupation:         ['unemployed', 'laborers'],
+  occupation:         ['farmers', 'unemployed', 'laborers'],
+  sanitation:         ['noSanitation', 'noRationCard'],
+  lighting:           ['noElectricity', 'noRationCard'],
+  ration:             ['bplFamilies', 'noRationCard'],
+  infrastructure:     ['noSanitation', 'noElectricity', 'noRationCard'],
   population_density: ['bplFamilies', 'illiterateMembers', 'unemployedMembers', 'divyangMembers'],
   bpl_status:         ['bplFamilies', 'noRationCard'],
   education_level:    ['illiterateMembers'],
@@ -2281,6 +2399,10 @@ const issueList = computed(() => {
 const legendTitle = computed(() => ({
   irrigation: 'Irrigation',
   occupation: 'Occupation',
+  sanitation: 'Infrastructure',
+  lighting: 'Infrastructure',
+  ration: 'Infrastructure',
+  infrastructure: 'Infrastructure',
   ration: 'Ration Card',
   crops:      'Crops / Season', land: 'Land Holdings',
 })[colorMode.value] || 'Legend')
@@ -2296,15 +2418,32 @@ const currentLegend = computed(() => {
     { color: '#ef4444', label: 'Rain-fed / no irrigation' },
   ]
   if (colorMode.value === 'occupation') return [
-    { color: '#16a34a', label: 'Other working categories' },
+    { color: '#22c55e', label: 'Farmers' },
+    { color: '#0f766e', label: 'Other working categories' },
     { color: '#f59e0b', label: 'Laborers / wage work' },
     { color: '#ef4444', label: 'Unemployed / not working' },
     { color: '#94a3b8', label: 'No occupation data' },
+  ]
+  if (colorMode.value === 'sanitation') return [
+    { color: '#16a34a', label: 'Has toilet facility' },
+    { color: '#f59e0b', label: 'Pit / open latrine' },
+    { color: '#ef4444', label: 'No sanitation' },
   ]
   if (colorMode.value === 'lighting') return [
     { color: '#16a34a', label: 'Grid electricity' },
     { color: '#f59e0b', label: 'Kerosene lamp' },
     { color: '#ef4444', label: 'No lighting' },
+    { color: '#94a3b8', label: 'Lighting data unavailable' },
+  ]
+  if (colorMode.value === 'ration') return [
+    { color: '#16a34a', label: 'Ration / BPL recorded' },
+    { color: '#ef4444', label: 'No ration card data' },
+  ]
+  if (colorMode.value === 'infrastructure') return [
+    { color: '#16a34a', label: 'Sanitation, electricity and ration card present' },
+    { color: '#f59e0b', label: 'One infrastructure gap' },
+    { color: '#ef4444', label: 'Multiple infrastructure gaps' },
+    { color: '#94a3b8', label: 'No infrastructure data' },
   ]
   if (colorMode.value === 'crops') return [
     { color: '#16a34a', label: 'Both Kharif & Rabi' },
@@ -2362,9 +2501,18 @@ const pieCharts = computed(() => {
   let marginal = 0, small = 0, medLarge = 0
   const irrigated = list.filter(h => isIrrigated(h)).length
   const noSanitation = list.filter(h => matchesProblemFilter(h, 'noSanitation')).length
+  const noElectricity = list.filter(h => matchesProblemFilter(h, 'noElectricity')).length
   const unemployed = list.filter(h => isUnemployedHouse(h)).length
   const laborers = list.filter(h => isLaborHouse(h)).length
-  const occupiedOther = Math.max(total - unemployed - laborers, 0)
+  const farmers = list.filter(h => isFarmerHouse(h)).length
+  const occupiedOther = Math.max(total - farmers - unemployed - laborers, 0)
+
+  const infraGood = list.filter(h => hasSanitationFacility(h) && hasElectricityConnection(h) && hasRationCardRecord(h)).length
+  const infraMid = list.filter(h => {
+    const score = [hasSanitationFacility(h), hasElectricityConnection(h), hasRationCardRecord(h)].filter(Boolean).length
+    return score === 2
+  }).length
+  const infraLow = Math.max(total - infraGood - infraMid, 0)
 
   list.forEach(h => {
     const k = hasRecordedCrop(h.kharif)
@@ -2407,8 +2555,24 @@ const pieCharts = computed(() => {
       ],
     },
     {
+      title: 'Electricity Coverage',
+      segments: [
+        { label: 'Has Electricity', pct: pct(total - noElectricity, total), color: '#16a34a' },
+        { label: 'No Electricity',  pct: pct(noElectricity, total), color: '#ef4444' },
+      ],
+    },
+    {
+      title: 'Infrastructure Status',
+      segments: [
+        { label: 'All basic services present', pct: pct(infraGood, total), color: '#16a34a' },
+        { label: 'One service missing',        pct: pct(infraMid, total),  color: '#f59e0b' },
+        { label: 'Two+ services missing',      pct: pct(infraLow, total),  color: '#ef4444' },
+      ],
+    },
+    {
       title: 'Occupation Profile',
       segments: [
+        { label: 'Farmers', pct: pct(farmers, total), color: '#22c55e' },
         { label: 'Unemployed', pct: pct(unemployed, total), color: '#ef4444' },
         { label: 'Laborers', pct: pct(laborers, total), color: '#f59e0b' },
         { label: 'Other / Working', pct: pct(occupiedOther, total), color: '#16a34a' },
@@ -2418,13 +2582,14 @@ const pieCharts = computed(() => {
 })
 
 const AGRI_OVERVIEW_BY_MODE = {
-  sanitation: ['Sanitation Coverage'],
+  sanitation: ['Sanitation Coverage', 'Infrastructure Status'],
   irrigation: ['Irrigation Coverage', 'Land Holdings'],
   crops:      ['Crop Seasons', 'Irrigation Coverage'],
   occupation: ['Occupation Profile'],
   land:       ['Land Holdings'],
-  lighting:   [],
-  ration:     [],
+  lighting:   ['Electricity Coverage', 'Infrastructure Status'],
+  ration:     ['Infrastructure Status'],
+  infrastructure: ['Infrastructure Status', 'Sanitation Coverage', 'Electricity Coverage'],
 }
 
 // Population pie charts — computed from member aggregates
@@ -2523,6 +2688,12 @@ function pieStyle(segments) {
 // ── Color helpers ────────────────────────────────────────────────────────────
 function getConditionColor(house) {
   if (!colorMode.value) return '#ef4444'
+  if (colorMode.value === 'infrastructure') {
+    const infraScore = [hasSanitationFacility(house), hasElectricityConnection(house), hasRationCardRecord(house)].filter(Boolean).length
+    if (infraScore >= 3) return '#16a34a'
+    if (infraScore === 2) return '#f59e0b'
+    return '#ef4444'
+  }
   if (colorMode.value === 'sanitation') {
     const l = (house.latrine || '').toLowerCase()
     if (!l || l === 'no latrine' || l === 'none') return '#ef4444'
@@ -2537,11 +2708,18 @@ function getConditionColor(house) {
     if (!occ) return '#94a3b8'
     if (isUnemployedHouse(house)) return '#ef4444'
     if (isLaborHouse(house)) return '#f59e0b'
-    return '#16a34a'
+    if (isFarmerHouse(house)) return '#22c55e'
+    return '#0f766e'
   }
   if (colorMode.value === 'lighting') {
-    const l = (house.lighting || '').toLowerCase()
-    return l === 'electricity' ? '#16a34a' : l === 'kerosene' ? '#f59e0b' : '#ef4444'
+    const category = getLightingCategory(house)
+    if (category === 'unknown') return '#94a3b8'
+    if (category === 'none') return '#ef4444'
+    if (category === 'limited') return '#f59e0b'
+    return '#16a34a'
+  }
+  if (colorMode.value === 'ration') {
+    return hasRationCardRecord(house) ? '#16a34a' : '#ef4444'
   }
   if (colorMode.value === 'crops') {
     const k = hasRecordedCrop(house.kharif)
@@ -2597,18 +2775,23 @@ function getConditionColor(house) {
     }
     return '#94a3b8'
   }
-  const r = (house.rationCard || '').toLowerCase()
-  if (r.includes('bpl') || r.includes('antyodaya')) return '#ef4444'
-  if (r.includes('apl')) return '#16a34a'
+  const r = normalizeRationCardValue(house)
+  if (r) return '#16a34a'
   return '#94a3b8'
 }
 
 function getConditionLabel(house) {
   const color = getConditionColor(house)
+  if (colorMode.value === 'infrastructure') {
+    if (color === '#16a34a') return 'Infrastructure Complete'
+    if (color === '#f59e0b') return 'Partial Infrastructure'
+    return 'Infrastructure Gap'
+  }
   if (colorMode.value === 'occupation') {
     if (color === '#ef4444') return 'Unemployed'
     if (color === '#f59e0b') return 'Laborer / Wage Work'
-    if (color === '#16a34a') return 'Working'
+    if (color === '#22c55e') return 'Farmer'
+    if (color === '#0f766e') return 'Working'
     return 'Occupation Not Available'
   }
   if (colorMode.value === 'crops') {
@@ -3325,6 +3508,8 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
     clearSpiderfy()
   }
 
+  isHouseDetailsLoading.value = true
+
   // Render immediately from already-loaded map data so the panel does not
   // sit empty while the full detail payload is still loading.
   const cached = detailedHouseById.value.get(numericId)
@@ -3337,17 +3522,21 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
     const detail = await getHouseById(numericId)
     if (detail) {
       selectedHouse.value = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
-      return
     }
   } catch (error) {
     console.warn('[house-detail] fetch failed:', error?.message || error)
+  } finally {
+    isHouseDetailsLoading.value = false
+    if (!selectedHouse.value) {
+      const finalFallback = cached || fallbackHouse
+      if (finalFallback) {
+        selectedHouse.value = mergeHouseDetailWithFallback(finalFallback, fallbackHouse)
+      }
+    }
   }
 
-  if (!immediateHouse) {
-    const finalFallback = cached || fallbackHouse
-    if (finalFallback) {
-      selectedHouse.value = mergeHouseDetailWithFallback(finalFallback, fallbackHouse)
-    }
+  if (selectedHouse.value) {
+    loadAdvisoryForHouse(selectedHouse.value)
   }
 }
 
@@ -3977,7 +4166,6 @@ watch(houses, (newValue) => {
 
 watch(selectedHouse, (house) => {
   if (viewer) buildEntities(!!(house && spiderfyFamilyIds.has(house.familyId)))
-  if (house) loadAdvisoryForHouse(house)
 })
 watch(activeProblemFilters, () => { if (viewer) buildEntities() }, { deep: true })
 
@@ -4094,12 +4282,17 @@ async function loadInitialData(silent = false) {
 // Wrapped version so loading is always cleared via finally
 async function loadInitialDataWithCleanup(silent = false) {
   try {
-    await loadInitialData(silent)
-    // Prime detailed household rows for counters/problem filters on first view,
-    // but do not block initial map rendering on this network call.
-    loadViewportData().catch((err) => {
-      console.warn('[initial] viewport prime failed:', err?.message || err)
-    })
+    await loadInitialData()
+    if (viewportPrimeTimer) {
+      clearTimeout(viewportPrimeTimer)
+    }
+    viewportPrimeTimer = setTimeout(() => {
+      viewportPrimeTimer = null
+      if (!isInitialLoadDone || vpInFlight > 0) return
+      loadViewportData().catch((err) => {
+        console.warn('[initial] viewport prime failed:', err?.message || err)
+      })
+    }, 1200)
   } finally {
     if (!silent) loadingLiveData.value = false
     console.log('[initial] loading cleared — mapPoints:', mapPoints.value.length)
@@ -4368,6 +4561,17 @@ onMounted(async () => {
         const zCluster = zoomClusterDataMap.get(entityId)
         if (zCluster) {
           clearSpiderfy()
+          const resolvedCluster = {
+            ...zCluster,
+            count: Array.isArray(zCluster.houses) ? zCluster.houses.length : Number(zCluster.count || 0),
+            houses: Array.isArray(zCluster.houses) ? zCluster.houses : [],
+            problems: analyzeCluster(Array.isArray(zCluster.houses) ? zCluster.houses : []),
+          }
+          selectedCluster.value = resolvedCluster
+          selectedHouse.value = null
+          clusterAdvisory.value = null
+          highlightClusterBoundary(resolvedCluster)
+          loadClusterAdvisory(resolvedCluster)
           const targetH = getStrictZoomInHeight((viewer.camera.positionCartographic?.height ?? 120000) * 0.6)
           if (Number.isFinite(Number(zCluster.lng)) && Number.isFinite(Number(zCluster.lat))) {
             suspendAutoFly(1500)
@@ -4478,7 +4682,9 @@ onMounted(async () => {
   // Load insights in parallel (small, fast); initial house data fetched separately
   getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
   getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
-  await locationOptionsPromise
+ await locationOptionsPromise.catch((err) => {
+  console.warn('[initial] location options prime failed:', err?.message || err)
+})
   loadInitialDataWithCleanup()
 
   // Safety net: force-clear loading if still stuck after 30 s
@@ -5577,6 +5783,78 @@ onUnmounted(() => {
 .cluster-loading {
   display: flex; align-items: center; gap: 0.5rem;
   font-size: 0.7rem; color: #6b7280; padding: 0.8rem 1rem;
+}
+
+.cluster-house-section {
+  padding: 0.75rem 0.85rem 0.45rem;
+  border-bottom: 1px solid #fecaca;
+  background: #fff;
+}
+.cluster-house-title {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #374151;
+  margin-bottom: 0.55rem;
+}
+.cluster-house-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.1rem;
+}
+.cluster-house-item {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  padding: 0.5rem 0.55rem;
+}
+.cluster-house-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+.cluster-house-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+.cluster-house-id {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 0.08rem 0.35rem;
+  white-space: nowrap;
+}
+.cluster-house-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  font-size: 0.6rem;
+  color: #4b5563;
+  line-height: 1.35;
+}
+.cluster-house-meta span::after {
+  content: '·';
+  margin-left: 0.35rem;
+  color: #d1d5db;
+}
+.cluster-house-meta span:last-child::after {
+  content: '';
+  margin: 0;
+}
+.cluster-house-meta-muted {
+  color: #6b7280;
+  margin-top: 0.15rem;
 }
 
 .cluster-section-title {

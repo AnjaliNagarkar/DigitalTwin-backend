@@ -30,6 +30,9 @@ func main() {
 	irrigationHandler := &handlers.IrrigationHandler{DB: conn}
 	farmerHandler := &handlers.FarmerHandler{DB: conn}
 	houseHandler := &handlers.HouseHandler{DB: conn, CC: cc}
+	if err := houseHandler.PreloadHouseCache(); err != nil {
+		log.Fatalf("[FATAL] failed to preload house cache: %v", err)
+	}
 	insightHandler := &handlers.InsightHandler{DB: conn, CC: cc}
 	dashboardSummaryHandler := handlers.NewDashboardSummaryHandler(conn, cc)
 	locationHandler := &handlers.LocationHandler{DB: conn}
