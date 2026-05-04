@@ -850,30 +850,42 @@ onMounted(async () => {
 
 // Watch for district changes - clear child filters and reload talukas
 watch(
-  () => selectedDistricts.value.length,
-  async () => {
-    // Clear child filters when district changes
+  selectedDistricts,
+  async (newDistricts) => {
+    // Clear child filters whenever the district selection changes
     selectedTalukas.value = []
     selectedVillages.value = []
     talukaSearchText.value = ''
     villageSearchText.value = ''
-    
-    // Reload taluka options based on selected districts
+    openDropdown.value = null
+
+    if (newDistricts.length === 0) {
+      talukaOptions.value = []
+      villageOptions.value = []
+      return
+    }
+
     await loadLocationOptions()
-  }
+  },
+  { deep: true }
 )
 
 // Watch for taluka changes - clear villages and reload village options
 watch(
-  () => selectedTalukas.value.length,
-  async () => {
-    // Clear child filters when taluka changes
+  selectedTalukas,
+  async (newTalukas) => {
     selectedVillages.value = []
     villageSearchText.value = ''
-    
-    // Reload village options based on selected talukas
+    openDropdown.value = null
+
+    if (newTalukas.length === 0) {
+      villageOptions.value = []
+      return
+    }
+
     await loadLocationOptions()
-  }
+  },
+  { deep: true }
 )
 
 watch(
