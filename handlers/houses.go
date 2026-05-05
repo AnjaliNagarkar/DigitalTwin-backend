@@ -57,6 +57,7 @@ type HouseRecord struct {
 	WaterSource      string  `json:"waterSource"`
 	Kharif           string  `json:"kharif"`
 	Rabi             string  `json:"rabi"`
+	TypeHouse        string  `json:"TYPE_HOUSE"`
 	Latrine          string  `json:"latrine"`
 	Lighting         string  `json:"lighting"`
 	RationCard       string  `json:"rationCard"`
@@ -305,6 +306,7 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(f.TYPE_HOUSE, ''),
 			%s,
 			%s,
 			%s,
@@ -349,6 +351,7 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.Latitude, &detail.Longitude,
 			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
+			&detail.TypeHouse,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
 			&detail.Occupation, &detail.HeadName,
 			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
@@ -568,6 +571,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(f.TYPE_HOUSE, ''),
 			%s,
 			%s,
 			%s,
@@ -785,6 +789,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.Latitude, &house.Longitude,
 			&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 			&house.WaterSource, &house.Kharif, &house.Rabi,
+			&house.TypeHouse,
 			&house.Latrine, &house.Lighting, &house.RationCard,
 			&house.Occupation, &house.HeadName,
 			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,

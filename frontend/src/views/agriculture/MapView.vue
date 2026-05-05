@@ -303,6 +303,12 @@
                 <span class="dp-field-key">Ration Card</span>
                 <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
               </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏠</span>
+                <span class="dp-field-key">House Type</span>
+                <span class="dp-field-val" :style="{ color: getHousingColor(selectedHouse) }">{{ formatHousingLabel(selectedHouse) }}</span>
+              </div>
             </template>
 
             <!-- ── Village Mismatch (shown for GPS anomaly markers) ── -->
@@ -555,6 +561,7 @@ const colorOptions = [
   { label: 'BPL Status', value: 'bpl_status' },
   { label: 'Divyang Presence', value: 'divyang_presence' },
   { label: 'Employment Status', value: 'employment_status' },
+  { label: 'Housing Quality', value: 'housing_quality' },
 ]
 
 const groupedColorOptions = computed(() => {
@@ -575,6 +582,12 @@ const groupedColorOptions = computed(() => {
         optionByValue.get('crops'),
         optionByValue.get('irrigation'),
         optionByValue.get('land'),
+      ].filter(Boolean),
+    },
+    {
+      label: 'Infrastructure',
+      options: [
+        optionByValue.get('housing_quality'),
       ].filter(Boolean),
     },
   ]
@@ -638,6 +651,7 @@ const COLOR_MODE_LABELS_MAP = {
   bpl_status: 'BPL Status',
   divyang_presence: 'Divyang Presence',
   employment_status: 'Employment Status',
+  housing_quality: 'Housing Quality',
 }
 
 function selectColorMode(mode) {
@@ -1704,9 +1718,27 @@ function getConditionLabel(house) {
   return 'Good Standing'
 }
 
+function getHousingColor(house) {
+  const type = String(house?.TYPE_HOUSE || house?.type_house || '').toUpperCase().trim()
+  if (type === 'PUCCA') return '#22c55e'
+  if (type === 'KUCHA') return '#ef4444'
+  return '#9ca3af'
+}
+
+function formatHousingLabel(house) {
+  const type = String(house?.TYPE_HOUSE || house?.type_house || '').toUpperCase().trim()
+  if (type === 'PUCCA') return 'Pucca'
+  if (type === 'KUCHA') return 'Kucha'
+  return 'N/A'
+}
+
 function getMarkerColor(house) {
   // GPS anomaly override — red, clearly distinct from sanitation purple
   if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) return '#ef4444'
+  // Housing quality (infrastructure) view
+  if (colorMode.value === 'housing_quality') {
+    return getHousingColor(house)
+  }
 
   if (colorMode.value === 'population_density') {
     const members = getTotalMembers(house)
@@ -1806,6 +1838,12 @@ const headerLegend = computed(() => {
     entries = [
       { color: '#16a34a', label: 'Irrigation available' },
       { color: '#ef4444', label: 'No irrigation' },
+    ]
+  } else if (colorMode.value === 'housing_quality') {
+    entries = [
+      { color: '#22c55e', label: 'Pucca (Good)' },
+      { color: '#ef4444', label: 'Kucha (Poor)' },
+      { color: '#9ca3af', label: 'Unknown' },
     ]
   } else {
     entries = [
