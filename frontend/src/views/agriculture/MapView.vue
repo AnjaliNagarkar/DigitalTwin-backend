@@ -735,8 +735,27 @@ function hasDivyangPresence(house) {
 }
 
 function getOccupationValues(house) {
+  const invalidOccupationValues = new Set([
+    '',
+    'N/A',
+    'NA',
+    'NOT APPLICABLE',
+    'UNEMPLOYED',
+    'NOT WORKING',
+    'NO WORK',
+    'HOUSEWIFE',
+    'HOMEMAKER',
+    'STUDYING',
+  ])
+  const isValidOccupation = (value) => {
+    const normalized = String(value ?? '').trim().toUpperCase()
+    return normalized !== '' && !invalidOccupationValues.has(normalized)
+  }
+
   if (Array.isArray(house?.occupation_list_array) && house.occupation_list_array.length) {
-    return house.occupation_list_array.map(value => String(value).trim()).filter(Boolean)
+    return house.occupation_list_array
+      .map(value => String(value).trim())
+      .filter(isValidOccupation)
   }
 
   const raw = String(
@@ -748,7 +767,10 @@ function getOccupationValues(house) {
   )
 
   if (!raw.trim()) return []
-  return raw.split(/[|,;]+/).map(value => value.trim()).filter(Boolean)
+  return raw
+    .split(/[|,;]+/)
+    .map(value => value.trim())
+    .filter(isValidOccupation)
 }
 
 function hasEmployment(house) {

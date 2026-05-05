@@ -5,10 +5,6 @@
         <h1 class="page-title">Village Command Center</h1>
         <p class="page-subtitle">Unified population and agriculture intelligence</p>
       </div>
-      <div class="header-badge">
-        <span class="badge-dot"></span>
-        <span>Live API</span>
-      </div>
     </header>
 
     <section class="card dashboard-filter">

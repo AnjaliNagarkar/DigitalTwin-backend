@@ -5,10 +5,6 @@
         <h1 class="page-title">Village Population Center</h1>
         <p class="page-subtitle">Population intelligence from household and family-member records</p>
       </div>
-      <div class="header-badge">
-        <span class="badge-dot"></span>
-        <span>Live API</span>
-      </div>
     </header>
 
     <div v-if="loading" class="loading-state">

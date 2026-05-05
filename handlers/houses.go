@@ -530,18 +530,8 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		memberOccExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
 	}
 
-	memberWorkExprBase := "COALESCE(fm.OCCUPATION, '')"
-	if h.memberColExists("NATURE_WAGE_WORK") {
-		memberWorkExprBase = "COALESCE(fm.NATURE_WAGE_WORK, fm.OCCUPATION, '')"
-	}
-	memberWorkingExpr := fmt.Sprintf(
-		"SUM(CASE WHEN UPPER(TRIM(%s)) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER') THEN 1 ELSE 0 END)",
-		memberWorkExprBase,
-	)
-	memberUnemployedExpr := fmt.Sprintf(
-		"SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)",
-		memberWorkExprBase,
-	)
+	memberWorkingExpr := "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER','NOT APPLICABLE','STUDYING') THEN 1 ELSE 0 END)"
+	memberUnemployedExpr := "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER','NOT APPLICABLE','STUDYING') THEN 1 ELSE 0 END)"
 	memberIlliterateExpr := "0"
 	if h.memberColExists("EVER_ATTENDED_SCHOOL") {
 		memberIlliterateExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL,'')))='NO' THEN 1 ELSE 0 END)"
