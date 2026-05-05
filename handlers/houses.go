@@ -527,7 +527,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	// Build family member aggregation for population stats
 	popStatsSQL := h.buildPopStatsSQL()
 
-	// Single lightweight query: FAMILY + location masters only. Member aggregates return as zeros; occupation ''.
+	// Single query: FAMILY + location masters + one FAMILY_MEMBER aggregate join.
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
@@ -550,24 +550,23 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			%s,
 			%s,
 			%s,
-			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
+			COALESCE(fm_agg.primary_occupation, ''),
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), ''),
-			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
-			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
-			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
-			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
-			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
-			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
-			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
+			COALESCE(fm_agg.total_members, 0),
+			COALESCE(fm_agg.male_members, 0),
+			COALESCE(fm_agg.female_members, 0),
+			COALESCE(fm_agg.working_members, 0),
+			COALESCE(fm_agg.illiterate_members, 0),
+			COALESCE(fm_agg.divyang_members, 0),
+			COALESCE(fm_agg.unemployed_members, 0),
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
+		LEFT JOIN (%s) fm_agg ON fm_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -582,7 +581,6 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		rationExpr,
 		bplExpr,
 		incomeExpr,
-		popStatsSQL,
 		popStatsSQL,
 		where,
 		limit,
