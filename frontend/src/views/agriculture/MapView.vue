@@ -718,10 +718,12 @@ function getFemaleMembers(house) {
 }
 
 function getWorkingMembers(house) {
-  const direct = toFiniteNumber(house?.working_members ?? house?.workingMembers)
-  if (direct !== null) return direct
-  const fallback = getPopulationFallbackForHouse(house)
-  return Number(fallback?.working_members || 0)
+  return Number(
+    house?.working_members ||
+    house?.workingMembers ||
+    house?.WORKING_MEMBERS ||
+    0
+  )
 }
 
 function getWorkingOccupations(house) {
@@ -732,7 +734,7 @@ function getWorkingOccupations(house) {
 }
 
 function getBplStatus(house) {
-  const bpl = normalizeText(house?.FAMILY_BELONG_BPL_CATEGORY || house?.familyBelongBplCategory)
+  const bpl = normalizeText(house?.bplCategory || house?.FAMILY_BELONG_BPL_CATEGORY || house?.familyBelongBplCategory)
   if (bpl.includes('non-bpl') || bpl === 'no' || bpl === 'apl' || bpl.includes('above poverty')) return 'no'
   if (bpl.includes('bpl') || bpl === 'yes') return 'yes'
 
@@ -744,7 +746,15 @@ function getBplStatus(house) {
 function hasDivyangPresence(house) {
   if (isYesValue(house?.DIVYANG || house?.divyang)) return true
   if (Number(house?.has_disability || 0) === 1) return true
-  if (Number(house?.divyang_members || 0) > 0) return true
+
+  const count = Number(
+    house?.divyang_members ||
+    house?.divyangMembers ||
+    house?.DIVYANG_MEMBERS ||
+    0
+  )
+
+  if (count > 0) return true
   return false
 }
 
@@ -788,8 +798,26 @@ function getOccupationValues(house) {
 }
 
 function hasEmployment(house) {
-  if (getWorkingMembers(house) > 0) return true
-  return getOccupationValues(house).length > 0
+  const working = getWorkingMembers(house)
+
+  if (working > 0) return true
+
+  const occupation = String(
+    house?.primary_occupation ||
+    house?.occupation ||
+    ''
+  ).toLowerCase()
+
+  if (
+    occupation.includes('self employed') ||
+    occupation.includes('farmer') ||
+    occupation.includes('labour') ||
+    occupation.includes('business')
+  ) {
+    return true
+  }
+
+  return false
 }
 
 function toFiniteNumber(value) {
