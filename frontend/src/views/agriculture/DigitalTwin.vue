@@ -1600,6 +1600,10 @@ async function resetFilters() {
   filterTaluka.value = ''
   filterVillage.value = ''
   _forceNextFly = true
+  
+  // Reset camera to initial Maharashtra view
+  flyToMaharashtra()
+  
   await loadInitialDataWithCleanup()
 }
 
