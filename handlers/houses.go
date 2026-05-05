@@ -524,6 +524,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
 	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
+	// Build family member aggregation for population stats
+	popStatsSQL := h.buildPopStatsSQL()
+
 	// Single lightweight query: FAMILY + location masters only. Member aggregates return as zeros; occupation ''.
 	query := fmt.Sprintf(`
 		SELECT
@@ -553,10 +556,18 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 			)), ''),
-			0, 0, 0, 0, 0, 0, 0,
+			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
+			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
+			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
+			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
+			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
+			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
+			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
 			%s,
 			%s
 		FROM FAMILY f
+		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -571,6 +582,8 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		rationExpr,
 		bplExpr,
 		incomeExpr,
+		popStatsSQL,
+		popStatsSQL,
 		where,
 		limit,
 		offset,
