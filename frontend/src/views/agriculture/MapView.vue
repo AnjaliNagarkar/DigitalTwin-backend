@@ -239,6 +239,30 @@
               </template>
             </template>
 
+            <template v-else-if="isElectricityMode">
+              <div class="dp-section-label">
+                <span class="dp-section-icon">⚡</span> Electricity Access
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">⚡</span>
+                <span class="dp-field-key">Electricity Connection</span>
+                <span class="dp-field-val">{{ selectedHouse.lighting || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏠</span>
+                <span class="dp-field-key">House Type</span>
+                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">📊</span>
+                <span class="dp-field-key">BPL</span>
+                <span class="dp-field-val">{{ selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+              </div>
+            </template>
+
             <template v-else-if="isHousingQualityMode">
               <div class="dp-section-label">
                 <span class="dp-section-icon">🏠</span> Housing Quality
@@ -616,6 +640,7 @@ const colorOptions = [
   { label: 'Divyang Presence', value: 'divyang_presence' },
   { label: 'Employment Status', value: 'employment_status' },
   { label: 'Housing Quality', value: 'housing_quality' },
+  { label: 'Electricity', value: 'electricity' },
 ]
 
 const groupedColorOptions = computed(() => {
@@ -642,6 +667,7 @@ const groupedColorOptions = computed(() => {
       label: 'Infrastructure',
       options: [
         optionByValue.get('housing_quality'),
+        optionByValue.get('electricity'),
       ].filter(Boolean),
     },
   ]
@@ -706,6 +732,7 @@ const COLOR_MODE_LABELS_MAP = {
   divyang_presence: 'Divyang Presence',
   employment_status: 'Employment Status',
   housing_quality: 'Housing Quality',
+  electricity: 'Electricity',
 }
 
 function selectColorMode(mode) {
@@ -720,6 +747,7 @@ const selectedVillageLabel = computed(() => selectedVillage.value?.label || 'All
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
 const isHousingQualityMode = computed(() => colorMode.value === 'housing_quality')
+const isElectricityMode = computed(() => colorMode.value === 'electricity')
 
 const normalizedSelectedHouse = computed(() => {
   const house = selectedHouse.value || {}
@@ -745,6 +773,11 @@ function normalizeText(value) {
 function isYesValue(value) {
   const normalized = normalizeText(value)
   return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1'
+}
+
+function hasElectricity(house) {
+  const val = String(house?.lighting || '').toLowerCase().trim()
+  return val === 'yes'
 }
 
 function getHouseHeadName(house) {
@@ -1701,6 +1734,22 @@ const analyticsChart = computed(() => {
     }
   }
 
+  if (mode === 'electricity') {
+    const yes = rows.filter(house => hasElectricity(house)).length
+    const no = Math.max(rows.length - yes, 0)
+    return {
+      title: 'Electricity Distribution',
+      subtitle: 'Household electricity access',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Electricity Access', value: yes, color: '#3b82f6' },
+        { label: 'No Electricity', value: no, color: '#9ca3af' },
+      ],
+    }
+  }
+
   if (mode === 'divyang_presence') {
     const divyang = rows.filter(house => hasDivyangPresence(house)).length
     const nonDivyang = Math.max(rows.length - divyang, 0)
@@ -1840,6 +1889,10 @@ function getMarkerColor(house) {
     return getHousingColor(house)
   }
 
+  if (colorMode.value === 'electricity') {
+    return hasElectricity(house) ? '#3b82f6' : '#9ca3af'
+  }
+
   if (colorMode.value === 'population_density') {
     const members = getTotalMembers(house)
     if (members <= 2) return '#a7f3d0'
@@ -1938,6 +1991,11 @@ const headerLegend = computed(() => {
     entries = [
       { color: '#16a34a', label: 'Irrigation available' },
       { color: '#ef4444', label: 'No irrigation' },
+    ]
+  } else if (colorMode.value === 'electricity') {
+    entries = [
+      { color: '#3b82f6', label: 'Electricity Available' },
+      { color: '#9ca3af', label: 'No Electricity' },
     ]
   } else if (colorMode.value === 'housing_quality') {
     entries = [
