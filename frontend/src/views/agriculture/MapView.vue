@@ -174,10 +174,10 @@
             <div class="detail-header">
               <div class="detail-header-info">
                 <div class="detail-badge"
-                     :style="{ background: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
-                               borderColor: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
-                               color: (isPopulationMode ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
-                  {{ isPopulationMode ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
+                     :style="{ background: (isPopulationMode ? getMarkerColor(selectedHouse) : isHousingQualityMode ? getHousingColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
+                               borderColor: (isPopulationMode ? getMarkerColor(selectedHouse) : isHousingQualityMode ? getHousingColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
+                               color: (isPopulationMode ? getMarkerColor(selectedHouse) : isHousingQualityMode ? getHousingColor(selectedHouse) : getConditionColor(selectedHouse)) }">
+                  {{ isPopulationMode ? selectedColorModeLabel : isHousingQualityMode ? 'Housing Quality' : getConditionLabel(selectedHouse) }}
                 </div>
                 <div class="detail-name">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || 'Household' }}</div>
                 <div class="detail-sub">
@@ -237,6 +237,60 @@
                   <span class="dp-field-val">{{ getWorkingOccupations(selectedHouse) }}</span>
                 </div>
               </template>
+            </template>
+
+            <template v-else-if="isHousingQualityMode">
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🏠</span> Housing Quality
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏚️</span>
+                <span class="dp-field-key">House Type</span>
+                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🧾</span>
+                <span class="dp-field-key">Ownership</span>
+                <span class="dp-field-val">{{ selectedHouse.OWNERSHIP_HOUSE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏛️</span>
+                <span class="dp-field-key">PM Awas Scheme</span>
+                <span class="dp-field-val">{{ selectedHouse.PRADHAN_MANTRI_AWAS || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">⚡</span>
+                <span class="dp-field-key">Electricity</span>
+                <span class="dp-field-val">{{ normalizedSelectedHouse.ELECTRICITY_CONNECTION || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Water Source</span>
+                <span class="dp-field-val">{{ normalizedSelectedHouse.DRINKING_WATER_SOURCE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🚽</span>
+                <span class="dp-field-key">Toilet</span>
+                <span class="dp-field-val">{{ normalizedSelectedHouse.SANITATION_TOILET_FACILITY_HOME || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🪪</span>
+                <span class="dp-field-key">Ration Card</span>
+                <span class="dp-field-val">{{ normalizedSelectedHouse.RATION_CARD_COLOR || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">📊</span>
+                <span class="dp-field-key">BPL Category</span>
+                <span class="dp-field-val">{{ normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+              </div>
             </template>
 
             <template v-else>
@@ -665,6 +719,24 @@ const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || 'All')
 const selectedVillageLabel = computed(() => selectedVillage.value?.label || 'All')
 const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
+const isHousingQualityMode = computed(() => colorMode.value === 'housing_quality')
+
+const normalizedSelectedHouse = computed(() => {
+  const house = selectedHouse.value || {}
+  return {
+    ...house,
+    ELECTRICITY_CONNECTION:
+      house.ELECTRICITY_CONNECTION ?? house.lighting ?? '',
+    DRINKING_WATER_SOURCE:
+      house.DRINKING_WATER_SOURCE ?? house.waterSource ?? '',
+    SANITATION_TOILET_FACILITY_HOME:
+      house.SANITATION_TOILET_FACILITY_HOME ?? house.latrine ?? '',
+    RATION_CARD_COLOR:
+      house.RATION_CARD_COLOR ?? house.rationCard ?? '',
+    FAMILY_BELONG_BPL_CATEGORY:
+      house.FAMILY_BELONG_BPL_CATEGORY ?? house.bplCategory ?? '',
+  }
+})
 
 function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase()

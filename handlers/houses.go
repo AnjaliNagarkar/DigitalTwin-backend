@@ -40,29 +40,33 @@ func parseBBoxParam(raw string) (minLng, minLat, maxLng, maxLat float64, ok bool
 }
 
 type HouseRecord struct {
-	FamilyID         int     `json:"familyId"`
-	ExternalFamilyID string  `json:"externalFamilyId"`
-	HouseNo          string  `json:"houseNo"`
-	DistrictID       string  `json:"districtId"`
-	DistrictName     string  `json:"districtName"`
-	TalukaID         string  `json:"talukaId"`
-	TalukaName       string  `json:"talukaName"`
-	VillageID        string  `json:"villageId"`
-	VillageName      string  `json:"villageName"`
-	Latitude         float64 `json:"latitude"`
-	Longitude        float64 `json:"longitude"`
-	TotalLand        string  `json:"totalLand"`
-	CultivatedLand   string  `json:"cultivatedLand"`
-	OwnLand          string  `json:"ownLand"`
-	WaterSource      string  `json:"waterSource"`
-	Kharif           string  `json:"kharif"`
-	Rabi             string  `json:"rabi"`
-	TypeHouse        string  `json:"TYPE_HOUSE"`
-	Latrine          string  `json:"latrine"`
-	Lighting         string  `json:"lighting"`
-	RationCard       string  `json:"rationCard"`
-	Occupation       string  `json:"occupation"`
-	HeadName         string  `json:"headName"`
+	FamilyID                     int     `json:"familyId"`
+	ExternalFamilyID             string  `json:"externalFamilyId"`
+	HouseNo                      string  `json:"houseNo"`
+	DistrictID                   string  `json:"districtId"`
+	DistrictName                 string  `json:"districtName"`
+	TalukaID                     string  `json:"talukaId"`
+	TalukaName                   string  `json:"talukaName"`
+	VillageID                    string  `json:"villageId"`
+	VillageName                  string  `json:"villageName"`
+	Latitude                     float64 `json:"latitude"`
+	Longitude                    float64 `json:"longitude"`
+	TotalLand                    string  `json:"totalLand"`
+	CultivatedLand               string  `json:"cultivatedLand"`
+	OwnLand                      string  `json:"ownLand"`
+	WaterSource                  string  `json:"waterSource"`
+	Kharif                       string  `json:"kharif"`
+	Rabi                         string  `json:"rabi"`
+	TypeHouse                    string  `json:"TYPE_HOUSE"`
+	OwnershipHouse               string  `json:"OWNERSHIP_HOUSE"`
+	PradhanMantriAwas            string  `json:"PRADHAN_MANTRI_AWAS"`
+	SanitationToiletFacilityHome string  `json:"SANITATION_TOILET_FACILITY_HOME"`
+	RationCardColor              string  `json:"RATION_CARD_COLOR"`
+	Latrine                      string  `json:"latrine"`
+	Lighting                     string  `json:"lighting"`
+	RationCard                   string  `json:"rationCard"`
+	Occupation                   string  `json:"occupation"`
+	HeadName                     string  `json:"headName"`
 
 	// Population aggregate fields
 	TotalMembers      int    `json:"totalMembers"`
@@ -303,10 +307,14 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
 			COALESCE(f.LAND_UNDER_CULTIVATION_ACRES, ''),
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
-			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.DRINKING_WATER_SOURCE, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
 			COALESCE(f.TYPE_HOUSE, ''),
+			COALESCE(f.OWNERSHIP_HOUSE, ''),
+			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
+			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.RATION_CARD_COLOR, ''),
 			%s,
 			%s,
 			%s,
@@ -352,6 +360,7 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
 			&detail.TypeHouse,
+			&detail.OwnershipHouse, &detail.PradhanMantriAwas, &detail.SanitationToiletFacilityHome, &detail.RationCardColor,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
 			&detail.Occupation, &detail.HeadName,
 			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
@@ -568,10 +577,14 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
 			COALESCE(f.LAND_UNDER_CULTIVATION_ACRES, ''),
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
-			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.DRINKING_WATER_SOURCE, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
 			COALESCE(f.TYPE_HOUSE, ''),
+			COALESCE(f.OWNERSHIP_HOUSE, ''),
+			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
+			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.RATION_CARD_COLOR, ''),
 			%s,
 			%s,
 			%s,
@@ -790,6 +803,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 			&house.WaterSource, &house.Kharif, &house.Rabi,
 			&house.TypeHouse,
+			&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.RationCardColor,
 			&house.Latrine, &house.Lighting, &house.RationCard,
 			&house.Occupation, &house.HeadName,
 			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
@@ -935,6 +949,10 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(f.OWNERSHIP_HOUSE, ''),
+			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
+			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.RATION_CARD_COLOR, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
@@ -981,6 +999,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		&house.Latitude, &house.Longitude,
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
+		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.RationCardColor,
 		&house.Latrine, &house.Lighting, &house.RationCard,
 		&house.Occupation, &house.HeadName,
 		&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
