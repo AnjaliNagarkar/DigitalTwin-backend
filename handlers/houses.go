@@ -524,10 +524,41 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
 	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
-	// Build family member aggregation for population stats
-	popStatsSQL := h.buildPopStatsSQL()
+	// Build member aggregation expressions with optional-column safety.
+	memberOccExpr := "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
+	if h.memberColExists("NATURE_WAGE_WORK") {
+		memberOccExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
+	}
 
-	// Single query: FAMILY + location masters + one FAMILY_MEMBER aggregate join.
+	memberWorkExprBase := "COALESCE(fm.OCCUPATION, '')"
+	if h.memberColExists("NATURE_WAGE_WORK") {
+		memberWorkExprBase = "COALESCE(fm.NATURE_WAGE_WORK, fm.OCCUPATION, '')"
+	}
+	memberWorkingExpr := fmt.Sprintf(
+		"SUM(CASE WHEN UPPER(TRIM(%s)) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER') THEN 1 ELSE 0 END)",
+		memberWorkExprBase,
+	)
+	memberUnemployedExpr := fmt.Sprintf(
+		"SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)",
+		memberWorkExprBase,
+	)
+	memberIlliterateExpr := "0"
+	if h.memberColExists("EVER_ATTENDED_SCHOOL") {
+		memberIlliterateExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL,'')))='NO' THEN 1 ELSE 0 END)"
+	}
+	memberDivyangExpr := "0"
+	if h.memberColExists("DIVYANG") {
+		if h.memberColExists("DISABILITY") {
+			memberDivyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' OR UPPER(TRIM(COALESCE(fm.DISABILITY,'')))='YES' THEN 1 ELSE 0 END)"
+		} else {
+			memberDivyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' THEN 1 ELSE 0 END)"
+		}
+	}
+
+	// Reuse the exact FAMILY filter logic for aggregation pre-filtering.
+	aggFamilyWhere := strings.ReplaceAll(where, "f.", "f2.")
+
+	// Single query: FAMILY + location masters + one filtered FAMILY_MEMBER aggregate join.
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
@@ -566,7 +597,25 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg ON fm_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (
+			SELECT
+				CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+				%s AS primary_occupation,
+				COUNT(*) AS total_members,
+				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m') THEN 1 ELSE 0 END) AS male_members,
+				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('female','f') THEN 1 ELSE 0 END) AS female_members,
+				%s AS working_members,
+				%s AS illiterate_members,
+				%s AS divyang_members,
+				%s AS unemployed_members
+			FROM FAMILY_MEMBER fm
+			WHERE CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) IN (
+				SELECT CAST(COALESCE(f2.EXTERNAL_FAMILY_ID, '') AS CHAR)
+				FROM FAMILY f2
+				%s
+			)
+			GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)
+		) fm_agg ON fm_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -581,12 +630,18 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		rationExpr,
 		bplExpr,
 		incomeExpr,
-		popStatsSQL,
+		memberOccExpr,
+		memberWorkingExpr,
+		memberIlliterateExpr,
+		memberDivyangExpr,
+		memberUnemployedExpr,
+		aggFamilyWhere,
 		where,
 		limit,
 		offset,
 	)
-	queryArgs := args
+	queryArgs := append([]interface{}{}, args...)
+	queryArgs = append(queryArgs, args...)
 
 	if os.Getenv("HOUSES_DIAGNOSTIC") == "1" {
 		log.Println("LAT COL:", latCol, "LNG COL:", lngCol)
