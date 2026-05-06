@@ -355,12 +355,16 @@
         </button>
 
         <!-- DOWNLOAD PDF -->
-        <div class="dl-wrap" v-if="!loadingLiveData && filteredHouses.length">
-          <button class="dl-btn" @click="downloadPDF" :disabled="pdfLoading"
-                  :title="`Download PDF report for ${filteredHouses.length} households`">
-            {{ pdfLoading ? '⏳ Generating…' : '⬇ PDF Report' }}
+        <div class="pdf-btn-wrap" v-if="!loadingLiveData">
+          <button class="dl-btn"
+                  @click="downloadPDF" :disabled="pdfLoading"
+                  :title="`Download PDF report`">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="flex-shrink:0">
+              <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+            {{ pdfLoading ? 'Generating…' : 'PDF Report' }}
           </button>
-          <span class="dl-count">{{ filteredHouses.length.toLocaleString() }} rows</span>
+          <div class="dl-count">{{ (agricultureInsights?.totalHouseholds || houses.length || 0).toLocaleString() }} rows</div>
         </div>
       </div>
     </div>
@@ -505,6 +509,7 @@
             </div>
           </div>
           <div class="pf-hint" style="margin-top:10px">Select a category from <strong>View By</strong> to explore detailed analytics.</div>
+
         </div>
 
         <!-- PROBLEM FILTER — only shown when a mode is active -->
@@ -970,6 +975,15 @@ function buildLocationFilterKey(districtId, talukaId, villageId) {
   return [String(districtId || ''), String(talukaId || ''), String(villageId || '')].join('|')
 }
 
+// Build API params object from current filter values
+function buildLocationParams() {
+  const params = {}
+  if (filterDistrict.value) params.district_id = filterDistrict.value
+  if (filterTaluka.value) params.taluka_id = filterTaluka.value
+  if (filterVillage.value) params.village_id = filterVillage.value
+  return params
+}
+
 function normalizeMapPoints(raw) {
   const points = Array.isArray(raw) ? raw : []
   return points
@@ -1333,6 +1347,17 @@ watch(pendingTaluka, () => {
 watch([pendingDistrict, pendingTaluka, pendingVillage], () => {
   schedulePendingLocationPrefetch()
 }, { immediate: true })
+
+// Re-fetch insights when applied filters change
+watch([filterDistrict, filterTaluka, filterVillage], () => {
+  const params = buildLocationParams()
+  getAgricultureInsights(params).then(v => { agricultureInsights.value = v }).catch(err => {
+    console.warn('[insights-watcher] agriculture fetch failed:', err?.message || err)
+  })
+  getPopulationDashboard(params).then(v => { populationDashboard.value = v }).catch(err => {
+    console.warn('[insights-watcher] population dashboard fetch failed:', err?.message || err)
+  })
+})
 
 // Apply: copy pending → applied, reload filtered map points, then focus camera.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1698,6 +1723,10 @@ function applyColorFilter(mode) {
 }
 
 const selectColorMode = (mode) => {
+  // User explicitly clicked a color mode: treat this as an explicit "view" selection
+  hasUserSelectedView.value = true
+  // Mirror the semantic view in the left-hand "selectedView" so the trigger shows the label
+  selectedView.value = COLOR_MODE_TO_VIEW[mode] || selectedView.value
   applyMappedColorMode(mode)
 }
 
@@ -1710,8 +1739,32 @@ const selectedViewLabel = computed(() => {
     crop: 'Crop Type',
     irrigation: 'Irrigation',
     land: 'Land Holdings',
+    sanitation: 'Sanitation / Toilet',
+    lighting: 'Electricity',
+    ration: 'Ration Card',
+    bpl_status: 'BPL Status',
+    education_level: 'Education Level',
+    divyang_presence: 'Divyang Presence',
   }
   return map[selectedView.value] || ''
+})
+
+// Ensure 3D entities update when the user switches the semantic "view" (selectedView)
+watch(selectedView, () => {
+  try {
+    if (typeof renderClustersForCurrentView === 'function') renderClustersForCurrentView()
+    // also attempt in-place recolour for speed
+    if (viewer && !viewer.isDestroyed && typeof viewer.entities?.getById === 'function') {
+      buildingIds.forEach((id) => {
+        const ent = viewer.entities.getById(id)
+        const house = entityMap.get(id)
+        if (!ent || !house || !ent.box) return
+        ent.box.material = cesiumColor(house)
+      })
+    }
+  } catch (e) {
+    console.warn('selectedView recolour failed:', e?.message || e)
+  }
 })
 
 const selectView = (value) => {
@@ -1748,6 +1801,40 @@ watch(colorMode, (mode) => {
   if (!hasUserSelectedView.value) return
   selectedView.value = COLOR_MODE_TO_VIEW[mode] || ''
 })
+
+// Re-render / recolor 3D house entities whenever the active colour mode changes
+// or when the underlying map points/houses update. This ensures roof/wall colours
+// match the active legend without requiring a full page refresh.
+watch([colorMode, mapPoints, houses], () => {
+  try {
+    // If the cluster index exists, rebuild the current view entities which will
+    // recreate building entities using the up-to-date `cesiumColor()` logic.
+    if (typeof renderClustersForCurrentView === 'function') {
+      // Debounce / guard is handled inside renderClustersForCurrentView
+      renderClustersForCurrentView()
+    }
+    // Additionally attempt an in-place recolour of existing building entities
+    // for faster UI feedback without a full rebuild.
+    try {
+      if (viewer && !viewer.isDestroyed && typeof viewer.entities?.getById === 'function') {
+        buildingIds.forEach((id) => {
+          try {
+            const ent = viewer.entities.getById(id)
+            const house = entityMap.get(id)
+            if (!ent || !house || !ent.box) return
+            const c = cesiumColor(house)
+            ent.box.material = c
+          } catch (_) {}
+        })
+      }
+    } catch (e) {
+      // noop
+    }
+  } catch (e) {
+    // Fail silently — recolour is best-effort
+    console.warn('Recolor 3D entities failed:', e?.message || e)
+  }
+}, { immediate: false })
 
 // ── Problem Filter state ──────────────────────────────────────────────────────
 // Array of active problem keys; v-model on checkboxes drives buildEntities()
@@ -2209,22 +2296,32 @@ const zoomLabel = computed(() => {
 // the visible filtered houses so the numbers match what the map is showing.
 const isLocationFiltered = computed(() => !!(filterDistrict.value || filterTaluka.value || filterVillage.value))
 
+// Prefer server-provided aggregates when available. When the frontend
+// is filtered by location the detailed `houses` payload may be
+// viewport-limited; fall back to the server `populationDashboard`
+// and `agricultureInsights` values if present to avoid showing zeros.
 const totalPopulation = computed(() => {
-  if (!isLocationFiltered.value && populationDashboard.value?.total_population)
-    return populationDashboard.value.total_population
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalPopulation)
-    return agricultureInsights.value.totalPopulation
-  return filteredHouses.value.reduce((s, h) => s + (h.totalMembers || 0), 0)
+  if (populationDashboard.value?.total_population != null) return Number(populationDashboard.value.total_population)
+  if (isLocationFiltered.value && agricultureInsights.value?.totalPopulation != null) return Number(agricultureInsights.value.totalPopulation)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.totalMembers) || 0), 0)
 })
+
 const maleTotal = computed(() => {
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalMale)
-    return agricultureInsights.value.totalMale
-  return filteredHouses.value.reduce((s, h) => s + (h.maleMembers || 0), 0)
+  if (populationDashboard.value?.gender_distribution && populationDashboard.value.gender_distribution.male != null) {
+    return Number(populationDashboard.value.gender_distribution.male)
+  }
+  // Fall back to agriculture insights totals when population dashboard has no gender breakdown
+  if (agricultureInsights.value?.totalMale != null) return Number(agricultureInsights.value.totalMale)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.maleMembers) || 0), 0)
 })
+
 const femaleTotal = computed(() => {
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalFemale)
-    return agricultureInsights.value.totalFemale
-  return filteredHouses.value.reduce((s, h) => s + (h.femaleMembers || 0), 0)
+  if (populationDashboard.value?.gender_distribution && populationDashboard.value.gender_distribution.female != null) {
+    return Number(populationDashboard.value.gender_distribution.female)
+  }
+  // Fall back to agriculture insights totals when population dashboard has no gender breakdown
+  if (agricultureInsights.value?.totalFemale != null) return Number(agricultureInsights.value.totalFemale)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.femaleMembers) || 0), 0)
 })
 const malePct   = computed(() => totalPopulation.value ? Math.round(maleTotal.value / totalPopulation.value * 100) : 0)
 const femalePct = computed(() => totalPopulation.value ? Math.round(femaleTotal.value / totalPopulation.value * 100) : 0)
@@ -2258,6 +2355,10 @@ const stats = computed(() => {
 })
 
 const farmersOwnLandCount = computed(() => {
+  // Prefer server-side aggregate when available for filtered views.
+  if (isLocationFiltered.value && agricultureInsights.value?.totalFarmers != null) {
+    return Number(agricultureInsights.value.totalFarmers) || 0
+  }
   if (!isLocationFiltered.value && agricultureInsights.value?.totalFarmers != null) {
     return Number(agricultureInsights.value.totalFarmers) || 0
   }
@@ -2904,8 +3005,68 @@ function getIssues(house) {
 
 // ── Cesium helpers ─────────────────────────────────────────────────────────────
 function cesiumColor(house) {
-  const base  = Cesium.Color.fromCssColorString(getConditionColor(house))
-  return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
+  // Map the active `colorMode` to a CSS colour string derived from the house
+  // attributes. This mirrors the 2D marker colouring logic so the 3D roofs/walls
+  // visually match the legend when users switch "View By".
+  try {
+    const mode = String(colorMode.value || '').trim()
+
+    if (mode === 'population_density') {
+      const members = Number(house.totalMembers || house.totalMembers || 0)
+      if (members <= 2) return Cesium.Color.fromCssColorString('#a7f3d0')
+      if (members <= 5) return Cesium.Color.fromCssColorString('#34d399')
+      return Cesium.Color.fromCssColorString('#047857')
+    }
+
+    if (mode === 'bpl_status') {
+      return Cesium.Color.fromCssColorString(isBPL(house) ? '#ef4444' : '#16a34a')
+    }
+
+    if (mode === 'divyang_presence') {
+      return Cesium.Color.fromCssColorString((house.divyangMembers || 0) > 0 ? '#a855f7' : '#9ca3af')
+    }
+
+    if (mode === 'employment_status' || mode === 'occupation') {
+      // Treat "working" households as amber, others grey
+      const working = (house.workingMembers || 0) > 0 || !isUnemployedHouse(house)
+      return Cesium.Color.fromCssColorString(working ? '#f59e0b' : '#9ca3af')
+    }
+
+    if (mode === 'crops' || mode === 'crop') {
+      const k = String(house.kharif || '').toLowerCase() === 'yes'
+      const r = String(house.rabi   || '').toLowerCase() === 'yes'
+      if (k && r)  return Cesium.Color.fromCssColorString('#10b981')
+      if (k)       return Cesium.Color.fromCssColorString('#f59e0b')
+      if (r)       return Cesium.Color.fromCssColorString('#38bdf8')
+      return Cesium.Color.fromCssColorString('#64748b')
+    }
+
+    if (mode === 'land') {
+      const acres = Number(house.totalLand || 0)
+      if (!acres || Number.isNaN(acres)) return Cesium.Color.fromCssColorString('#9ca3af')
+      if (acres <= 1)    return Cesium.Color.fromCssColorString('#ef4444')
+      if (acres <= 2.5)  return Cesium.Color.fromCssColorString('#f59e0b')
+      if (acres <= 5)    return Cesium.Color.fromCssColorString('#22c55e')
+      return Cesium.Color.fromCssColorString('#10b981')
+    }
+
+    if (mode === 'irrigation') {
+      const irrigation = String(house.waterSource || house.SOURCE_WATER_IRRIGATION || '').trim()
+      if (irrigation && irrigation.toLowerCase() !== 'no') return Cesium.Color.fromCssColorString('#16a34a')
+      return Cesium.Color.fromCssColorString('#ef4444')
+    }
+
+    if (mode === 'sanitation') {
+      // Reuse existing sanitation color logic
+      return Cesium.Color.fromCssColorString(getConditionColor(house))
+    }
+
+    // Default: use existing condition-based colour but slightly dimmed
+    const base = Cesium.Color.fromCssColorString(getConditionColor(house))
+    return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
+  } catch (e) {
+    return Cesium.Color.fromCssColorString('#9ca3af')
+  }
 }
 
 function landHeight(house) {
@@ -4025,6 +4186,7 @@ function buildBuildingEntitiesForViewport() {
 
 // ── PDF download ──────────────────────────────────────────────────────────────
 const pdfLoading = ref(false)
+const isSummaryPdfLoading = ref(false)
 
 // Draws a donut chart onto an off-screen Canvas and returns a base64 PNG string.
 // This is purely client-side — no external library needed.
@@ -4116,22 +4278,23 @@ async function downloadPDF() {
       problemMatchTotal,
     }
 
-    const res = await fetch('/api/pdf/report', {
-      method:  'POST',
+    const res = await fetch('/pdf/report', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       console.error('[PDF] Generation failed:', err)
+      alert('PDF generation failed. Please try again.')
       return
     }
 
     const blob = await res.blob()
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
     const stem = ['AgriTwin',
       districtName.replace(/\s+/g, '_') || '',
       talukaName.replace(/\s+/g, '_')   || '',
@@ -4142,11 +4305,56 @@ async function downloadPDF() {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(blobUrl)
   } catch (err) {
     console.error('[PDF] Download error:', err)
   } finally {
     pdfLoading.value = false
+  }
+}
+
+async function downloadSummaryPdf() {
+  if (isSummaryPdfLoading.value) return
+  isSummaryPdfLoading.value = true
+  try {
+    const params = new URLSearchParams()
+    if (filterDistrict.value) params.set('district_id', filterDistrict.value)
+    if (filterTaluka.value)   params.set('taluka_id',   filterTaluka.value)
+    if (filterVillage.value)  params.set('village_id',  filterVillage.value)
+
+    const url = `/api/twin/export-pdf${params.toString() ? '?' + params.toString() : ''}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      console.error('[SummaryPDF] export failed:', response.status, await response.text())
+      alert('PDF generation failed. Please try again.')
+      return
+    }
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    const parts = ['Village_Summary']
+    const distLabel = allDistricts.value.find(d => String(d.id) === String(filterDistrict.value))?.name
+    const talLabel  = allTalukas.value.find(t  => String(t.id) === String(filterTaluka.value))?.name
+    const vilLabel  = allVillages.value.find(v  => String(v.id) === String(filterVillage.value))?.name
+    if (distLabel) parts.push(distLabel.replace(/\s+/g, '_'))
+    if (talLabel)  parts.push(talLabel.replace(/\s+/g, '_'))
+    if (vilLabel)  parts.push(vilLabel.replace(/\s+/g, '_'))
+    parts.push(new Date().toISOString().slice(0, 10))
+
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = parts.join('_') + '.pdf'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  } catch (err) {
+    console.error('[SummaryPDF] unexpected error:', err)
+    alert('An unexpected error occurred while generating the PDF.')
+  } finally {
+    isSummaryPdfLoading.value = false
   }
 }
 
@@ -4268,10 +4476,12 @@ async function loadInitialData(silent = false) {
   let attempt = 0
   while (attempt <= 5) {
     try {
+      // Limit initial load to 10k points for fast rendering — viewport load takes over for more data
       const res = await getHousesMapPoints({
         district_id: filterDistrict.value || undefined,
         taluka_id: filterTaluka.value || undefined,
         village_id: filterVillage.value || undefined,
+        limit: 10000,
       })
 
       const normalizedPoints = normalizeMapPoints(res)
@@ -4704,8 +4914,10 @@ onMounted(async () => {
   }
 
   // Load insights in parallel (small, fast); initial house data fetched separately
-  getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
-  getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
+  // Pass current filter values to backend so aggregates respect location filters
+  const insightParams = buildLocationParams()
+  getAgricultureInsights(insightParams).then(v => { agricultureInsights.value = v }).catch(() => {})
+  getPopulationDashboard(insightParams).then(v => { populationDashboard.value  = v }).catch(() => {})
  await locationOptionsPromise.catch((err) => {
   console.warn('[initial] location options prime failed:', err?.message || err)
 })
@@ -5064,12 +5276,19 @@ onUnmounted(() => {
 .ctrl-btn.primary        { background: #16a34a; border-color: #15803d; color: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(22,163,74,0.3); }
 .ctrl-btn.primary:hover  { background: #15803d; border-color: #14532d; }
 
-/* ── Download PDF widget ── */
-.dl-wrap {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+/* ── Download PDF button ── */
+.pdf-btn-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   flex-shrink: 0;
 }
 .dl-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
   background: #2563eb; color: #ffffff;
   border: 1.5px solid #1d4ed8;
   border-radius: var(--radius-sm);
@@ -5082,6 +5301,33 @@ onUnmounted(() => {
 }
 .dl-btn:hover:not(:disabled) { background: #1d4ed8; border-color: #1e40af; }
 .dl-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.vs-pdf-wrap {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+.vs-pdf-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  background: #16a34a;
+  color: #ffffff;
+  border: 1.5px solid #15803d;
+  border-radius: var(--radius-sm);
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 0.38rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+  box-shadow: 0 1px 3px rgba(22,163,74,0.22);
+  line-height: 1;
+}
+.vs-pdf-btn:hover:not(:disabled) { background: #15803d; border-color: #166534; }
+.vs-pdf-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .dl-count {
   font-size: 0.6rem; color: #6b7280;
   font-variant-numeric: tabular-nums;

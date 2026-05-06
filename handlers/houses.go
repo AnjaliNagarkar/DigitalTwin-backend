@@ -779,6 +779,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 
 // GetHousesMapPoints — GET /houses/map-points
 // Returns lightweight household coordinates for fast client-side clustering.
+// Supports optional limit parameter to cap results for faster initial load.
 func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 	latCol := h.CC.LatCol
 	lngCol := h.CC.LngCol
@@ -799,6 +800,14 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 	appendFamilyGeoIDFilter(&where, &args, "f", "TALUKA_ID", strings.TrimSpace(c.Query("taluka_id")))
 	appendFamilyGeoIDFilter(&where, &args, "f", "VILLAGE_ID", strings.TrimSpace(c.Query("village_id")))
 
+	// Parse optional limit parameter for performance (default: no limit)
+	limit := ""
+	if limitStr := strings.TrimSpace(c.Query("limit")); limitStr != "" {
+		if limitVal, err := strconv.Atoi(limitStr); err == nil && limitVal > 0 && limitVal <= 100000 {
+			limit = fmt.Sprintf("LIMIT %d", limitVal)
+		}
+	}
+
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
@@ -807,7 +816,8 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 		FROM FAMILY f
 		%s
 		ORDER BY f.FAMILY_ID
-	`, latCol, lngCol, where)
+		%s
+	`, latCol, lngCol, where, limit)
 
 	rows, err := h.DB.Query(query, args...)
 	if err != nil {

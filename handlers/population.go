@@ -215,9 +215,9 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 
 	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END) AS other
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END), 0) AS male,
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END), 0) AS female,
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END), 0) AS other
 		FROM FAMILY_MEMBER fm
 		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE %s

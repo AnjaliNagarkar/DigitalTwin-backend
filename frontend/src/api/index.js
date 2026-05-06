@@ -99,8 +99,9 @@ export function getWelfareInsights() {
   return fetchJSON('/insights/welfare')
 }
 
-export function getPopulationDashboard() {
-  return fetchJSON('/population/dashboard', TIMEOUT_DATA)
+export function getPopulationDashboard(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/population/dashboard?${qs}` : '/population/dashboard', TIMEOUT_DATA)
 }
 
 export function getFarmers() {

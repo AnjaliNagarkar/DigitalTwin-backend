@@ -79,6 +79,17 @@
         <div class="map-control-group">
           <button class="apply-btn" @click="() => applyFilters(true)">Apply</button>
           <button class="reset-btn" @click="resetFilters">Reset</button>
+          <button
+            class="pdf-btn"
+            @click="downloadPdf"
+            :disabled="isPdfDownloading"
+            title="Download Village Summary PDF"
+          >
+            <svg class="pdf-btn-icon" viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
+              <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+            <span>{{ isPdfDownloading ? 'Generating…' : 'PDF' }}</span>
+          </button>
         </div>
 
         <!-- Anomaly toggle button -->
@@ -536,6 +547,7 @@ const villageOptions = ref([])
 const selectedDistrict = ref(null)
 const selectedTaluka = ref(null)
 const selectedVillage = ref(null)
+const isPdfDownloading = ref(false)
 const showAnomalies        = ref(false)
 const anomalyDrawerOpen    = ref(false)   // panel visible/hidden
 const alpCollapsed         = ref(false)   // panel body collapsed (header-only mode)
@@ -641,7 +653,11 @@ const COLOR_MODE_LABELS_MAP = {
 }
 
 function selectColorMode(mode) {
+  console.log('selectColorMode called:', mode)
   colorMode.value = mode
+  // update label immediately so trigger text reflects selection
+  // (computed may lag in edge cases where other code mutates state)
+  try { selectedColorModeLabelRef.value = COLOR_MODE_LABELS_MAP[mode] || '' } catch (e) {}
   closeDropdowns()
 }
 
@@ -649,7 +665,11 @@ function selectColorMode(mode) {
 const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || 'All')
 const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || 'All')
 const selectedVillageLabel = computed(() => selectedVillage.value?.label || 'All')
-const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS_MAP[colorMode.value] || '')
+// Reactive label shown in the trigger button — updated from colorMode below
+const selectedColorModeLabelRef = ref('')
+watch(colorMode, (m) => { selectedColorModeLabelRef.value = COLOR_MODE_LABELS_MAP[m] || '' })
+// Backwards-compatible alias used in templates
+const selectedColorModeLabel = computed(() => selectedColorModeLabelRef.value)
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
 
 function normalizeText(value) {
@@ -1325,6 +1345,54 @@ function geoFilterParam(sel) {
   }
 
   return sel.value
+}
+
+async function downloadPdf() {
+  if (isPdfDownloading.value) return
+  isPdfDownloading.value = true
+
+  try {
+    const params = new URLSearchParams()
+    const districtId = geoFilterParam(selectedDistrict.value)
+    const talukaId   = geoFilterParam(selectedTaluka.value)
+    const villageId  = geoFilterParam(selectedVillage.value)
+    if (districtId != null) params.set('district_id', districtId)
+    if (talukaId   != null) params.set('taluka_id',   talukaId)
+    if (villageId  != null) params.set('village_id',  villageId)
+
+    const url = `/api/twin/export-pdf${params.toString() ? '?' + params.toString() : ''}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      const text = await response.text()
+      console.error('[PDF] export failed:', response.status, text)
+      alert('PDF generation failed. Please try again.')
+      return
+    }
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    const parts = ['AgriTwin']
+    if (selectedDistrict.value?.label) parts.push(selectedDistrict.value.label)
+    if (selectedTaluka.value?.label)   parts.push(selectedTaluka.value.label)
+    if (selectedVillage.value?.label)  parts.push(selectedVillage.value.label)
+    parts.push(new Date().toISOString().slice(0, 10))
+    const filename = parts.join('_').replace(/\s+/g, '_') + '.pdf'
+
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  } catch (err) {
+    console.error('[PDF] unexpected error:', err)
+    alert('An unexpected error occurred while generating the PDF.')
+  } finally {
+    isPdfDownloading.value = false
+  }
 }
 
 function getHouseFilters() {
@@ -2811,6 +2879,38 @@ watch(analyticsPanelOpen, async () => {
   background: #f8fafc;
   border-color: #94a3b8;
   color: #334155;
+}
+
+.pdf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #6366f1;
+  background: transparent;
+  color: #6366f1;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.28rem 0.65rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.pdf-btn:hover:not(:disabled) {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.pdf-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pdf-btn-icon {
+  flex-shrink: 0;
 }
 
 .map-legend { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
