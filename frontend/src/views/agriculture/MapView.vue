@@ -174,10 +174,10 @@
             <div class="detail-header">
               <div class="detail-header-info">
                 <div class="detail-badge"
-                     :style="{ background: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
-                               borderColor: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
-                               color: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
-                  {{ (isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode) ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
+                     :style="{ background: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
+                               borderColor: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
+                               color: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
+                  {{ (isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
                 </div>
                 <div class="detail-name">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || 'Household' }}</div>
                 <div class="detail-sub">
@@ -344,6 +344,36 @@
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">BPL Category</span>
                 <span class="dp-field-val">{{ normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+              </div>
+            </template>
+
+            <template v-else-if="isWastewaterManagementMode">
+              <div class="dp-section-label">
+                <span class="dp-section-icon">💧</span> WASTEWATER MANAGEMENT
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Wastewater System</span>
+                <span class="dp-field-val">{{ selectedHouse.A_SOAKPIT_MANAGING_WASTEWATER || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏠</span>
+                <span class="dp-field-key">House Type</span>
+                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🚽</span>
+                <span class="dp-field-key">Toilet Access</span>
+                <span class="dp-field-val">{{ selectedHouse.SANITATION_TOILET_FACILITY_HOME || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">⚡</span>
+                <span class="dp-field-key">Electricity</span>
+                <span class="dp-field-val">{{ selectedHouse.ELECTRICITY_CONNECTION || selectedHouse.lighting || '—' }}</span>
               </div>
             </template>
 
@@ -672,6 +702,7 @@ const colorOptions = [
   { label: 'Housing Quality', value: 'housing_quality' },
   { label: 'Electricity', value: 'electricity' },
   { label: 'Toilet Access', value: 'toilet_access' },
+  { label: 'Wastewater Management', value: 'wastewater_management' },
 ]
 
 const groupedColorOptions = computed(() => {
@@ -700,6 +731,7 @@ const groupedColorOptions = computed(() => {
         optionByValue.get('housing_quality'),
         optionByValue.get('electricity'),
         optionByValue.get('toilet_access'),
+        optionByValue.get('wastewater_management'),
       ].filter(Boolean),
     },
   ]
@@ -766,6 +798,7 @@ const COLOR_MODE_LABELS_MAP = {
   housing_quality: 'Housing Quality',
   electricity: 'Electricity',
   toilet_access: 'Toilet Access',
+  wastewater_management: 'Wastewater Management',
 }
 
 function selectColorMode(mode) {
@@ -782,6 +815,7 @@ const isPopulationMode = computed(() => populationFilters.includes(colorMode.val
 const isHousingQualityMode = computed(() => colorMode.value === 'housing_quality')
 const isElectricityMode = computed(() => colorMode.value === 'electricity')
 const isToiletAccessMode = computed(() => colorMode.value === 'toilet_access')
+const isWastewaterManagementMode = computed(() => colorMode.value === 'wastewater_management')
 
 const normalizedSelectedHouse = computed(() => {
   const house = selectedHouse.value || {}
@@ -817,6 +851,11 @@ function hasElectricity(house) {
 function hasToilet(house) {
   const val = String(house?.SANITATION_TOILET_FACILITY_HOME || '').toLowerCase().trim()
   return val === 'yes' || val === 'available' || val === 'true'
+}
+
+function hasWastewaterManagement(house) {
+  const val = String(house?.A_SOAKPIT_MANAGING_WASTEWATER || '').toLowerCase().trim()
+  return val === 'yes'
 }
 
 function getHouseHeadName(house) {
@@ -1821,6 +1860,24 @@ const analyticsChart = computed(() => {
     }
   }
 
+  if (mode === 'wastewater_management') {
+    const available = rows.filter(house => hasWastewaterManagement(house)).length
+    const unknown = rows.filter((house) => String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').trim() === '').length
+    const notAvailable = Math.max(rows.length - available - unknown, 0)
+    return {
+      title: 'Wastewater Management Distribution',
+      subtitle: 'Household wastewater system availability',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Available', value: available, color: '#22c55e' },
+        { label: 'Not Available', value: notAvailable, color: '#ef4444' },
+        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+      ],
+    }
+  }
+
   if (mode === 'employment_status' || mode === 'employment') {
     const working = rows.filter(house => hasEmployment(house)).length
     const nonWorking = Math.max(rows.length - working, 0)
@@ -1952,6 +2009,12 @@ function getMarkerColor(house) {
     return hasToilet(house) ? '#16a34a' : '#dc2626'
   }
 
+  if (colorMode.value === 'wastewater_management') {
+    const wastewaterValue = String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').toLowerCase().trim()
+    if (!wastewaterValue) return '#9ca3af'
+    return wastewaterValue === 'yes' ? '#3b82f6' : '#f59e0b'
+  }
+
   if (colorMode.value === 'population_density') {
     const members = getTotalMembers(house)
     if (members <= 2) return '#a7f3d0'
@@ -2058,8 +2121,14 @@ const headerLegend = computed(() => {
     ]
   } else if (colorMode.value === 'toilet_access') {
     entries = [
-      { color: '#22c55e', label: 'Toilet Available' },
-      { color: '#9ca3af', label: 'No Toilet' },
+      { color: '#16a34a', label: 'Toilet Available' },
+      { color: '#dc2626', label: 'No Toilet' },
+    ]
+  } else if (colorMode.value === 'wastewater_management') {
+    entries = [
+      { color: '#3b82f6', label: 'Wastewater System Available' },
+      { color: '#f59e0b', label: 'No Wastewater System' },
+      { color: '#9ca3af', label: 'Unknown' },
     ]
   } else if (colorMode.value === 'housing_quality') {
     entries = [

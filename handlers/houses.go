@@ -61,6 +61,7 @@ type HouseRecord struct {
 	OwnershipHouse               string  `json:"OWNERSHIP_HOUSE"`
 	PradhanMantriAwas            string  `json:"PRADHAN_MANTRI_AWAS"`
 	SanitationToiletFacilityHome string  `json:"SANITATION_TOILET_FACILITY_HOME"`
+	ASoakpitManagingWastewater   string  `json:"A_SOAKPIT_MANAGING_WASTEWATER"`
 	RationCardColor              string  `json:"RATION_CARD_COLOR"`
 	Latrine                      string  `json:"latrine"`
 	Lighting                     string  `json:"lighting"`
@@ -314,6 +315,7 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			COALESCE(f.OWNERSHIP_HOUSE, ''),
 			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
 			%s,
 			%s,
@@ -360,7 +362,7 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
 			&detail.TypeHouse,
-			&detail.OwnershipHouse, &detail.PradhanMantriAwas, &detail.SanitationToiletFacilityHome, &detail.RationCardColor,
+			&detail.OwnershipHouse, &detail.PradhanMantriAwas, &detail.SanitationToiletFacilityHome, &detail.ASoakpitManagingWastewater, &detail.RationCardColor,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
 			&detail.Occupation, &detail.HeadName,
 			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
@@ -584,6 +586,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.OWNERSHIP_HOUSE, ''),
 			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
 			%s,
 			%s,
@@ -803,7 +806,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 			&house.WaterSource, &house.Kharif, &house.Rabi,
 			&house.TypeHouse,
-			&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.RationCardColor,
+			&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
 			&house.Latrine, &house.Lighting, &house.RationCard,
 			&house.Occupation, &house.HeadName,
 			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
@@ -952,6 +955,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.OWNERSHIP_HOUSE, ''),
 			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
+			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
@@ -999,7 +1003,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		&house.Latitude, &house.Longitude,
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
-		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.RationCardColor,
+		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
 		&house.Latrine, &house.Lighting, &house.RationCard,
 		&house.Occupation, &house.HeadName,
 		&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
