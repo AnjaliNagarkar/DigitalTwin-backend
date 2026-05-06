@@ -1938,9 +1938,7 @@ function formatHousingLabel(house) {
 
 function getMarkerColor(house) {
   // GPS anomaly override — red, clearly distinct from sanitation purple
-  // Skip anomaly override for infrastructure modes so their own colors show
-  if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId) &&
-      !(colorMode.value === 'housing_quality' || colorMode.value === 'electricity' || colorMode.value === 'toilet_access')) return '#ef4444'
+  if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) return '#ef4444'
   // Housing quality (infrastructure) view
   if (colorMode.value === 'housing_quality') {
     return getHousingColor(house)
@@ -1951,7 +1949,7 @@ function getMarkerColor(house) {
   }
 
   if (colorMode.value === 'toilet_access') {
-    return hasToilet(house) ? '#22c55e' : '#9ca3af'
+    return hasToilet(house) ? '#16a34a' : '#dc2626'
   }
 
   if (colorMode.value === 'population_density') {
@@ -2003,10 +2001,10 @@ function getMarkerColor(house) {
   // sanitation fallback for other legacy modes
   const lat   = (house.latrine  || '').toLowerCase()
   const light = (house.lighting || '').toLowerCase()
-  const hasToilet = lat   && lat   !== 'no latrine' && lat   !== 'none'
+  const hasToiletLegacy = lat   && lat   !== 'no latrine' && lat   !== 'none'
   const hasElec   = light && light !== 'kerosene'   && light !== 'none'
-  if (!hasToilet && !hasElec) return '#a855f7'
-  if (!hasToilet || !hasElec) return '#f59e0b'
+  if (!hasToiletLegacy && !hasElec) return '#a855f7'
+  if (!hasToiletLegacy || !hasElec) return '#f59e0b'
   return '#22c55e'
 }
 
