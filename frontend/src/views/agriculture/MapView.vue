@@ -174,10 +174,10 @@
             <div class="detail-header">
               <div class="detail-header-info">
                 <div class="detail-badge"
-                     :style="{ background: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
-                               borderColor: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
-                               color: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
-                  {{ (isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode) ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
+                     :style="{ background: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode || isAadhaarCoverageMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '18',
+                               borderColor: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode || isAadhaarCoverageMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) + '55',
+                               color: ((isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode || isAadhaarCoverageMode) ? getMarkerColor(selectedHouse) : getConditionColor(selectedHouse)) }">
+                  {{ (isPopulationMode || isHousingQualityMode || isElectricityMode || isToiletAccessMode || isWastewaterManagementMode || isAadhaarCoverageMode) ? selectedColorModeLabel : getConditionLabel(selectedHouse) }}
                 </div>
                 <div class="detail-name">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || 'Household' }}</div>
                 <div class="detail-sub">
@@ -304,6 +304,7 @@
                 <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
               </div>
 
+
               <div class="dp-field-row">
                 <span class="dp-field-icon">🧾</span>
                 <span class="dp-field-key">Ownership</span>
@@ -344,6 +345,30 @@
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">BPL Category</span>
                 <span class="dp-field-val">{{ normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+              </div>
+            </template>
+
+            <template v-else-if="isAadhaarCoverageMode">
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🪪</span> AADHAAR COVERAGE
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">👥</span>
+                <span class="dp-field-key">Total Members</span>
+                <span class="dp-field-val">{{ selectedHouse.totalFamilyMembers || 0 }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🪪</span>
+                <span class="dp-field-key">Members With Aadhaar</span>
+                <span class="dp-field-val">{{ selectedHouse.membersWithAadhaar || 0 }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">📊</span>
+                <span class="dp-field-key">Coverage Status</span>
+                <span class="dp-field-val">{{ selectedHouse.aadhaarCoverageStatus || 'unknown' }}</span>
               </div>
             </template>
 
@@ -703,6 +728,7 @@ const colorOptions = [
   { label: 'Electricity', value: 'electricity' },
   { label: 'Toilet Access', value: 'toilet_access' },
   { label: 'Wastewater Management', value: 'wastewater_management' },
+  { label: 'Aadhaar Coverage', value: 'aadhaar_coverage' },
 ]
 
 const groupedColorOptions = computed(() => {
@@ -732,6 +758,12 @@ const groupedColorOptions = computed(() => {
         optionByValue.get('electricity'),
         optionByValue.get('toilet_access'),
         optionByValue.get('wastewater_management'),
+      ].filter(Boolean),
+    },
+    {
+      label: 'Document Gap Analysis',
+      options: [
+        optionByValue.get('aadhaar_coverage'),
       ].filter(Boolean),
     },
   ]
@@ -799,6 +831,7 @@ const COLOR_MODE_LABELS_MAP = {
   electricity: 'Electricity',
   toilet_access: 'Toilet Access',
   wastewater_management: 'Wastewater Management',
+  aadhaar_coverage: 'Aadhaar Coverage',
 }
 
 function selectColorMode(mode) {
@@ -816,6 +849,7 @@ const isHousingQualityMode = computed(() => colorMode.value === 'housing_quality
 const isElectricityMode = computed(() => colorMode.value === 'electricity')
 const isToiletAccessMode = computed(() => colorMode.value === 'toilet_access')
 const isWastewaterManagementMode = computed(() => colorMode.value === 'wastewater_management')
+const isAadhaarCoverageMode = computed(() => colorMode.value === 'aadhaar_coverage')
 
 const normalizedSelectedHouse = computed(() => {
   const house = selectedHouse.value || {}
@@ -856,6 +890,10 @@ function hasToilet(house) {
 function hasWastewaterManagement(house) {
   const val = String(house?.A_SOAKPIT_MANAGING_WASTEWATER || '').toLowerCase().trim()
   return val === 'yes'
+}
+
+function getAadhaarCoverageStatus(house) {
+  return String(house?.aadhaarCoverageStatus || '').toLowerCase().trim()
 }
 
 function getHouseHeadName(house) {
@@ -1828,6 +1866,26 @@ const analyticsChart = computed(() => {
     }
   }
 
+  if (mode === 'aadhaar_coverage') {
+    const complete = rows.filter(house => getAadhaarCoverageStatus(house) === 'complete').length
+    const partial = rows.filter(house => getAadhaarCoverageStatus(house) === 'partial').length
+    const missing = rows.filter(house => getAadhaarCoverageStatus(house) === 'missing').length
+    const unknown = rows.filter(house => getAadhaarCoverageStatus(house) === 'unknown' || !getAadhaarCoverageStatus(house)).length
+    return {
+      title: 'Aadhaar Coverage Distribution',
+      subtitle: 'Household document coverage status',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Complete', value: complete, color: '#2563eb' },
+        { label: 'Partial', value: partial, color: '#f59e0b' },
+        { label: 'Missing', value: missing, color: '#dc2626' },
+        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+      ],
+    }
+  }
+
   if (mode === 'divyang_presence') {
     const divyang = rows.filter(house => hasDivyangPresence(house)).length
     const nonDivyang = Math.max(rows.length - divyang, 0)
@@ -1995,7 +2053,7 @@ function formatHousingLabel(house) {
 
 function getMarkerColor(house) {
   // GPS anomaly override — red, clearly distinct from sanitation purple
-  if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) return '#ef4444'
+  if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId) && !(colorMode.value === 'housing_quality' || colorMode.value === 'electricity' || colorMode.value === 'toilet_access' || colorMode.value === 'aadhaar_coverage')) return '#ef4444'
   // Housing quality (infrastructure) view
   if (colorMode.value === 'housing_quality') {
     return getHousingColor(house)
@@ -2013,6 +2071,14 @@ function getMarkerColor(house) {
     const wastewaterValue = String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').toLowerCase().trim()
     if (!wastewaterValue) return '#9ca3af'
     return wastewaterValue === 'yes' ? '#3b82f6' : '#f59e0b'
+  }
+
+  if (colorMode.value === 'aadhaar_coverage') {
+    const status = getAadhaarCoverageStatus(house)
+    if (status === 'complete') return '#2563eb'
+    if (status === 'partial') return '#f59e0b'
+    if (status === 'missing') return '#dc2626'
+    return '#9ca3af'
   }
 
   if (colorMode.value === 'population_density') {
@@ -2123,6 +2189,13 @@ const headerLegend = computed(() => {
     entries = [
       { color: '#16a34a', label: 'Toilet Available' },
       { color: '#dc2626', label: 'No Toilet' },
+    ]
+  } else if (colorMode.value === 'aadhaar_coverage') {
+    entries = [
+      { color: '#2563eb', label: 'Complete Coverage' },
+      { color: '#f59e0b', label: 'Partial Coverage' },
+      { color: '#dc2626', label: 'No Aadhaar' },
+      { color: '#9ca3af', label: 'Unknown' },
     ]
   } else if (colorMode.value === 'wastewater_management') {
     entries = [

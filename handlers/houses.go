@@ -63,6 +63,9 @@ type HouseRecord struct {
 	SanitationToiletFacilityHome string  `json:"SANITATION_TOILET_FACILITY_HOME"`
 	ASoakpitManagingWastewater   string  `json:"A_SOAKPIT_MANAGING_WASTEWATER"`
 	RationCardColor              string  `json:"RATION_CARD_COLOR"`
+	AadhaarCoverageStatus        string  `json:"aadhaarCoverageStatus"`
+	MembersWithAadhaar           int     `json:"membersWithAadhaar"`
+	TotalFamilyMembers           int     `json:"totalFamilyMembers"`
 	Latrine                      string  `json:"latrine"`
 	Lighting                     string  `json:"lighting"`
 	RationCard                   string  `json:"rationCard"`
@@ -253,6 +256,34 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 		familyJoinExpr)
 }
 
+func (h *HouseHandler) buildAadhaarCoverageSQL() string {
+	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+	familyJoinExpr := "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	if !hasExternalFamilyID {
+		familyJoinExpr = "''"
+	}
+
+	aadhaarAvailableExpr := "SUM(CASE WHEN fm.AADHAAR IS NOT NULL AND TRIM(fm.AADHAAR) <> '' THEN 1 ELSE 0 END)"
+
+	return fmt.Sprintf(`
+		SELECT %s AS family_join_id,
+			COUNT(*) AS total_family_members,
+			%s AS members_with_aadhaar,
+			CASE
+				WHEN COUNT(*) = 0 THEN 'unknown'
+				WHEN %s = COUNT(*) THEN 'complete'
+				WHEN %s > 0 THEN 'partial'
+				ELSE 'missing'
+			END AS aadhaar_coverage_status
+		FROM FAMILY_MEMBER fm
+		GROUP BY %s`,
+		familyJoinExpr,
+		aadhaarAvailableExpr,
+		aadhaarAvailableExpr,
+		aadhaarAvailableExpr,
+		familyJoinExpr)
+}
+
 // appendFamilyGeoIDFilter uses equality on numeric ID columns when possible so indexes on
 // DISTRICT_ID / TALUKA_ID / VILLAGE_ID can be used (avoids CAST(... AS CHAR) = ?).
 func appendFamilyGeoIDFilter(where *string, args *[]interface{}, alias, column, raw string) {
@@ -293,6 +324,7 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 
 	// Build family member aggregation (matches GetHouses dual-join strategy)
 	popStatsSQL := h.buildPopStatsSQL()
+	aadhaarCoverageSQL := h.buildAadhaarCoverageSQL()
 
 	return fmt.Sprintf(`
 		SELECT
@@ -317,6 +349,9 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
 			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
+			COALESCE(aadhaar_agg.aadhaar_coverage_status, 'unknown'),
+			COALESCE(aadhaar_agg.members_with_aadhaar, 0),
+			COALESCE(aadhaar_agg.total_family_members, 0),
 			%s,
 			%s,
 			%s,
@@ -334,11 +369,12 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 		FROM FAMILY f
 		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
 		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
+		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
 		ORDER BY f.FAMILY_ID
-	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr, popStatsSQL, popStatsSQL)
+	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr, popStatsSQL, popStatsSQL, aadhaarCoverageSQL)
 }
 
 func (h *HouseHandler) PreloadHouseCache() error {
@@ -363,6 +399,7 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
 			&detail.TypeHouse,
 			&detail.OwnershipHouse, &detail.PradhanMantriAwas, &detail.SanitationToiletFacilityHome, &detail.ASoakpitManagingWastewater, &detail.RationCardColor,
+			&detail.AadhaarCoverageStatus, &detail.MembersWithAadhaar, &detail.TotalFamilyMembers,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
 			&detail.Occupation, &detail.HeadName,
 			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
@@ -537,6 +574,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
 	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
 	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
+	aadhaarCoverageSQL := h.buildAadhaarCoverageSQL()
 
 	// Build member aggregation expressions with optional-column safety.
 	memberOccExpr := "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
@@ -588,6 +626,9 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
 			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
+			COALESCE(aadhaar_agg.aadhaar_coverage_status, 'unknown'),
+			COALESCE(aadhaar_agg.members_with_aadhaar, 0),
+			COALESCE(aadhaar_agg.total_family_members, 0),
 			%s,
 			%s,
 			%s,
@@ -626,6 +667,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			)
 			GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)
 		) fm_agg ON fm_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -646,6 +688,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		memberDivyangExpr,
 		memberUnemployedExpr,
 		aggFamilyWhere,
+		aadhaarCoverageSQL,
 		where,
 		limit,
 		offset,
@@ -807,6 +850,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.WaterSource, &house.Kharif, &house.Rabi,
 			&house.TypeHouse,
 			&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
+			&house.AadhaarCoverageStatus, &house.MembersWithAadhaar, &house.TotalFamilyMembers,
 			&house.Latrine, &house.Lighting, &house.RationCard,
 			&house.Occupation, &house.HeadName,
 			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
@@ -930,6 +974,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 	}
 
 	popStatsSQL := h.buildPopStatsSQL()
+	aadhaarCoverageSQL := h.buildAadhaarCoverageSQL()
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
 
@@ -957,6 +1002,9 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
 			COALESCE(f.A_SOAKPIT_MANAGING_WASTEWATER, ''),
 			COALESCE(f.RATION_CARD_COLOR, ''),
+			COALESCE(aadhaar_agg.aadhaar_coverage_status, 'unknown'),
+			COALESCE(aadhaar_agg.members_with_aadhaar, 0),
+			COALESCE(aadhaar_agg.total_family_members, 0),
 			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
 			COALESCE(f.ELECTRICITY_CONNECTION, ''),
 			COALESCE(f.RATION_CARD_TYPE, ''),
@@ -979,6 +1027,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		FROM FAMILY f
 		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
 		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
+		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -990,6 +1039,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		incomeExpr,
 		popStatsSQL,
 		popStatsSQL,
+		aadhaarCoverageSQL,
 	)
 
 	var house HouseRecord
@@ -1004,6 +1054,7 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
 		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
+		&house.AadhaarCoverageStatus, &house.MembersWithAadhaar, &house.TotalFamilyMembers,
 		&house.Latrine, &house.Lighting, &house.RationCard,
 		&house.Occupation, &house.HeadName,
 		&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
