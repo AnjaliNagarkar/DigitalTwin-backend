@@ -265,7 +265,7 @@ func (h *HouseHandler) buildAadhaarCoverageSQL() string {
 		familyJoinExpr = "''"
 	}
 
-	aadhaarAvailableExpr := "SUM(CASE WHEN fm.AADHAAR IS NOT NULL AND TRIM(fm.AADHAAR) <> '' THEN 1 ELSE 0 END)"
+	aadhaarAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.AADHAAR, ''))) = 'yes' THEN 1 ELSE 0 END)"
 
 	return fmt.Sprintf(`
 		SELECT %s AS family_join_id,
