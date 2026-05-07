@@ -420,10 +420,6 @@ func (h *HouseHandler) PreloadHouseCache() error {
 			&detail.Latitude, &detail.Longitude,
 			&detail.TotalLand, &detail.CultivatedLand, &detail.OwnLand,
 			&detail.WaterSource, &detail.Kharif, &detail.Rabi,
-			&detail.TypeHouse,
-			&detail.OwnershipHouse, &detail.PradhanMantriAwas, &detail.SanitationToiletFacilityHome, &detail.ASoakpitManagingWastewater, &detail.RationCardColor,
-			&detail.AadhaarCoverageStatus, &detail.MembersWithAadhaar, &detail.TotalFamilyMembers,
-			&detail.CasteCertificateCoverageStatus, &detail.MembersWithCasteCertificate,
 			&detail.Latrine, &detail.Lighting, &detail.RationCard,
 			&detail.Occupation, &detail.HeadName,
 			&detail.TotalMembers, &detail.MaleMembers, &detail.FemaleMembers,
@@ -1094,9 +1090,6 @@ func (h *HouseHandler) getHouseByIDFromDB(c *gin.Context, numericID int) {
 	casteCertificateCoverageSQL := h.buildCasteCertificateCoverageSQL()
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
-	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
-	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
-	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
 	// Single targeted FAMILY row — no full FAMILY_MEMBER table scan.
 	query := fmt.Sprintf(`
@@ -1168,7 +1161,7 @@ COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI
 	)
 
 	var house HouseRecord
-	err = h.DB.QueryRow(query, numericID).Scan(
+	err := h.DB.QueryRow(query, numericID).Scan(
 		&house.FamilyID,
 		&house.ExternalFamilyID,
 		&house.HouseNo,
@@ -1194,19 +1187,19 @@ COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI
 	}
 
 	// Fetch member aggregates in a single targeted query (only for this family).
-	memberQuery := h.buildSingleFamilyMemberQuery(numericID, hr.ExternalFamilyID)
+	memberQuery := h.buildSingleFamilyMemberQuery(numericID, house.ExternalFamilyID)
 	if memberQuery != "" {
 		_ = h.DB.QueryRow(memberQuery).Scan(
-			&hr.TotalMembers, &hr.MaleMembers, &hr.FemaleMembers,
-			&hr.WorkingMembers, &hr.IlliterateMembers, &hr.DivyangMembers,
-			&hr.UnemployedMembers, &hr.Occupation,
+			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
+			&house.WorkingMembers, &house.IlliterateMembers, &house.DivyangMembers,
+			&house.UnemployedMembers, &house.Occupation,
 		)
 	}
 
 	// Fetch individual member names.
-	members := h.fetchMemberNames(numericID, hr.ExternalFamilyID)
+	members := h.fetchMemberNames(numericID, house.ExternalFamilyID)
 
-	detail := &HouseDetail{HouseRecord: hr, Members: members}
+	detail := &HouseDetail{HouseRecord: house, Members: members}
 	// Warm the cache so subsequent clicks are instant.
 	houseCache.Store(numericID, detail)
 
