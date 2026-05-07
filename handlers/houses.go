@@ -304,7 +304,7 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
-			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON),''), f.TAKING_CROPS_RABI_SEASON, ''),
 			%s,
 			%s,
 			%s,
@@ -487,7 +487,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	} else {
 		minLatRaw := strings.TrimSpace(c.Query("min_lat"))
 		maxLatRaw := strings.TrimSpace(c.Query("max_lat"))
-		minLngRaw := strings.TrimSpace(c.Query("mLalit Sir pan bye-byein_lng"))
+		minLngRaw := strings.TrimSpace(c.Query("min_lng"))
 		maxLngRaw := strings.TrimSpace(c.Query("max_lng"))
 		if minLatRaw != "" && maxLatRaw != "" && minLngRaw != "" && maxLngRaw != "" {
 			minLat, errMinLat := strconv.ParseFloat(minLatRaw, 64)
@@ -543,11 +543,11 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
-			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON),''), f.TAKING_CROPS_RABI_SEASON, ''),
 			%s,
 			%s,
 			%s,
-			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
+			'',
 			COALESCE(TRIM(CONCAT(
 				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
 				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
@@ -842,18 +842,94 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 	c.JSON(http.StatusOK, points)
 }
 
-func (h *HouseHandler) GetHouseByID(c *gin.Context) {
-	idStr := strings.TrimSpace(c.Param("id"))
+// BatchMemberStats is the slim payload returned by /houses/batch-members.
+// Contains only the fields needed by population-based color modes on the frontend.
+type BatchMemberStats struct {
+	FamilyID          int    `json:"familyId"`
+	TotalMembers      int    `json:"totalMembers"`
+	MaleMembers       int    `json:"maleMembers"`
+	FemaleMembers     int    `json:"femaleMembers"`
+	WorkingMembers    int    `json:"workingMembers"`
+	IlliterateMembers int    `json:"illiterateMembers"`
+	DivyangMembers    int    `json:"divyangMembers"`
+	UnemployedMembers int    `json:"unemployedMembers"`
+	Occupation        string `json:"occupation"`
+	BplCategory       string `json:"bplCategory"`
+	AnnualIncome      string `json:"annualIncome"`
+}
 
-	numericID, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid id"})
+// GetBatchMemberStats handles GET /houses/batch-members?ids=1,2,3,...
+// Serves entirely from the preloaded houseCache — zero DB round-trips.
+// Used by the frontend to enrich visible buildings when population color modes are active.
+func (h *HouseHandler) GetBatchMemberStats(c *gin.Context) {
+	raw := strings.TrimSpace(c.Query("ids"))
+	if raw == "" {
+		c.JSON(http.StatusOK, []BatchMemberStats{})
 		return
 	}
-	cc := h.CC
 
-	latCol := cc.LatCol
-	lngCol := cc.LngCol
+	parts := strings.Split(raw, ",")
+	results := make([]BatchMemberStats, 0, len(parts))
+
+	for _, p := range parts {
+		idStr := strings.TrimSpace(p)
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			continue
+		}
+		val, ok := houseCache.Load(id)
+		if !ok {
+			continue
+		}
+		detail := val.(*HouseDetail)
+		results = append(results, BatchMemberStats{
+			FamilyID:          detail.FamilyID,
+			TotalMembers:      detail.TotalMembers,
+			MaleMembers:       detail.MaleMembers,
+			FemaleMembers:     detail.FemaleMembers,
+			WorkingMembers:    detail.WorkingMembers,
+			IlliterateMembers: detail.IlliterateMembers,
+			DivyangMembers:    detail.DivyangMembers,
+			UnemployedMembers: detail.UnemployedMembers,
+			Occupation:        detail.Occupation,
+			BplCategory:       detail.BplCategory,
+			AnnualIncome:      detail.AnnualIncome,
+		})
+	}
+
+	c.Header("X-Cache", "HIT")
+	c.JSON(http.StatusOK, results)
+}
+
+func (h *HouseHandler) GetHouseByID(c *gin.Context) {
+	idStr := strings.TrimSpace(c.Param("id"))
+	numericID, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	// Serve from the preloaded in-memory cache — O(1), zero DB round-trips.
+	if value, ok := houseCache.Load(numericID); ok {
+		c.Header("X-Cache", "HIT")
+		c.JSON(http.StatusOK, value)
+		return
+	}
+
+	// Cache miss (only possible before preload finishes or for unknown IDs).
+	// Fall back to a targeted single-row query — no full-table subqueries.
+	log.Printf("[house-detail] cache miss for id=%d, falling back to DB", numericID)
+	h.getHouseByIDFromDB(c, numericID)
+}
+
+// getHouseByIDFromDB is the fallback path (cache miss only).
+// Uses a lightweight targeted query instead of the expensive double popStatsSQL subquery.
+func (h *HouseHandler) getHouseByIDFromDB(c *gin.Context, numericID int) {
+	latCol := h.CC.LatCol
+	lngCol := h.CC.LngCol
 	if latCol == "" {
 		latCol = "LATITUDE"
 	}
@@ -861,10 +937,13 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 		lngCol = "LONGITUDE"
 	}
 
-	popStatsSQL := h.buildPopStatsSQL()
 	bplExpr := h.CC.ColOrEmpty("FAMILY_BELONG_BPL_CATEGORY", "bpl_category")
 	incomeExpr := h.CC.ColOrEmpty("ANNUAL_INCOME", "annual_income")
+	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
+	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
+	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
 
+	// Single targeted FAMILY row — no full FAMILY_MEMBER table scan.
 	query := fmt.Sprintf(`
 		SELECT
 			f.FAMILY_ID,
@@ -883,116 +962,160 @@ func (h *HouseHandler) GetHouseByID(c *gin.Context) {
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
 			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
-			COALESCE(f.TAKING_CROPS_RABI_SEASON, ''),
-			COALESCE(f.SANITATION_TOILET_FACILITY, ''),
-			COALESCE(f.ELECTRICITY_CONNECTION, ''),
-			COALESCE(f.RATION_CARD_TYPE, ''),
-			COALESCE(fm_agg_ext.primary_occupation, fm_agg_fid.primary_occupation, ''),
-			COALESCE(
-				TRIM(CONCAT(
-					COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
-					COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
-					COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
-				)), ''),
-			COALESCE(fm_agg_ext.total_members, fm_agg_fid.total_members, 0),
-			COALESCE(fm_agg_ext.male_members, fm_agg_fid.male_members, 0),
-			COALESCE(fm_agg_ext.female_members, fm_agg_fid.female_members, 0),
-			COALESCE(fm_agg_ext.working_members, fm_agg_fid.working_members, 0),
-			COALESCE(fm_agg_ext.illiterate_members, fm_agg_fid.illiterate_members, 0),
-			COALESCE(fm_agg_ext.divyang_members, fm_agg_fid.divyang_members, 0),
-			COALESCE(fm_agg_ext.unemployed_members, fm_agg_fid.unemployed_members, 0),
+			COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON),''), f.TAKING_CROPS_RABI_SEASON, ''),
+			%s,
+			%s,
+			%s,
+			COALESCE(TRIM(CONCAT(
+				COALESCE(f.FIRST_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(f.MIDDLE_NAME_HOUSEHOLD_HEAD, ''), ' ',
+				COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
+			)), ''),
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
-		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
-		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
+		LEFT JOIN taluka_master tm   ON tm.pklTalukaId   = f.TALUKA_ID
+		LEFT JOIN village_master vm  ON vm.pklVillageId  = f.VILLAGE_ID
 		WHERE f.FAMILY_ID = ?
-	`,
-		latCol,
-		lngCol,
-		bplExpr,
-		incomeExpr,
-		popStatsSQL,
-		popStatsSQL,
-	)
+	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, bplExpr, incomeExpr)
 
-	var house HouseRecord
-	err = h.DB.QueryRow(query, numericID).Scan(
-		&house.FamilyID,
-		&house.ExternalFamilyID,
-		&house.HouseNo,
-		&house.DistrictID, &house.DistrictName,
-		&house.TalukaID, &house.TalukaName,
-		&house.VillageID, &house.VillageName,
-		&house.Latitude, &house.Longitude,
-		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
-		&house.WaterSource, &house.Kharif, &house.Rabi,
-		&house.Latrine, &house.Lighting, &house.RationCard,
-		&house.Occupation, &house.HeadName,
-		&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
-		&house.WorkingMembers, &house.IlliterateMembers,
-		&house.DivyangMembers, &house.UnemployedMembers,
-		&house.BplCategory, &house.AnnualIncome,
-	)
-	if err != nil {
+	var hr HouseRecord
+	if err := h.DB.QueryRow(query, numericID).Scan(
+		&hr.FamilyID,
+		&hr.ExternalFamilyID, &hr.HouseNo,
+		&hr.DistrictID, &hr.DistrictName,
+		&hr.TalukaID, &hr.TalukaName,
+		&hr.VillageID, &hr.VillageName,
+		&hr.Latitude, &hr.Longitude,
+		&hr.TotalLand, &hr.CultivatedLand, &hr.OwnLand,
+		&hr.WaterSource, &hr.Kharif, &hr.Rabi,
+		&hr.Latrine, &hr.Lighting, &hr.RationCard,
+		&hr.HeadName,
+		&hr.BplCategory, &hr.AnnualIncome,
+	); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
 		return
 	}
 
-	// ✅ CACHE FIRST (must be at top)
-	value, ok := houseCache.Load(numericID)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "house not found"})
-		return
+	// Fetch member aggregates in a single targeted query (only for this family).
+	memberQuery := h.buildSingleFamilyMemberQuery(numericID, hr.ExternalFamilyID)
+	if memberQuery != "" {
+		_ = h.DB.QueryRow(memberQuery).Scan(
+			&hr.TotalMembers, &hr.MaleMembers, &hr.FemaleMembers,
+			&hr.WorkingMembers, &hr.IlliterateMembers, &hr.DivyangMembers,
+			&hr.UnemployedMembers, &hr.Occupation,
+		)
 	}
 
-	houseDetail := value.(*HouseDetail)
+	// Fetch individual member names.
+	members := h.fetchMemberNames(numericID, hr.ExternalFamilyID)
 
-	// ✅ MEMBER FILTER LOGIC
-	memberWhere := []string{}
-	memberArgs := []interface{}{}
+	detail := &HouseDetail{HouseRecord: hr, Members: members}
+	// Warm the cache so subsequent clicks are instant.
+	houseCache.Store(numericID, detail)
 
-	hasExternalFamilyID := h.memberColExists("EXTERNAL_FAMILY_ID")
+	c.Header("X-Cache", "MISS")
+	c.JSON(http.StatusOK, detail)
+}
+
+// buildSingleFamilyMemberQuery returns a SQL string that aggregates FAMILY_MEMBER
+// stats for a single known family — no full-table GROUP BY.
+func (h *HouseHandler) buildSingleFamilyMemberQuery(familyID int, externalFamilyID string) string {
+	hasExternal := h.memberColExists("EXTERNAL_FAMILY_ID")
 	hasFamilyID := h.memberColExists("FAMILY_ID")
-
-	if hasExternalFamilyID {
-		memberWhere = append(memberWhere, "CAST(EXTERNAL_FAMILY_ID AS CHAR) = ?")
-	}
-	if hasFamilyID {
-		memberWhere = append(memberWhere, "CAST(FAMILY_ID AS CHAR) = ?")
+	if !hasExternal && !hasFamilyID {
+		return ""
 	}
 
-	// ✅ use idStr (string) for member matching
-	memberExternalID := idStr
-	memberFamilyID := idStr
+	illiterateExpr := "0"
+	if h.memberColExists("EVER_ATTENDED_SCHOOL") {
+		illiterateExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL,'')))='NO' THEN 1 ELSE 0 END)"
+	}
+	divyangExpr := "0"
+	if h.memberColExists("DIVYANG") {
+		if h.memberColExists("DISABILITY") {
+			divyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' OR UPPER(TRIM(COALESCE(fm.DISABILITY,'')))='YES' THEN 1 ELSE 0 END)"
+		} else {
+			divyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' THEN 1 ELSE 0 END)"
+		}
+	}
+	workBase := "COALESCE(fm.OCCUPATION, '')"
+	if h.memberColExists("NATURE_WAGE_WORK") {
+		workBase = "COALESCE(fm.NATURE_WAGE_WORK, fm.OCCUPATION, '')"
+	}
+	workingExpr := fmt.Sprintf("SUM(CASE WHEN UPPER(TRIM(%s)) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER') THEN 1 ELSE 0 END)", workBase)
+	unemployedExpr := fmt.Sprintf("SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)", workBase)
 
-	if hasExternalFamilyID && h.CC != nil && h.CC.Has("EXTERNAL_FAMILY_ID") {
-		_ = h.DB.QueryRow(
-			"SELECT CAST(COALESCE(EXTERNAL_FAMILY_ID, FAMILY_ID) AS CHAR) FROM FAMILY WHERE FAMILY_ID = ?",
-			numericID,
-		).Scan(&memberExternalID)
+	var occExpr string
+	if h.memberColExists("NATURE_WAGE_WORK") {
+		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
+	} else {
+		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
 	}
 
-	if hasExternalFamilyID {
-		memberArgs = append(memberArgs, memberExternalID, memberFamilyID)
-	}
-	if hasFamilyID {
-		memberArgs = append(memberArgs, memberFamilyID)
+	var whereClause string
+	if hasExternal && externalFamilyID != "" {
+		whereClause = fmt.Sprintf("WHERE CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) = '%s'", strings.ReplaceAll(externalFamilyID, "'", "''"))
+	} else if hasFamilyID {
+		whereClause = fmt.Sprintf("WHERE CAST(fm.FAMILY_ID AS CHAR) = '%d'", familyID)
+	} else {
+		whereClause = fmt.Sprintf("WHERE CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) = '%d'", familyID)
 	}
 
-	// ✅ HANDLE NO MEMBER CASE
-	if len(memberWhere) == 0 {
-		c.JSON(http.StatusOK, HouseDetail{
-			HouseRecord: houseDetail.HouseRecord,
-			Members:     []MemberRecord{},
+	return fmt.Sprintf(`
+		SELECT
+			COUNT(*),
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m')   THEN 1 ELSE 0 END),
+			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('female','f') THEN 1 ELSE 0 END),
+			%s, %s, %s, %s, %s
+		FROM FAMILY_MEMBER fm
+		%s
+	`, workingExpr, illiterateExpr, divyangExpr, unemployedExpr, occExpr, whereClause)
+}
+
+// fetchMemberNames returns the list of individual member name records for a family.
+func (h *HouseHandler) fetchMemberNames(familyID int, externalFamilyID string) []MemberRecord {
+	firstNameExpr := "''"
+	lastNameExpr := "''"
+	if h.memberColExists("FIRST_NAME") {
+		firstNameExpr = "COALESCE(fm.FIRST_NAME, '')"
+	}
+	if h.memberColExists("LAST_NAME") {
+		lastNameExpr = "COALESCE(fm.LAST_NAME, '')"
+	}
+
+	var whereClause string
+	if h.memberColExists("EXTERNAL_FAMILY_ID") && externalFamilyID != "" {
+		whereClause = fmt.Sprintf("WHERE CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) = '%s'", strings.ReplaceAll(externalFamilyID, "'", "''"))
+	} else if h.memberColExists("FAMILY_ID") {
+		whereClause = fmt.Sprintf("WHERE CAST(fm.FAMILY_ID AS CHAR) = '%d'", familyID)
+	} else {
+		return []MemberRecord{}
+	}
+
+	q := fmt.Sprintf(`SELECT %s, %s FROM FAMILY_MEMBER fm %s ORDER BY fm.FAMILY_MEMBER_ID`, firstNameExpr, lastNameExpr, whereClause)
+	rows, err := h.DB.Query(q)
+	if err != nil {
+		return []MemberRecord{}
+	}
+	defer rows.Close()
+
+	var members []MemberRecord
+	for rows.Next() {
+		var m MemberRecord
+		if err := rows.Scan(&m.FirstName, &m.LastName); err != nil {
+			continue
+		}
+		members = append(members, MemberRecord{
+			FirstName: strings.TrimSpace(m.FirstName),
+			LastName:  strings.TrimSpace(m.LastName),
 		})
-		return
 	}
-
-	c.JSON(http.StatusOK, value)
+	if members == nil {
+		members = []MemberRecord{}
+	}
+	return members
 }
 
 // GetHousesSummary — GET /houses/summary

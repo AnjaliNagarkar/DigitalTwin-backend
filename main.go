@@ -104,6 +104,7 @@ func main() {
 	r.GET("/houses", houseHandler.GetHouses)
 	r.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
 	r.GET("/houses/summary", houseHandler.GetHousesSummary)
+	r.GET("/houses/batch-members", houseHandler.GetBatchMemberStats)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
 	r.GET("/districts", locationHandler.GetDistricts)
 	r.GET("/location-options", locationHandler.GetLocationOptions)

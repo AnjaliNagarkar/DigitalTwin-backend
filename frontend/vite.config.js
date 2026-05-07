@@ -14,6 +14,7 @@ export default defineConfig({
       },
       '/ping':             { target: 'http://localhost:8081', changeOrigin: true },
       '/houses':           { target: 'http://localhost:8081', changeOrigin: true },
+      '/houses/batch-members': { target: 'http://localhost:8081', changeOrigin: true },
       '/house':            { target: 'http://localhost:8081', changeOrigin: true },
       '/districts':        { target: 'http://localhost:8081', changeOrigin: true },
       '/location-options': { target: 'http://localhost:8081', changeOrigin: true },

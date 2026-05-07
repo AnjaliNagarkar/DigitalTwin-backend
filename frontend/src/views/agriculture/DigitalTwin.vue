@@ -451,65 +451,71 @@
           </template>
         </div>
 
-        <!-- VILLAGE SUMMARY — shown only when no View By is selected -->
-        <div class="panel-card" v-if="!colorMode">
+        <!-- VILLAGE SUMMARY — always visible; shows household + problem-stat breakdown -->
+        <div class="panel-card vs-card">
           <div class="card-title">Village Summary</div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#16a34a"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Total Households</span>
-                <span class="issue-count">{{
-                  isLocationFiltered
-                    ? householdsOnMapCount.toLocaleString()
-                    : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
-                }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" style="width:100%;background:#16a34a"></div></div>
-            </div>
-          </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#2563eb"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Total Population</span>
-                <span class="issue-count">{{ totalPopulation.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" style="width:100%;background:#2563eb"></div></div>
-            </div>
-          </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#2563eb"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Male {{ malePct }}%</span>
-                <span class="issue-count">{{ maleTotal.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: malePct + '%', background: '#2563eb' }"></div></div>
-            </div>
-          </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#ec4899"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Female {{ femalePct }}%</span>
-                <span class="issue-count">{{ femaleTotal.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: femalePct + '%', background: '#ec4899' }"></div></div>
-            </div>
-          </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#16a34a"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Farmers (own land)</span>
-                <span class="issue-count">{{ farmersOwnLandCount.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: farmersOwnLandPct + '%', background: '#16a34a' }"></div></div>
-            </div>
-          </div>
-          <div class="pf-hint" style="margin-top:10px">Select a category from <strong>View By</strong> to explore detailed analytics.</div>
 
+          <!-- Top stat row: households + population -->
+          <div class="vs-top-row">
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{
+                isLocationFiltered
+                  ? householdsOnMapCount.toLocaleString()
+                  : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
+              }}</div>
+              <div class="vs-stat-lbl">Households</div>
+            </div>
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{ totalPopulation.toLocaleString() }}</div>
+              <div class="vs-stat-lbl">Population</div>
+            </div>
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{ (stats?.farmers || farmersOwnLandCount).toLocaleString() }}</div>
+              <div class="vs-stat-lbl">Farmers</div>
+            </div>
+          </div>
+
+          <!-- Gender bar -->
+          <div class="vs-gender-bar" v-if="totalPopulation > 0">
+            <div class="vs-gender-fill vs-gender-male"  :style="{ width: malePct   + '%' }" :title="`Male ${malePct}%`"></div>
+            <div class="vs-gender-fill vs-gender-female" :style="{ width: femalePct + '%' }" :title="`Female ${femalePct}%`"></div>
+          </div>
+          <div class="vs-gender-labels" v-if="totalPopulation > 0">
+            <span><span class="vs-gender-dot" style="background:#3b82f6"></span>Male {{ malePct }}% ({{ maleTotal.toLocaleString() }})</span>
+            <span><span class="vs-gender-dot" style="background:#ec4899"></span>Female {{ femalePct }}% ({{ femaleTotal.toLocaleString() }})</span>
+          </div>
+
+          <!-- Problem stats from reference project -->
+          <div class="vs-problems" v-if="stats">
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#ef4444"></span>
+              <span class="vs-prob-lbl">No Sanitation</span>
+              <span class="vs-prob-val">{{ stats.noToilet.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noToilet/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#f59e0b"></span>
+              <span class="vs-prob-lbl">No Electricity</span>
+              <span class="vs-prob-val">{{ stats.noElec.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noElec/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#a78bfa"></span>
+              <span class="vs-prob-lbl">No Irrigation</span>
+              <span class="vs-prob-val">{{ stats.noIrrig.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noIrrig/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#60a5fa"></span>
+              <span class="vs-prob-lbl">BPL Families</span>
+              <span class="vs-prob-val">{{ stats.bpl.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.bpl/stats.total*100) : 0 }}%</span>
+            </div>
+          </div>
+
+          <div class="pf-hint" style="margin-top:8px" v-if="!colorMode">
+            Select a category from <strong>View By</strong> to colour the map.
+          </div>
         </div>
 
         <!-- PROBLEM FILTER — only shown when a mode is active -->
@@ -807,7 +813,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
+import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getBatchMemberStats, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
 import * as Cesium from 'cesium'
 import Supercluster from 'supercluster'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
@@ -933,10 +939,14 @@ const clusterImageCache = new Map()
 let buildSeq      = 0             // incremented each buildEntities() call; stale async runs check this
 let prevShowBuildings = false     // tracks last known building-zoom state for lazy entity creation
 let buildingPanTimer = null       // debounce handle for viewport-pan rebuilds within building zoom
-const jitterCache = new Map()     // familyId → {lat, lng}  populated during chunked build
-const entityMap  = new Map()   // entityId → house  (building boxes + cluster entities)
-const ptPrimMap  = new Map()   // familyId → PointPrimitive  (fast primitive lookup)
-const buildingIds = new Set()  // 3D box entity IDs
+const jitterCache = new Map()           // familyId → {lat, lng}  populated during chunked build
+const entityMap  = new Map()            // entityId → house  (building boxes + cluster entities)
+const ptPrimMap  = new Map()            // familyId → PointPrimitive  (fast primitive lookup)
+const buildingIds = new Set()           // 3D box entity IDs
+// Enrichment cache: stores full house detail (including member stats) for houses
+// previously fetched via /house/:id.  Used by addHouseModelEntity() so population-
+// based color modes work correctly even before the user clicks on a building.
+const houseEnrichmentCache = new Map()  // familyId(number) → full HouseDetail
 const clusterIds   = new Set()  // High-Need cluster entity IDs (problem filter rings)
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
 const macroClusIds       = new Set()  // Grid cluster markers at district/state zoom level
@@ -1722,12 +1732,54 @@ function applyColorFilter(mode) {
   applyMappedColorMode(mode)
 }
 
+// Population modes need member stats (totalMembers, illiterateMembers, divyangMembers,
+// workingMembers, occupation) which GetHouses returns as 0. This set drives the
+// enrichment fetch whenever one of these modes is selected.
+const POPULATION_COLOR_MODES = new Set([
+  'population_density', 'education_level', 'divyang_presence', 'occupation',
+])
+
+// Enriches all currently visible houses with member stats from the backend cache.
+// Fires a single batch request, stores results in houseEnrichmentCache, re-renders.
+let _enrichSeq = 0
+async function enrichVisibleHousesForPopulationMode() {
+  const seq = ++_enrichSeq
+  const visibleIds = mapPoints.value.map(p => Number(p.id)).filter(id => Number.isFinite(id))
+  if (visibleIds.length === 0) return
+
+  // Chunk into batches of 500 to stay within URL length limits
+  const CHUNK = 500
+  for (let i = 0; i < visibleIds.length; i += CHUNK) {
+    if (seq !== _enrichSeq) return   // mode changed again — abort stale run
+    const chunk = visibleIds.slice(i, i + CHUNK)
+    try {
+      const stats = await getBatchMemberStats(chunk)
+      if (seq !== _enrichSeq) return
+      stats.forEach(s => {
+        houseEnrichmentCache.set(Number(s.familyId), s)
+      })
+    } catch (e) {
+      console.warn('[enrich] batch-members fetch failed:', e?.message || e)
+    }
+  }
+
+  // Re-render buildings with the now-enriched data
+  if (seq === _enrichSeq && viewer && !viewer.isDestroyed()) {
+    renderClustersForCurrentView()
+  }
+}
+
 const selectColorMode = (mode) => {
   // User explicitly clicked a color mode: treat this as an explicit "view" selection
   hasUserSelectedView.value = true
   // Mirror the semantic view in the left-hand "selectedView" so the trigger shows the label
   selectedView.value = COLOR_MODE_TO_VIEW[mode] || selectedView.value
   applyMappedColorMode(mode)
+
+  // For population modes, enrich visible houses with real member stats from cache
+  if (POPULATION_COLOR_MODES.has(mode)) {
+    enrichVisibleHousesForPopulationMode()
+  }
 }
 
 const selectedViewLabel = computed(() => {
@@ -1749,21 +1801,27 @@ const selectedViewLabel = computed(() => {
   return map[selectedView.value] || ''
 })
 
-// Ensure 3D entities update when the user switches the semantic "view" (selectedView)
+// Ensure 3D entities update when the user switches the semantic "view" (selectedView).
 watch(selectedView, () => {
   try {
     if (typeof renderClustersForCurrentView === 'function') renderClustersForCurrentView()
-    // also attempt in-place recolour for speed
-    if (viewer && !viewer.isDestroyed && typeof viewer.entities?.getById === 'function') {
+    if (!viewer || viewer.isDestroyed) return
+    // Full rebuild when in building mode so wall + roof both get new colours.
+    if (buildingIds.size > 0 && typeof buildBuildingEntitiesForViewport === 'function') {
+      buildBuildingEntitiesForViewport()
+      return
+    }
+    // Fallback in-place recolour.
+    if (typeof viewer.entities?.getById === 'function') {
       buildingIds.forEach((id) => {
-        const ent = viewer.entities.getById(id)
+        const ent   = viewer.entities.getById(id)
         const house = entityMap.get(id)
         if (!ent || !house || !ent.box) return
         ent.box.material = cesiumColor(house)
       })
     }
   } catch (e) {
-    console.warn('selectedView recolour failed:', e?.message || e)
+    console.warn('[selectedView] recolour failed:', e?.message || e)
   }
 })
 
@@ -1781,7 +1839,13 @@ const selectView = (value) => {
     land: 'land',
   }
 
-  applyColorFilter(mapping[value])
+  const resolvedMode = mapping[value]
+  applyColorFilter(resolvedMode)
+
+  // Enrich if the resolved color mode needs member data
+  if (resolvedMode && POPULATION_COLOR_MODES.has(resolvedMode)) {
+    enrichVisibleHousesForPopulationMode()
+  }
 }
 
 // Human-readable labels for current selections (shown in trigger button)
@@ -1807,32 +1871,36 @@ watch(colorMode, (mode) => {
 // match the active legend without requiring a full page refresh.
 watch([colorMode, mapPoints, houses], () => {
   try {
-    // If the cluster index exists, rebuild the current view entities which will
-    // recreate building entities using the up-to-date `cesiumColor()` logic.
+    // Rebuild the cluster/dot view so point colours update.
     if (typeof renderClustersForCurrentView === 'function') {
-      // Debounce / guard is handled inside renderClustersForCurrentView
       renderClustersForCurrentView()
     }
-    // Additionally attempt an in-place recolour of existing building entities
-    // for faster UI feedback without a full rebuild.
-    try {
-      if (viewer && !viewer.isDestroyed && typeof viewer.entities?.getById === 'function') {
-        buildingIds.forEach((id) => {
-          try {
-            const ent = viewer.entities.getById(id)
-            const house = entityMap.get(id)
-            if (!ent || !house || !ent.box) return
-            const c = cesiumColor(house)
-            ent.box.material = c
-          } catch (_) {}
-        })
+
+    if (!viewer || viewer.isDestroyed) return
+
+    // If we are in building-zoom mode, fully rebuild the building entities so
+    // wall + roof colours are applied fresh from the updated cesiumColor() logic.
+    if (buildingIds.size > 0) {
+      if (typeof buildBuildingEntitiesForViewport === 'function') {
+        buildBuildingEntitiesForViewport()
       }
-    } catch (e) {
-      // noop
+      return
+    }
+
+    // Fallback: in-place recolour (handles edge cases where buildingIds is
+    // populated but buildBuildingEntitiesForViewport isn't yet declared).
+    if (typeof viewer.entities?.getById === 'function') {
+      buildingIds.forEach((id) => {
+        try {
+          const ent   = viewer.entities.getById(id)
+          const house = entityMap.get(id)
+          if (!ent || !house || !ent.box) return
+          ent.box.material = cesiumColor(house)
+        } catch (_) {}
+      })
     }
   } catch (e) {
-    // Fail silently — recolour is best-effort
-    console.warn('Recolor 3D entities failed:', e?.message || e)
+    console.warn('[recolor] 3D entity recolor failed:', e?.message || e)
   }
 }, { immediate: false })
 
@@ -2339,18 +2407,20 @@ function isBPL(house) {
   return v.includes('bpl') || v.includes('antyodaya') || v === 'yes'
 }
 
-// ── Issue analysis ────────────────────────────────────────────────────────────
+// ── Village summary stats (reference project pattern) ────────────────────────
+// Uses the same helper functions as getConditionColor / legend so numbers match
+// exactly what the map is showing.
 const stats = computed(() => {
   if (!filteredHouses.value.length) return null
   const list  = filteredHouses.value
   const total = list.length
   return {
     total,
-    farmers:  list.filter(h => (h.ownLand || '').toLowerCase() === 'yes').length,
-    noToilet: list.filter(h => !h.latrine || h.latrine === 'No Latrine' || h.latrine === 'None').length,
-    noElec:   list.filter(h => !h.lighting || h.lighting === 'Kerosene' || h.lighting === 'None').length,
+    farmers:  list.filter(h => isFarmerHouse(h)).length,
+    noToilet: list.filter(h => !hasSanitationFacility(h)).length,
+    noElec:   list.filter(h => !hasElectricityConnection(h)).length,
     noIrrig:  list.filter(h => isRainFed(h)).length,
-    bpl:      list.filter(h => (h.rationCard || '').toLowerCase().includes('bpl') || (h.rationCard || '').toLowerCase().includes('antyodaya')).length,
+    bpl:      list.filter(h => isBPL(h)).length,
   }
 })
 
@@ -3004,65 +3074,13 @@ function getIssues(house) {
 }
 
 // ── Cesium helpers ─────────────────────────────────────────────────────────────
+// cesiumColor — single source of truth for 3D building roof colour.
+// Returns the condition colour at 80% brightness so roofs look solid without
+// being too saturated against the satellite/street basemap (reference pattern).
 function cesiumColor(house) {
-  // Map the active `colorMode` to a CSS colour string derived from the house
-  // attributes. This mirrors the 2D marker colouring logic so the 3D roofs/walls
-  // visually match the legend when users switch "View By".
   try {
-    const mode = String(colorMode.value || '').trim()
-
-    if (mode === 'population_density') {
-      const members = Number(house.totalMembers || house.totalMembers || 0)
-      if (members <= 2) return Cesium.Color.fromCssColorString('#a7f3d0')
-      if (members <= 5) return Cesium.Color.fromCssColorString('#34d399')
-      return Cesium.Color.fromCssColorString('#047857')
-    }
-
-    if (mode === 'bpl_status') {
-      return Cesium.Color.fromCssColorString(isBPL(house) ? '#ef4444' : '#16a34a')
-    }
-
-    if (mode === 'divyang_presence') {
-      return Cesium.Color.fromCssColorString((house.divyangMembers || 0) > 0 ? '#a855f7' : '#9ca3af')
-    }
-
-    if (mode === 'employment_status' || mode === 'occupation') {
-      // Treat "working" households as amber, others grey
-      const working = (house.workingMembers || 0) > 0 || !isUnemployedHouse(house)
-      return Cesium.Color.fromCssColorString(working ? '#f59e0b' : '#9ca3af')
-    }
-
-    if (mode === 'crops' || mode === 'crop') {
-      const k = String(house.kharif || '').toLowerCase() === 'yes'
-      const r = String(house.rabi   || '').toLowerCase() === 'yes'
-      if (k && r)  return Cesium.Color.fromCssColorString('#10b981')
-      if (k)       return Cesium.Color.fromCssColorString('#f59e0b')
-      if (r)       return Cesium.Color.fromCssColorString('#38bdf8')
-      return Cesium.Color.fromCssColorString('#64748b')
-    }
-
-    if (mode === 'land') {
-      const acres = Number(house.totalLand || 0)
-      if (!acres || Number.isNaN(acres)) return Cesium.Color.fromCssColorString('#9ca3af')
-      if (acres <= 1)    return Cesium.Color.fromCssColorString('#ef4444')
-      if (acres <= 2.5)  return Cesium.Color.fromCssColorString('#f59e0b')
-      if (acres <= 5)    return Cesium.Color.fromCssColorString('#22c55e')
-      return Cesium.Color.fromCssColorString('#10b981')
-    }
-
-    if (mode === 'irrigation') {
-      const irrigation = String(house.waterSource || house.SOURCE_WATER_IRRIGATION || '').trim()
-      if (irrigation && irrigation.toLowerCase() !== 'no') return Cesium.Color.fromCssColorString('#16a34a')
-      return Cesium.Color.fromCssColorString('#ef4444')
-    }
-
-    if (mode === 'sanitation') {
-      // Reuse existing sanitation color logic
-      return Cesium.Color.fromCssColorString(getConditionColor(house))
-    }
-
-    // Default: use existing condition-based colour but slightly dimmed
-    const base = Cesium.Color.fromCssColorString(getConditionColor(house))
+    const hex  = colorMode.value ? getConditionColor(house) : '#ef4444'
+    const base = Cesium.Color.fromCssColorString(hex)
     return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
   } catch (e) {
     return Cesium.Color.fromCssColorString('#9ca3af')
@@ -3378,33 +3396,42 @@ function generateClusterBillboardImage(count, expansionZoom) {
 }
 
 function addHouseModelEntity(house, lng, lat) {
+  // Merge enriched member data if we fetched it previously (e.g. from a panel click).
+  const enriched = houseEnrichmentCache.get(Number(house.familyId))
+  const h = enriched ? { ...house, ...enriched } : house
+
   const selectedId       = selectedHouse.value?.familyId
   const hasProblemFilter = activeProblemFilters.value.length > 0
-  const isSelected       = house.familyId === selectedId
-  const isProblem        = hasProblemFilter && matchesAllProblems(house)
+  const isSelected       = h.familyId === selectedId
+  const isProblem        = hasProblemFilter && matchesAllProblems(h)
   const isBackground     = hasProblemFilter && !isProblem && !isSelected
 
-  const conditionColor = cesiumColor(house)
+  // Roof: always the colorMode condition color (selected = gold override only).
+  // Background (non-flagged) houses are dimmed to 35% alpha so flagged ones pop.
+  const conditionColor = cesiumColor(h)
   const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
   const roofColor      = isSelected
     ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
     : conditionColor.withAlpha(roofAlpha)
 
+  // Wall: sandstone base (reference project pattern) — keeps walls neutral so the
+  // roof colour (condition) is the primary visual signal. Flagged houses get a
+  // pale-red tint; background houses are dimmed.
   const wallColor = isSelected
     ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-      : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
+      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
   const wallOutline = isSelected
     ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-      : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
+      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
 
   const footprint = 10
   const baseH     = 7
-  const roofH     = Math.max(2.5, Math.min(landHeight(house) * 0.22, 5))
+  const roofH     = Math.max(2.5, Math.min(landHeight(h) * 0.22, 5))
 
   const baseEnt = viewer.entities.add({
     position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH / 2),
@@ -3428,7 +3455,7 @@ function addHouseModelEntity(house, lng, lat) {
       outlineColor: isSelected
         ? Cesium.Color.WHITE
         : isProblem
-          ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
+          ? roofColor.brighten(0.3, new Cesium.Color()).withAlpha(0.95)
           : roofColor.darken(0.25, new Cesium.Color()),
       outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
     },
@@ -3436,25 +3463,32 @@ function addHouseModelEntity(house, lng, lat) {
 
   buildingIds.add(baseEnt.id)
   buildingIds.add(roofEnt.id)
-  entityMap.set(baseEnt.id, house)
-  entityMap.set(roofEnt.id, house)
+  // Store the enriched house so the detail panel shows full member data on click.
+  entityMap.set(baseEnt.id, h)
+  entityMap.set(roofEnt.id, h)
   return [baseEnt.id, roofEnt.id]
 }
 
 function resolveHouseForRendering(pointId, lng, lat) {
   const id = Number(pointId)
+
+  // Priority 1: enrichment cache (full detail from /house/:id — has member stats).
+  const enriched = houseEnrichmentCache.get(id)
+
+  // Priority 2: viewport-loaded house data (has agriculture fields, member stats = 0).
   const detailed = detailedHouseById.value.get(id)
-  if (detailed) {
-    const latNum = Number(detailed.latitude)
-    const lngNum = Number(detailed.longitude)
-    return {
-      ...detailed,
-      latitude: Number.isFinite(latNum) ? latNum : Number(lat),
-      longitude: Number.isFinite(lngNum) ? lngNum : Number(lng),
-      familyId: Number.isFinite(Number(detailed.familyId)) ? Number(detailed.familyId) : id,
-    }
+
+  const base = detailed || toMapPointHouse({ id, lng, lat })
+  const merged = enriched ? { ...base, ...enriched } : base
+
+  const latNum = Number(merged.latitude)
+  const lngNum = Number(merged.longitude)
+  return {
+    ...merged,
+    latitude:  Number.isFinite(latNum) ? latNum  : Number(lat),
+    longitude: Number.isFinite(lngNum) ? lngNum  : Number(lng),
+    familyId:  Number.isFinite(Number(merged.familyId)) ? Number(merged.familyId) : id,
   }
-  return toMapPointHouse({ id, lng, lat })
 }
 
 function mergeHouseDetailWithFallback(detail, fallbackHouse) {
@@ -3706,7 +3740,27 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
   try {
     const detail = await getHouseById(numericId)
     if (detail) {
-      selectedHouse.value = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
+      const merged = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
+      selectedHouse.value = merged
+
+      // Store enriched data so 3D buildings use real member stats for color modes
+      // (population density, education level, divyang, occupation) without needing
+      // every house to have been clicked first.
+      if (detail.familyId != null) {
+        houseEnrichmentCache.set(Number(detail.familyId), detail)
+        // Repaint only the two box entities for this house if they're already on screen.
+        if (viewer && !viewer.isDestroyed()) {
+          entityMap.forEach((h, entityId) => {
+            if (Number(h.familyId) === numericId) {
+              const ent = viewer.entities.getById(entityId)
+              if (ent?.box) {
+                ent.box.material = cesiumColor(detail)
+              }
+            }
+          })
+          viewer.scene.requestRender()
+        }
+      }
     }
   } catch (error) {
     console.warn('[house-detail] fetch failed:', error?.message || error)
@@ -4128,22 +4182,24 @@ function buildBuildingEntitiesForViewport() {
     const isBackground = hasProblemFilter && !isProblem && !isSelected
 
     const conditionColor = cesiumColor(house)
-    const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
+    const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.25 : 0.95
     const roofColor      = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
       : conditionColor.withAlpha(roofAlpha)
 
-    const wallColor = isSelected
-      ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
-      : isProblem
-        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-        : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
+    // Wall uses the same mode-based colour at reduced brightness so roof stands
+    // out, giving a clear 3D read while staying in sync with the active legend.
+    const wallBase   = isSelected
+      ? Cesium.Color.fromCssColorString('#fef3c7')
+      : conditionColor.darken(0.35, new Cesium.Color())
+    const wallAlpha  = isSelected ? 1.0 : isBackground ? 0.18 : 0.82
+    const wallColor  = wallBase.withAlpha(wallAlpha)
 
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-        : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
+        ? conditionColor.withAlpha(1.0)
+        : conditionColor.darken(0.5, new Cesium.Color()).withAlpha(isBackground ? 0.15 : 0.9)
 
     const footprint = 10
     const baseH     = 7
@@ -4236,15 +4292,23 @@ async function downloadPDF() {
   if (pdfLoading.value) return
   pdfLoading.value = true
   try {
-    // Resolve human-readable names from the currently applied filter IDs
+    // Resolve human-readable names from the master lists (allDistricts / allTalukas /
+    // allVillages) rather than from houses.value, which may be empty when no location
+    // filter is applied or the viewport hasn't loaded houses yet.
     const districtName = filterDistrict.value
-      ? (houses.value.find(h => String(h.districtId) === String(filterDistrict.value))?.districtName || '')
+      ? (allDistricts.value.find(d => String(d.id) === String(filterDistrict.value))?.name
+         || houses.value.find(h => String(h.districtId) === String(filterDistrict.value))?.districtName
+         || '')
       : ''
     const talukaName = filterTaluka.value
-      ? (houses.value.find(h => String(h.talukaId) === String(filterTaluka.value))?.talukaName || '')
+      ? (allTalukas.value.find(t => String(t.id) === String(filterTaluka.value))?.name
+         || houses.value.find(h => String(h.talukaId) === String(filterTaluka.value))?.talukaName
+         || '')
       : ''
     const villageName = filterVillage.value
-      ? (houses.value.find(h => String(h.villageId) === String(filterVillage.value))?.villageName || '')
+      ? (allVillages.value.find(v => String(v.id) === String(filterVillage.value))?.name
+         || houses.value.find(h => String(h.villageId) === String(filterVillage.value))?.villageName
+         || '')
       : ''
 
     // Render all sidebar donut charts to PNG and ship them to the backend
@@ -4257,12 +4321,15 @@ async function downloadPDF() {
       .filter(c => c.image)
 
     // Build problem filter summary to embed in PDF
+    const totalForFilters = filteredHouses.value.length
+      || agricultureInsights.value?.totalHouseholds
+      || 0
     const problemFilters = PROBLEM_FILTER_META.map(pf => ({
-      key:        pf.key,
-      label:      pf.label,
-      count:      problemFilterStats.value[pf.key] ?? 0,
-      total:      filteredHouses.value.length,
-      active:     activeProblemFilters.value.includes(pf.key),
+      key:    pf.key,
+      label:  pf.label,
+      count:  problemFilterStats.value[pf.key] ?? 0,
+      total:  totalForFilters,
+      active: activeProblemFilters.value.includes(pf.key),
     }))
     const problemMatchTotal = problemMatchCount.value
 
@@ -5335,6 +5402,65 @@ onUnmounted(() => {
 }
 
 /* ═══════════════════════════════════════════════
+   VILLAGE SUMMARY CARD (reference project design)
+═══════════════════════════════════════════════ */
+.vs-card { padding-bottom: 10px; }
+
+/* top 3-stat row */
+.vs-top-row {
+  display: flex; gap: 0; margin-bottom: 10px;
+  border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;
+}
+.vs-stat {
+  flex: 1; text-align: center;
+  padding: 8px 4px;
+  border-right: 1px solid #e5e7eb;
+}
+.vs-stat:last-child { border-right: none; }
+.vs-stat-val {
+  font-size: 1.05rem; font-weight: 700; color: #111827;
+  line-height: 1.1;
+}
+.vs-stat-lbl {
+  font-size: 0.62rem; color: #6b7280; margin-top: 2px; font-weight: 500;
+}
+
+/* gender bar */
+.vs-gender-bar {
+  display: flex; height: 6px; border-radius: 3px;
+  overflow: hidden; background: #e5e7eb; margin-bottom: 4px;
+}
+.vs-gender-fill { height: 100%; transition: width 0.4s; }
+.vs-gender-male   { background: #3b82f6; }
+.vs-gender-female { background: #ec4899; }
+.vs-gender-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.62rem; color: #6b7280; margin-bottom: 10px;
+}
+.vs-gender-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; margin-right: 3px; vertical-align: middle;
+}
+
+/* problem stats rows */
+.vs-problems {
+  border-top: 1px solid #f3f4f6; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.vs-prob-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.72rem;
+}
+.vs-prob-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.vs-prob-lbl { flex: 1; color: #374151; }
+.vs-prob-val { font-weight: 600; color: #111827; min-width: 32px; text-align: right; }
+.vs-prob-pct {
+  color: #9ca3af; min-width: 30px; text-align: right; font-size: 0.65rem;
+}
+
+/* ═══════════════════════════════════════════════
    STATS BAR
 ═══════════════════════════════════════════════ */
 .stats-bar {
@@ -5891,7 +6017,7 @@ onUnmounted(() => {
   font-size: 0.72rem; font-weight: 600; text-align: center;
 }
 .dp-chip-kharif { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-.dp-chip-rabi   { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.dp-chip-rabi   { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
 .dp-empty-note {
   margin: 0.45rem 1rem 0;
   padding: 0.5rem 0.6rem;
