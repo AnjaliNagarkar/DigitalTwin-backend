@@ -437,6 +437,44 @@
               </div>
             </template>
 
+            <template v-else-if="colorMode === 'crops'">
+              <!-- ── Land & Crops (Crops/Season mode only) ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🌾</span> Agriculture
+              </div>
+
+              <div class="dp-stat-row">
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Total Land</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Cultivated</div>
+                </div>
+              </div>
+
+              <div class="dp-chip-row">
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Kharif Crop</div>
+                  <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+                </div>
+                <div class="dp-chip-block">
+                  <div class="dp-chip-label">Rabi Crop</div>
+                  <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+                </div>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Irrigation Source</span>
+                <span class="dp-field-val"
+                      :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
+                  {{ selectedHouse.waterSource || '—' }}
+                </span>
+              </div>
+            </template>
+
             <template v-else>
               <!-- ── Land & Crops ── -->
               <div class="dp-section-label">
@@ -918,6 +956,10 @@ const normalizedSelectedHouse = computed(() => {
 
 function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+function hasCropValue(value) {
+  return String(value ?? '').trim() !== ''
 }
 
 function isYesValue(value) {
@@ -1906,8 +1948,8 @@ const stats = computed(() => {
   const total = houses.value.length
   const farmers = houses.value.filter(h => (h.ownLand || '').toLowerCase() === 'yes').length
   const noIrrigation = houses.value.filter(h => !h.waterSource || h.waterSource === 'Rain Fed' || h.waterSource === 'None').length
-  const kharif = houses.value.filter(h => (h.kharif || '').toLowerCase() === 'yes').length
-  const rabi = houses.value.filter(h => (h.rabi || '').toLowerCase() === 'yes').length
+  const kharif = houses.value.filter(h => hasCropValue(h.kharif)).length
+  const rabi = houses.value.filter(h => hasCropValue(h.rabi)).length
 
   return { total, farmers, noIrrigation, kharif, rabi }
 })
@@ -2229,8 +2271,8 @@ function getMarkerColor(house) {
   }
 
   if (colorMode.value === 'crops') {
-    const k = (house.kharif || '').toLowerCase() === 'yes'
-    const r = (house.rabi   || '').toLowerCase() === 'yes'
+    const k = hasCropValue(house.kharif)
+    const r = hasCropValue(house.rabi)
     if (k && r)  return '#10b981'
     if (k)       return '#f59e0b'
     if (r)       return '#38bdf8'
@@ -2949,6 +2991,13 @@ function addHouseMarker(house) {
         <strong>${house.headName || getHouseHeadName(house) || 'Household'}</strong><br/>
         House No: ${getHouseNumber(house) || 'N/A'}<br/>
         Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
+      `
+    }
+
+    if (colorMode.value === 'crops') {
+      return `
+        <strong>${house.headName || 'Household'}</strong><br/>
+        ID ${house.familyId || house.FAMILY_ID || house.EXTERNAL_FAMILY_ID || '—'}
       `
     }
 
