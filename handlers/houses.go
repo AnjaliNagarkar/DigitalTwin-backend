@@ -803,7 +803,7 @@ func (h *HouseHandler) GetHousesMapPoints(c *gin.Context) {
 	// Parse optional limit parameter for performance (default: no limit)
 	limit := ""
 	if limitStr := strings.TrimSpace(c.Query("limit")); limitStr != "" {
-		if limitVal, err := strconv.Atoi(limitStr); err == nil && limitVal > 0 && limitVal <= 100000 {
+		if limitVal, err := strconv.Atoi(limitStr); err == nil && limitVal > 0 && limitVal <= 500000 {
 			limit = fmt.Sprintf("LIMIT %d", limitVal)
 		}
 	}

@@ -193,8 +193,8 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, '')      AS total_land,
 			COALESCE(f.OWN_AGRICULTURE_LAND, '')             AS own_agri_land,
 			COALESCE(f.SOURCE_WATER_IRRIGATION, '')          AS water_source,
-			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, '') AS kharif_crop,
-			COALESCE(f.TAKING_CROPS_RABI_SEASON, '')         AS rabi_crop,
+			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, '')                                                AS kharif_crop,
+			COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON),''), f.TAKING_CROPS_RABI_SEASON, '') AS rabi_crop,
 			COALESCE(CAST(f.ANNUAL_INCOME AS CHAR), '')      AS annual_income,
 			%s                                                AS sanitation_status,
 			0                                                 AS children_count,
@@ -280,6 +280,13 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			landVal = "0"
 			wsVal = "N/A"
 			kVal = "N/A"
+			rVal = "N/A"
+		}
+		// Normalise rabi: if only a Yes/No indicator came through (no crop name stored),
+		// treat "No" as N/A (no rabi crop) and "Yes" as N/A too (crop done but name unknown).
+		// Real crop names like "Wheat (गेहूं)" pass through unchanged.
+		switch strings.ToLower(rVal) {
+		case "yes", "no", "n", "y":
 			rVal = "N/A"
 		}
 

@@ -944,9 +944,14 @@ const entityMap  = new Map()            // entityId → house  (building boxes +
 const ptPrimMap  = new Map()            // familyId → PointPrimitive  (fast primitive lookup)
 const buildingIds = new Set()           // 3D box entity IDs
 // Enrichment cache: stores full house detail (including member stats) for houses
-// previously fetched via /house/:id.  Used by addHouseModelEntity() so population-
-// based color modes work correctly even before the user clicks on a building.
+// previously fetched via /house/:id or /houses/batch-members.
+// Used by addHouseModelEntity() and problemFilterStats for population modes.
 const houseEnrichmentCache = new Map()  // familyId(number) → full HouseDetail
+
+// Reactive counter — incremented after each enrichment batch completes so
+// computed properties that depend on member stats (problemFilterStats, issueList,
+// divyangHouseholds, etc.) automatically re-evaluate with the new data.
+const enrichmentTick = ref(0)
 const clusterIds   = new Set()  // High-Need cluster entity IDs (problem filter rings)
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
 const macroClusIds       = new Set()  // Grid cluster markers at district/state zoom level
@@ -1758,6 +1763,8 @@ async function enrichVisibleHousesForPopulationMode() {
       stats.forEach(s => {
         houseEnrichmentCache.set(Number(s.familyId), s)
       })
+      // Tick after every chunk so problem filter counts update progressively
+      enrichmentTick.value++
     } catch (e) {
       console.warn('[enrich] batch-members fetch failed:', e?.message || e)
     }
@@ -2116,11 +2123,27 @@ function toggleSchemeDrawer(issueKey) {
 }
 
 // Per-key counts for the sidebar display
+// Member-stat-dependent filter keys — these need enriched data from houseEnrichmentCache
+const MEMBER_FILTER_KEYS = new Set(['divyangMembers', 'illiterateMembers', 'unemployedMembers', 'bplFamilies'])
+
+// Returns the best available house record for a given house — merges enriched
+// member data (from batch-members cache) over the bulk-loaded record.
+function enrichedHouse(h) {
+  const enriched = houseEnrichmentCache.get(Number(h.familyId))
+  return enriched ? { ...h, ...enriched } : h
+}
+
 const problemFilterStats = computed(() => {
-  const list = filteredHouses.value
+  void enrichmentTick.value   // reactive dependency — recomputes after each enrichment batch
+  const list   = filteredHouses.value
   const counts = {}
   for (const pf of PROBLEM_FILTER_META) {
-    counts[pf.key] = list.filter(h => matchesProblemFilter(h, pf.key)).length
+    if (MEMBER_FILTER_KEYS.has(pf.key)) {
+      // Use enriched data so divyang/illiterate/unemployed counts reflect real DB values
+      counts[pf.key] = list.filter(h => matchesProblemFilter(enrichedHouse(h), pf.key)).length
+    } else {
+      counts[pf.key] = list.filter(h => matchesProblemFilter(h, pf.key)).length
+    }
   }
   return counts
 })
@@ -2393,11 +2416,18 @@ const femaleTotal = computed(() => {
 })
 const malePct   = computed(() => totalPopulation.value ? Math.round(maleTotal.value / totalPopulation.value * 100) : 0)
 const femalePct = computed(() => totalPopulation.value ? Math.round(femaleTotal.value / totalPopulation.value * 100) : 0)
-const workingHouseholds = computed(() => filteredHouses.value.filter(h => (h.workingMembers || 0) >= 1).length)
-const divyangHouseholds = computed(() => filteredHouses.value.filter(h => (h.divyangMembers || 0) >= 1).length)
-const literacyRate      = computed(() => {
-  const total = totalPopulation.value
-  const illiterate = filteredHouses.value.reduce((s, h) => s + (h.illiterateMembers || 0), 0)
+const workingHouseholds = computed(() => {
+  void enrichmentTick.value
+  return filteredHouses.value.filter(h => (enrichedHouse(h).workingMembers || 0) >= 1).length
+})
+const divyangHouseholds = computed(() => {
+  void enrichmentTick.value
+  return filteredHouses.value.filter(h => (enrichedHouse(h).divyangMembers || 0) >= 1).length
+})
+const literacyRate = computed(() => {
+  void enrichmentTick.value
+  const total      = totalPopulation.value
+  const illiterate = filteredHouses.value.reduce((s, h) => s + (enrichedHouse(h).illiterateMembers || 0), 0)
   if (!total) return 100
   return Math.round(((total - illiterate) / total) * 100)
 })
@@ -2411,6 +2441,7 @@ function isBPL(house) {
 // Uses the same helper functions as getConditionColor / legend so numbers match
 // exactly what the map is showing.
 const stats = computed(() => {
+  void enrichmentTick.value   // recompute when member data is enriched
   if (!filteredHouses.value.length) return null
   const list  = filteredHouses.value
   const total = list.length
@@ -2420,7 +2451,7 @@ const stats = computed(() => {
     noToilet: list.filter(h => !hasSanitationFacility(h)).length,
     noElec:   list.filter(h => !hasElectricityConnection(h)).length,
     noIrrig:  list.filter(h => isRainFed(h)).length,
-    bpl:      list.filter(h => isBPL(h)).length,
+    bpl:      list.filter(h => isBPL(enrichedHouse(h))).length,
   }
 })
 
@@ -2533,19 +2564,20 @@ const ISSUE_META = {
 }
 
 const issueListAll = computed(() => {
+  void enrichmentTick.value   // recompute when member data is enriched
   if (!stats.value) return []
   const { total, noToilet, noElec, noIrrig, bpl } = stats.value
   const list = filteredHouses.value
   const farmers         = list.filter(h => isFarmerHouse(h)).length
-  const noLand           = list.filter(h => matchesProblemFilter(h, 'noLand')).length
-  const noRationCard     = list.filter(h => matchesProblemFilter(h, 'noRationCard')).length
-  const unemployed       = list.filter(h => isUnemployedHouse(h)).length
-  const laborers         = list.filter(h => isLaborHouse(h)).length
-  // Population
-  const bplFamilies      = list.filter(h => matchesProblemFilter(h, 'bplFamilies')).length
-  const illiterateCnt    = list.filter(h => matchesProblemFilter(h, 'illiterateMembers')).length
-  const unemployedMems   = list.filter(h => matchesProblemFilter(h, 'unemployedMembers')).length
-  const divyangCnt       = list.filter(h => matchesProblemFilter(h, 'divyangMembers')).length
+  const noLand          = list.filter(h => matchesProblemFilter(h, 'noLand')).length
+  const noRationCard    = list.filter(h => matchesProblemFilter(h, 'noRationCard')).length
+  const unemployed      = list.filter(h => isUnemployedHouse(h)).length
+  const laborers        = list.filter(h => isLaborHouse(h)).length
+  // Population — use enriched data so real member counts are reflected
+  const bplFamilies     = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'bplFamilies')).length
+  const illiterateCnt   = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'illiterateMembers')).length
+  const unemployedMems  = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'unemployedMembers')).length
+  const divyangCnt      = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'divyangMembers')).length
 
   const pct = (n) => Math.round(n / total * 100)
   return [
@@ -2787,17 +2819,18 @@ const AGRI_OVERVIEW_BY_MODE = {
   infrastructure: ['Infrastructure Status', 'Sanitation Coverage', 'Electricity Coverage'],
 }
 
-// Population pie charts — computed from member aggregates
+// Population pie charts — computed from member aggregates.
+// Uses enrichedHouse() so real DB values from /houses/batch-members are reflected.
 const popPieCharts = computed(() => {
+  void enrichmentTick.value   // reactive dependency — recomputes after each enrichment batch
   const list  = filteredHouses.value
   const total = list.length
   if (!total) return []
   const totalPop   = totalPopulation.value
-  const illiterate = list.reduce((s, h) => s + (h.illiterateMembers || 0), 0)
+  const illiterate = list.reduce((s, h) => s + (enrichedHouse(h).illiterateMembers || 0), 0)
   const literate   = Math.max(totalPop - illiterate, 0)
-  const working    = list.reduce((s, h) => s + (h.workingMembers || 0), 0)
-  const divyang    = list.reduce((s, h) => s + (h.divyangMembers  || 0), 0)
-  const bplCount   = list.filter(h => isBPL(h)).length
+  const divyang    = list.reduce((s, h) => s + (enrichedHouse(h).divyangMembers    || 0), 0)
+  const bplCount   = list.filter(h => isBPL(enrichedHouse(h))).length
   return [
     {
       title: 'Education Status',
@@ -3158,7 +3191,7 @@ function housesInView(list) {
   return inCount / valid.length >= 0.60
 }
 
-function flyToPoints(list) {
+function flyToPoints(list, options = {}) {
   if (!viewer || !list.length) return
   const valid = list.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
   if (!valid.length) return
@@ -3194,6 +3227,50 @@ function flyToPoints(list) {
       pitch,                   // persisted user tilt (never resets to 0)
       range,
     ),
+    complete: options?.complete,
+  })
+}
+
+// flyToFitAll — fit the camera to show every pin at once on initial load.
+// Strategy: build a BoundingSphere whose centre is the geographic centroid
+// and whose radius is the max distance from that centroid to any pin.
+// Passing range=0 in HeadingPitchRange tells Cesium to auto-compute the
+// eye distance so the sphere fills the viewport — no manual altitude cap.
+function flyToFitAll(points, onComplete) {
+  if (!viewer || !points.length) return
+
+  const valid = points.filter(p =>
+    Number.isFinite(Number(p.lat ?? p.latitude)) &&
+    Number.isFinite(Number(p.lng ?? p.longitude))
+  )
+  if (!valid.length) return
+
+  const lats = valid.map(p => Number(p.lat ?? p.latitude))
+  const lngs = valid.map(p => Number(p.lng ?? p.longitude))
+
+  const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
+  const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+
+  // Build sphere whose radius = farthest pin from centroid + 15 % padding
+  const centerCartesian = Cesium.Cartesian3.fromDegrees(centerLng, centerLat, 0)
+  let maxDist = 0
+  for (const p of valid) {
+    const pt   = Cesium.Cartesian3.fromDegrees(Number(p.lng ?? p.longitude), Number(p.lat ?? p.latitude), 0)
+    const dist = Cesium.Cartesian3.distance(centerCartesian, pt)
+    if (dist > maxDist) maxDist = dist
+  }
+  const radius = Math.max(maxDist * 1.15, 5000)   // at least 5 km so single-point doesn't snap to ground
+  const sphere = new Cesium.BoundingSphere(centerCartesian, radius)
+
+  // range=0 → Cesium auto-computes eye distance to fill the sphere in the viewport
+  viewer.camera.flyToBoundingSphere(sphere, {
+    duration: 2.2,
+    offset: new Cesium.HeadingPitchRange(
+      0,                                  // north-up heading
+      Cesium.Math.toRadians(-55),         // 3-D perspective tilt
+      0,                                  // 0 = auto-fit distance
+    ),
+    complete: onComplete,
   })
 }
 
@@ -4543,12 +4620,12 @@ async function loadInitialData(silent = false) {
   let attempt = 0
   while (attempt <= 5) {
     try {
-      // Limit initial load to 10k points for fast rendering — viewport load takes over for more data
+      // Fetch all map points — each point is only {id, lat, lng} so the
+      // payload is small even for 40 k+ households. No limit = all records.
       const res = await getHousesMapPoints({
         district_id: filterDistrict.value || undefined,
-        taluka_id: filterTaluka.value || undefined,
-        village_id: filterVillage.value || undefined,
-        limit: 10000,
+        taluka_id:   filterTaluka.value   || undefined,
+        village_id:  filterVillage.value  || undefined,
       })
 
       const normalizedPoints = normalizeMapPoints(res)
@@ -4566,6 +4643,17 @@ async function loadInitialData(silent = false) {
 
       buildSuperclusterIndexFromHouses()
       renderClustersForCurrentView()
+
+      // Auto-fit: fly camera so every loaded pin is visible at once.
+      // flyToFitAll uses a bounding Rectangle (no altitude cap) so the camera
+      // lands at the correct zoom level whether data spans one village or all Maharashtra.
+      if (normalizedPoints.length > 0) {
+        centeringMap.value = true
+        flyToFitAll(normalizedPoints, () => { centeringMap.value = false })
+        // Safety: clear indicator after 5 s even if Cesium never fires complete
+        setTimeout(() => { centeringMap.value = false }, 5000)
+      }
+
       return
 
     } catch (err) {
