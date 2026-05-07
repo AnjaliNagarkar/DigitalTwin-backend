@@ -584,9 +584,9 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 
 	genderQuery := injectWhere(`
 		SELECT
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END) AS male,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END) AS female,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END) AS other
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END), 0) AS male,
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END), 0) AS female,
+			COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END), 0) AS other
 		FROM FAMILY_MEMBER fm
 		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE __WHERE_CLAUSE__
@@ -616,7 +616,7 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 			AVG(income) AS avg_income
 		FROM (
 			SELECT
-				f.FAMILY_ID,
+				f.EXTERNAL_FAMILY_ID,
 				CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) AS income,
 				CASE
 					WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 18 AND 30 THEN '18-30'
@@ -640,7 +640,7 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 				  AND TRIM(fm.DOB) != ''
 				  AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL
 				GROUP BY fm.EXTERNAL_FAMILY_ID
-			) m ON m.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+			) m ON m.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 			WHERE NULLIF(TRIM(f.ANNUAL_INCOME), '') IS NOT NULL
 			  AND CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) IS NOT NULL
 			  AND TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) >= 18
@@ -1074,7 +1074,7 @@ func (h *DashboardSummaryHandler) fetchAgricultureSection(ctx context.Context, w
 
 	go func() {
 		defer wg.Done()
-		cropRows, err := queryRowsWithRetry(ctx, h.DB, cropQuery, append(args, args...)...)
+		cropRows, err := queryRowsWithRetry(ctx, h.DB, cropQuery, args...)
 		if err != nil {
 			recordErr(fmt.Errorf("season crop query failed: %w", err))
 			return

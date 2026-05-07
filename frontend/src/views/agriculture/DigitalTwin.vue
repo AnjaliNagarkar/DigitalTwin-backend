@@ -355,12 +355,16 @@
         </button>
 
         <!-- DOWNLOAD PDF -->
-        <div class="dl-wrap" v-if="!loadingLiveData && filteredHouses.length">
-          <button class="dl-btn" @click="downloadPDF" :disabled="pdfLoading"
-                  :title="`Download PDF report for ${filteredHouses.length} households`">
-            {{ pdfLoading ? '⏳ Generating…' : '⬇ PDF Report' }}
+        <div class="pdf-btn-wrap" v-if="!loadingLiveData">
+          <button class="dl-btn"
+                  @click="downloadPDF" :disabled="pdfLoading"
+                  :title="`Download PDF report`">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="flex-shrink:0">
+              <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+            {{ pdfLoading ? 'Generating…' : 'PDF Report' }}
           </button>
-          <span class="dl-count">{{ filteredHouses.length.toLocaleString() }} rows</span>
+          <div class="dl-count">{{ (agricultureInsights?.totalHouseholds || houses.length || 0).toLocaleString() }} rows</div>
         </div>
       </div>
     </div>
@@ -447,64 +451,71 @@
           </template>
         </div>
 
-        <!-- VILLAGE SUMMARY — shown only when no View By is selected -->
-        <div class="panel-card" v-if="!colorMode">
+        <!-- VILLAGE SUMMARY — always visible; shows household + problem-stat breakdown -->
+        <div class="panel-card vs-card">
           <div class="card-title">Village Summary</div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#16a34a"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Total Households</span>
-                <span class="issue-count">{{
-                  isLocationFiltered
-                    ? householdsOnMapCount.toLocaleString()
-                    : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
-                }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" style="width:100%;background:#16a34a"></div></div>
+
+          <!-- Top stat row: households + population -->
+          <div class="vs-top-row">
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{
+                isLocationFiltered
+                  ? householdsOnMapCount.toLocaleString()
+                  : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
+              }}</div>
+              <div class="vs-stat-lbl">Households</div>
+            </div>
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{ totalPopulation.toLocaleString() }}</div>
+              <div class="vs-stat-lbl">Population</div>
+            </div>
+            <div class="vs-stat">
+              <div class="vs-stat-val">{{ (stats?.farmers || farmersOwnLandCount).toLocaleString() }}</div>
+              <div class="vs-stat-lbl">Farmers</div>
             </div>
           </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#2563eb"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Total Population</span>
-                <span class="issue-count">{{ totalPopulation.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" style="width:100%;background:#2563eb"></div></div>
+
+          <!-- Gender bar -->
+          <div class="vs-gender-bar" v-if="totalPopulation > 0">
+            <div class="vs-gender-fill vs-gender-male"  :style="{ width: malePct   + '%' }" :title="`Male ${malePct}%`"></div>
+            <div class="vs-gender-fill vs-gender-female" :style="{ width: femalePct + '%' }" :title="`Female ${femalePct}%`"></div>
+          </div>
+          <div class="vs-gender-labels" v-if="totalPopulation > 0">
+            <span><span class="vs-gender-dot" style="background:#3b82f6"></span>Male {{ malePct }}% ({{ maleTotal.toLocaleString() }})</span>
+            <span><span class="vs-gender-dot" style="background:#ec4899"></span>Female {{ femalePct }}% ({{ femaleTotal.toLocaleString() }})</span>
+          </div>
+
+          <!-- Problem stats from reference project -->
+          <div class="vs-problems" v-if="stats">
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#ef4444"></span>
+              <span class="vs-prob-lbl">No Sanitation</span>
+              <span class="vs-prob-val">{{ stats.noToilet.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noToilet/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#f59e0b"></span>
+              <span class="vs-prob-lbl">No Electricity</span>
+              <span class="vs-prob-val">{{ stats.noElec.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noElec/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#a78bfa"></span>
+              <span class="vs-prob-lbl">No Irrigation</span>
+              <span class="vs-prob-val">{{ stats.noIrrig.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noIrrig/stats.total*100) : 0 }}%</span>
+            </div>
+            <div class="vs-prob-row">
+              <span class="vs-prob-dot" style="background:#60a5fa"></span>
+              <span class="vs-prob-lbl">BPL Families</span>
+              <span class="vs-prob-val">{{ stats.bpl.toLocaleString() }}</span>
+              <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.bpl/stats.total*100) : 0 }}%</span>
             </div>
           </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#2563eb"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Male {{ malePct }}%</span>
-                <span class="issue-count">{{ maleTotal.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: malePct + '%', background: '#2563eb' }"></div></div>
-            </div>
+
+          <div class="pf-hint" style="margin-top:8px" v-if="!colorMode">
+            Select a category from <strong>View By</strong> to colour the map.
           </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#ec4899"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Female {{ femalePct }}%</span>
-                <span class="issue-count">{{ femaleTotal.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: femalePct + '%', background: '#ec4899' }"></div></div>
-            </div>
-          </div>
-          <div class="issue-row">
-            <span class="issue-pip" style="background:#16a34a"></span>
-            <div class="issue-body">
-              <div class="issue-top">
-                <span class="issue-name">Farmers (own land)</span>
-                <span class="issue-count">{{ farmersOwnLandCount.toLocaleString() }}</span>
-              </div>
-              <div class="issue-track"><div class="issue-fill" :style="{ width: farmersOwnLandPct + '%', background: '#16a34a' }"></div></div>
-            </div>
-          </div>
-          <div class="pf-hint" style="margin-top:10px">Select a category from <strong>View By</strong> to explore detailed analytics.</div>
         </div>
 
         <!-- PROBLEM FILTER — only shown when a mode is active -->
@@ -802,7 +813,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
+import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getBatchMemberStats, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
 import * as Cesium from 'cesium'
 import Supercluster from 'supercluster'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
@@ -928,10 +939,19 @@ const clusterImageCache = new Map()
 let buildSeq      = 0             // incremented each buildEntities() call; stale async runs check this
 let prevShowBuildings = false     // tracks last known building-zoom state for lazy entity creation
 let buildingPanTimer = null       // debounce handle for viewport-pan rebuilds within building zoom
-const jitterCache = new Map()     // familyId → {lat, lng}  populated during chunked build
-const entityMap  = new Map()   // entityId → house  (building boxes + cluster entities)
-const ptPrimMap  = new Map()   // familyId → PointPrimitive  (fast primitive lookup)
-const buildingIds = new Set()  // 3D box entity IDs
+const jitterCache = new Map()           // familyId → {lat, lng}  populated during chunked build
+const entityMap  = new Map()            // entityId → house  (building boxes + cluster entities)
+const ptPrimMap  = new Map()            // familyId → PointPrimitive  (fast primitive lookup)
+const buildingIds = new Set()           // 3D box entity IDs
+// Enrichment cache: stores full house detail (including member stats) for houses
+// previously fetched via /house/:id or /houses/batch-members.
+// Used by addHouseModelEntity() and problemFilterStats for population modes.
+const houseEnrichmentCache = new Map()  // familyId(number) → full HouseDetail
+
+// Reactive counter — incremented after each enrichment batch completes so
+// computed properties that depend on member stats (problemFilterStats, issueList,
+// divyangHouseholds, etc.) automatically re-evaluate with the new data.
+const enrichmentTick = ref(0)
 const clusterIds   = new Set()  // High-Need cluster entity IDs (problem filter rings)
 const clusterMap   = new Map()  // clusterEntityId → { count, lat, lng, problems[] }
 const macroClusIds       = new Set()  // Grid cluster markers at district/state zoom level
@@ -968,6 +988,15 @@ let lastRenderedLocationKey = null // track what location is currently visible
 
 function buildLocationFilterKey(districtId, talukaId, villageId) {
   return [String(districtId || ''), String(talukaId || ''), String(villageId || '')].join('|')
+}
+
+// Build API params object from current filter values
+function buildLocationParams() {
+  const params = {}
+  if (filterDistrict.value) params.district_id = filterDistrict.value
+  if (filterTaluka.value) params.taluka_id = filterTaluka.value
+  if (filterVillage.value) params.village_id = filterVillage.value
+  return params
 }
 
 function normalizeMapPoints(raw) {
@@ -1334,6 +1363,17 @@ watch([pendingDistrict, pendingTaluka, pendingVillage], () => {
   schedulePendingLocationPrefetch()
 }, { immediate: true })
 
+// Re-fetch insights when applied filters change
+watch([filterDistrict, filterTaluka, filterVillage], () => {
+  const params = buildLocationParams()
+  getAgricultureInsights(params).then(v => { agricultureInsights.value = v }).catch(err => {
+    console.warn('[insights-watcher] agriculture fetch failed:', err?.message || err)
+  })
+  getPopulationDashboard(params).then(v => { populationDashboard.value = v }).catch(err => {
+    console.warn('[insights-watcher] population dashboard fetch failed:', err?.message || err)
+  })
+})
+
 // Apply: copy pending → applied, reload filtered map points, then focus camera.
 // ══════════════════════════════════════════════════════════════════════════════
 // NEW NON-BLOCKING APPLY FLOW
@@ -1600,6 +1640,10 @@ async function resetFilters() {
   filterTaluka.value = ''
   filterVillage.value = ''
   _forceNextFly = true
+  
+  // Reset camera to initial Maharashtra view
+  flyToMaharashtra()
+  
   await loadInitialDataWithCleanup()
 }
 
@@ -1693,8 +1737,56 @@ function applyColorFilter(mode) {
   applyMappedColorMode(mode)
 }
 
+// Population modes need member stats (totalMembers, illiterateMembers, divyangMembers,
+// workingMembers, occupation) which GetHouses returns as 0. This set drives the
+// enrichment fetch whenever one of these modes is selected.
+const POPULATION_COLOR_MODES = new Set([
+  'population_density', 'education_level', 'divyang_presence', 'occupation',
+])
+
+// Enriches all currently visible houses with member stats from the backend cache.
+// Fires a single batch request, stores results in houseEnrichmentCache, re-renders.
+let _enrichSeq = 0
+async function enrichVisibleHousesForPopulationMode() {
+  const seq = ++_enrichSeq
+  const visibleIds = mapPoints.value.map(p => Number(p.id)).filter(id => Number.isFinite(id))
+  if (visibleIds.length === 0) return
+
+  // Chunk into batches of 500 to stay within URL length limits
+  const CHUNK = 500
+  for (let i = 0; i < visibleIds.length; i += CHUNK) {
+    if (seq !== _enrichSeq) return   // mode changed again — abort stale run
+    const chunk = visibleIds.slice(i, i + CHUNK)
+    try {
+      const stats = await getBatchMemberStats(chunk)
+      if (seq !== _enrichSeq) return
+      stats.forEach(s => {
+        houseEnrichmentCache.set(Number(s.familyId), s)
+      })
+      // Tick after every chunk so problem filter counts update progressively
+      enrichmentTick.value++
+    } catch (e) {
+      console.warn('[enrich] batch-members fetch failed:', e?.message || e)
+    }
+  }
+
+  // Re-render buildings with the now-enriched data
+  if (seq === _enrichSeq && viewer && !viewer.isDestroyed()) {
+    renderClustersForCurrentView()
+  }
+}
+
 const selectColorMode = (mode) => {
+  // User explicitly clicked a color mode: treat this as an explicit "view" selection
+  hasUserSelectedView.value = true
+  // Mirror the semantic view in the left-hand "selectedView" so the trigger shows the label
+  selectedView.value = COLOR_MODE_TO_VIEW[mode] || selectedView.value
   applyMappedColorMode(mode)
+
+  // For population modes, enrich visible houses with real member stats from cache
+  if (POPULATION_COLOR_MODES.has(mode)) {
+    enrichVisibleHousesForPopulationMode()
+  }
 }
 
 const selectedViewLabel = computed(() => {
@@ -1706,8 +1798,38 @@ const selectedViewLabel = computed(() => {
     crop: 'Crop Type',
     irrigation: 'Irrigation',
     land: 'Land Holdings',
+    sanitation: 'Sanitation / Toilet',
+    lighting: 'Electricity',
+    ration: 'Ration Card',
+    bpl_status: 'BPL Status',
+    education_level: 'Education Level',
+    divyang_presence: 'Divyang Presence',
   }
   return map[selectedView.value] || ''
+})
+
+// Ensure 3D entities update when the user switches the semantic "view" (selectedView).
+watch(selectedView, () => {
+  try {
+    if (typeof renderClustersForCurrentView === 'function') renderClustersForCurrentView()
+    if (!viewer || viewer.isDestroyed) return
+    // Full rebuild when in building mode so wall + roof both get new colours.
+    if (buildingIds.size > 0 && typeof buildBuildingEntitiesForViewport === 'function') {
+      buildBuildingEntitiesForViewport()
+      return
+    }
+    // Fallback in-place recolour.
+    if (typeof viewer.entities?.getById === 'function') {
+      buildingIds.forEach((id) => {
+        const ent   = viewer.entities.getById(id)
+        const house = entityMap.get(id)
+        if (!ent || !house || !ent.box) return
+        ent.box.material = cesiumColor(house)
+      })
+    }
+  } catch (e) {
+    console.warn('[selectedView] recolour failed:', e?.message || e)
+  }
 })
 
 const selectView = (value) => {
@@ -1724,7 +1846,13 @@ const selectView = (value) => {
     land: 'land',
   }
 
-  applyColorFilter(mapping[value])
+  const resolvedMode = mapping[value]
+  applyColorFilter(resolvedMode)
+
+  // Enrich if the resolved color mode needs member data
+  if (resolvedMode && POPULATION_COLOR_MODES.has(resolvedMode)) {
+    enrichVisibleHousesForPopulationMode()
+  }
 }
 
 // Human-readable labels for current selections (shown in trigger button)
@@ -1744,6 +1872,44 @@ watch(colorMode, (mode) => {
   if (!hasUserSelectedView.value) return
   selectedView.value = COLOR_MODE_TO_VIEW[mode] || ''
 })
+
+// Re-render / recolor 3D house entities whenever the active colour mode changes
+// or when the underlying map points/houses update. This ensures roof/wall colours
+// match the active legend without requiring a full page refresh.
+watch([colorMode, mapPoints, houses], () => {
+  try {
+    // Rebuild the cluster/dot view so point colours update.
+    if (typeof renderClustersForCurrentView === 'function') {
+      renderClustersForCurrentView()
+    }
+
+    if (!viewer || viewer.isDestroyed) return
+
+    // If we are in building-zoom mode, fully rebuild the building entities so
+    // wall + roof colours are applied fresh from the updated cesiumColor() logic.
+    if (buildingIds.size > 0) {
+      if (typeof buildBuildingEntitiesForViewport === 'function') {
+        buildBuildingEntitiesForViewport()
+      }
+      return
+    }
+
+    // Fallback: in-place recolour (handles edge cases where buildingIds is
+    // populated but buildBuildingEntitiesForViewport isn't yet declared).
+    if (typeof viewer.entities?.getById === 'function') {
+      buildingIds.forEach((id) => {
+        try {
+          const ent   = viewer.entities.getById(id)
+          const house = entityMap.get(id)
+          if (!ent || !house || !ent.box) return
+          ent.box.material = cesiumColor(house)
+        } catch (_) {}
+      })
+    }
+  } catch (e) {
+    console.warn('[recolor] 3D entity recolor failed:', e?.message || e)
+  }
+}, { immediate: false })
 
 // ── Problem Filter state ──────────────────────────────────────────────────────
 // Array of active problem keys; v-model on checkboxes drives buildEntities()
@@ -1957,11 +2123,27 @@ function toggleSchemeDrawer(issueKey) {
 }
 
 // Per-key counts for the sidebar display
+// Member-stat-dependent filter keys — these need enriched data from houseEnrichmentCache
+const MEMBER_FILTER_KEYS = new Set(['divyangMembers', 'illiterateMembers', 'unemployedMembers', 'bplFamilies'])
+
+// Returns the best available house record for a given house — merges enriched
+// member data (from batch-members cache) over the bulk-loaded record.
+function enrichedHouse(h) {
+  const enriched = houseEnrichmentCache.get(Number(h.familyId))
+  return enriched ? { ...h, ...enriched } : h
+}
+
 const problemFilterStats = computed(() => {
-  const list = filteredHouses.value
+  void enrichmentTick.value   // reactive dependency — recomputes after each enrichment batch
+  const list   = filteredHouses.value
   const counts = {}
   for (const pf of PROBLEM_FILTER_META) {
-    counts[pf.key] = list.filter(h => matchesProblemFilter(h, pf.key)).length
+    if (MEMBER_FILTER_KEYS.has(pf.key)) {
+      // Use enriched data so divyang/illiterate/unemployed counts reflect real DB values
+      counts[pf.key] = list.filter(h => matchesProblemFilter(enrichedHouse(h), pf.key)).length
+    } else {
+      counts[pf.key] = list.filter(h => matchesProblemFilter(h, pf.key)).length
+    }
   }
   return counts
 })
@@ -2205,30 +2387,47 @@ const zoomLabel = computed(() => {
 // the visible filtered houses so the numbers match what the map is showing.
 const isLocationFiltered = computed(() => !!(filterDistrict.value || filterTaluka.value || filterVillage.value))
 
+// Prefer server-provided aggregates when available. When the frontend
+// is filtered by location the detailed `houses` payload may be
+// viewport-limited; fall back to the server `populationDashboard`
+// and `agricultureInsights` values if present to avoid showing zeros.
 const totalPopulation = computed(() => {
-  if (!isLocationFiltered.value && populationDashboard.value?.total_population)
-    return populationDashboard.value.total_population
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalPopulation)
-    return agricultureInsights.value.totalPopulation
-  return filteredHouses.value.reduce((s, h) => s + (h.totalMembers || 0), 0)
+  if (populationDashboard.value?.total_population != null) return Number(populationDashboard.value.total_population)
+  if (isLocationFiltered.value && agricultureInsights.value?.totalPopulation != null) return Number(agricultureInsights.value.totalPopulation)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.totalMembers) || 0), 0)
 })
+
 const maleTotal = computed(() => {
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalMale)
-    return agricultureInsights.value.totalMale
-  return filteredHouses.value.reduce((s, h) => s + (h.maleMembers || 0), 0)
+  if (populationDashboard.value?.gender_distribution && populationDashboard.value.gender_distribution.male != null) {
+    return Number(populationDashboard.value.gender_distribution.male)
+  }
+  // Fall back to agriculture insights totals when population dashboard has no gender breakdown
+  if (agricultureInsights.value?.totalMale != null) return Number(agricultureInsights.value.totalMale)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.maleMembers) || 0), 0)
 })
+
 const femaleTotal = computed(() => {
-  if (!isLocationFiltered.value && agricultureInsights.value?.totalFemale)
-    return agricultureInsights.value.totalFemale
-  return filteredHouses.value.reduce((s, h) => s + (h.femaleMembers || 0), 0)
+  if (populationDashboard.value?.gender_distribution && populationDashboard.value.gender_distribution.female != null) {
+    return Number(populationDashboard.value.gender_distribution.female)
+  }
+  // Fall back to agriculture insights totals when population dashboard has no gender breakdown
+  if (agricultureInsights.value?.totalFemale != null) return Number(agricultureInsights.value.totalFemale)
+  return filteredHouses.value.reduce((s, h) => s + (Number(h.femaleMembers) || 0), 0)
 })
 const malePct   = computed(() => totalPopulation.value ? Math.round(maleTotal.value / totalPopulation.value * 100) : 0)
 const femalePct = computed(() => totalPopulation.value ? Math.round(femaleTotal.value / totalPopulation.value * 100) : 0)
-const workingHouseholds = computed(() => filteredHouses.value.filter(h => (h.workingMembers || 0) >= 1).length)
-const divyangHouseholds = computed(() => filteredHouses.value.filter(h => (h.divyangMembers || 0) >= 1).length)
-const literacyRate      = computed(() => {
-  const total = totalPopulation.value
-  const illiterate = filteredHouses.value.reduce((s, h) => s + (h.illiterateMembers || 0), 0)
+const workingHouseholds = computed(() => {
+  void enrichmentTick.value
+  return filteredHouses.value.filter(h => (enrichedHouse(h).workingMembers || 0) >= 1).length
+})
+const divyangHouseholds = computed(() => {
+  void enrichmentTick.value
+  return filteredHouses.value.filter(h => (enrichedHouse(h).divyangMembers || 0) >= 1).length
+})
+const literacyRate = computed(() => {
+  void enrichmentTick.value
+  const total      = totalPopulation.value
+  const illiterate = filteredHouses.value.reduce((s, h) => s + (enrichedHouse(h).illiterateMembers || 0), 0)
   if (!total) return 100
   return Math.round(((total - illiterate) / total) * 100)
 })
@@ -2238,22 +2437,29 @@ function isBPL(house) {
   return v.includes('bpl') || v.includes('antyodaya') || v === 'yes'
 }
 
-// ── Issue analysis ────────────────────────────────────────────────────────────
+// ── Village summary stats (reference project pattern) ────────────────────────
+// Uses the same helper functions as getConditionColor / legend so numbers match
+// exactly what the map is showing.
 const stats = computed(() => {
+  void enrichmentTick.value   // recompute when member data is enriched
   if (!filteredHouses.value.length) return null
   const list  = filteredHouses.value
   const total = list.length
   return {
     total,
-    farmers:  list.filter(h => (h.ownLand || '').toLowerCase() === 'yes').length,
-    noToilet: list.filter(h => !h.latrine || h.latrine === 'No Latrine' || h.latrine === 'None').length,
-    noElec:   list.filter(h => !h.lighting || h.lighting === 'Kerosene' || h.lighting === 'None').length,
+    farmers:  list.filter(h => isFarmerHouse(h)).length,
+    noToilet: list.filter(h => !hasSanitationFacility(h)).length,
+    noElec:   list.filter(h => !hasElectricityConnection(h)).length,
     noIrrig:  list.filter(h => isRainFed(h)).length,
-    bpl:      list.filter(h => (h.rationCard || '').toLowerCase().includes('bpl') || (h.rationCard || '').toLowerCase().includes('antyodaya')).length,
+    bpl:      list.filter(h => isBPL(enrichedHouse(h))).length,
   }
 })
 
 const farmersOwnLandCount = computed(() => {
+  // Prefer server-side aggregate when available for filtered views.
+  if (isLocationFiltered.value && agricultureInsights.value?.totalFarmers != null) {
+    return Number(agricultureInsights.value.totalFarmers) || 0
+  }
   if (!isLocationFiltered.value && agricultureInsights.value?.totalFarmers != null) {
     return Number(agricultureInsights.value.totalFarmers) || 0
   }
@@ -2358,19 +2564,20 @@ const ISSUE_META = {
 }
 
 const issueListAll = computed(() => {
+  void enrichmentTick.value   // recompute when member data is enriched
   if (!stats.value) return []
   const { total, noToilet, noElec, noIrrig, bpl } = stats.value
   const list = filteredHouses.value
   const farmers         = list.filter(h => isFarmerHouse(h)).length
-  const noLand           = list.filter(h => matchesProblemFilter(h, 'noLand')).length
-  const noRationCard     = list.filter(h => matchesProblemFilter(h, 'noRationCard')).length
-  const unemployed       = list.filter(h => isUnemployedHouse(h)).length
-  const laborers         = list.filter(h => isLaborHouse(h)).length
-  // Population
-  const bplFamilies      = list.filter(h => matchesProblemFilter(h, 'bplFamilies')).length
-  const illiterateCnt    = list.filter(h => matchesProblemFilter(h, 'illiterateMembers')).length
-  const unemployedMems   = list.filter(h => matchesProblemFilter(h, 'unemployedMembers')).length
-  const divyangCnt       = list.filter(h => matchesProblemFilter(h, 'divyangMembers')).length
+  const noLand          = list.filter(h => matchesProblemFilter(h, 'noLand')).length
+  const noRationCard    = list.filter(h => matchesProblemFilter(h, 'noRationCard')).length
+  const unemployed      = list.filter(h => isUnemployedHouse(h)).length
+  const laborers        = list.filter(h => isLaborHouse(h)).length
+  // Population — use enriched data so real member counts are reflected
+  const bplFamilies     = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'bplFamilies')).length
+  const illiterateCnt   = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'illiterateMembers')).length
+  const unemployedMems  = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'unemployedMembers')).length
+  const divyangCnt      = list.filter(h => matchesProblemFilter(enrichedHouse(h), 'divyangMembers')).length
 
   const pct = (n) => Math.round(n / total * 100)
   return [
@@ -2612,17 +2819,18 @@ const AGRI_OVERVIEW_BY_MODE = {
   infrastructure: ['Infrastructure Status', 'Sanitation Coverage', 'Electricity Coverage'],
 }
 
-// Population pie charts — computed from member aggregates
+// Population pie charts — computed from member aggregates.
+// Uses enrichedHouse() so real DB values from /houses/batch-members are reflected.
 const popPieCharts = computed(() => {
+  void enrichmentTick.value   // reactive dependency — recomputes after each enrichment batch
   const list  = filteredHouses.value
   const total = list.length
   if (!total) return []
   const totalPop   = totalPopulation.value
-  const illiterate = list.reduce((s, h) => s + (h.illiterateMembers || 0), 0)
+  const illiterate = list.reduce((s, h) => s + (enrichedHouse(h).illiterateMembers || 0), 0)
   const literate   = Math.max(totalPop - illiterate, 0)
-  const working    = list.reduce((s, h) => s + (h.workingMembers || 0), 0)
-  const divyang    = list.reduce((s, h) => s + (h.divyangMembers  || 0), 0)
-  const bplCount   = list.filter(h => isBPL(h)).length
+  const divyang    = list.reduce((s, h) => s + (enrichedHouse(h).divyangMembers    || 0), 0)
+  const bplCount   = list.filter(h => isBPL(enrichedHouse(h))).length
   return [
     {
       title: 'Education Status',
@@ -2899,9 +3107,17 @@ function getIssues(house) {
 }
 
 // ── Cesium helpers ─────────────────────────────────────────────────────────────
+// cesiumColor — single source of truth for 3D building roof colour.
+// Returns the condition colour at 80% brightness so roofs look solid without
+// being too saturated against the satellite/street basemap (reference pattern).
 function cesiumColor(house) {
-  const base  = Cesium.Color.fromCssColorString(getConditionColor(house))
-  return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
+  try {
+    const hex  = colorMode.value ? getConditionColor(house) : '#ef4444'
+    const base = Cesium.Color.fromCssColorString(hex)
+    return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
+  } catch (e) {
+    return Cesium.Color.fromCssColorString('#9ca3af')
+  }
 }
 
 function landHeight(house) {
@@ -2975,7 +3191,7 @@ function housesInView(list) {
   return inCount / valid.length >= 0.60
 }
 
-function flyToPoints(list) {
+function flyToPoints(list, options = {}) {
   if (!viewer || !list.length) return
   const valid = list.filter(h => Number.isFinite(h.longitude) && Number.isFinite(h.latitude))
   if (!valid.length) return
@@ -3011,6 +3227,50 @@ function flyToPoints(list) {
       pitch,                   // persisted user tilt (never resets to 0)
       range,
     ),
+    complete: options?.complete,
+  })
+}
+
+// flyToFitAll — fit the camera to show every pin at once on initial load.
+// Strategy: build a BoundingSphere whose centre is the geographic centroid
+// and whose radius is the max distance from that centroid to any pin.
+// Passing range=0 in HeadingPitchRange tells Cesium to auto-compute the
+// eye distance so the sphere fills the viewport — no manual altitude cap.
+function flyToFitAll(points, onComplete) {
+  if (!viewer || !points.length) return
+
+  const valid = points.filter(p =>
+    Number.isFinite(Number(p.lat ?? p.latitude)) &&
+    Number.isFinite(Number(p.lng ?? p.longitude))
+  )
+  if (!valid.length) return
+
+  const lats = valid.map(p => Number(p.lat ?? p.latitude))
+  const lngs = valid.map(p => Number(p.lng ?? p.longitude))
+
+  const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
+  const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+
+  // Build sphere whose radius = farthest pin from centroid + 15 % padding
+  const centerCartesian = Cesium.Cartesian3.fromDegrees(centerLng, centerLat, 0)
+  let maxDist = 0
+  for (const p of valid) {
+    const pt   = Cesium.Cartesian3.fromDegrees(Number(p.lng ?? p.longitude), Number(p.lat ?? p.latitude), 0)
+    const dist = Cesium.Cartesian3.distance(centerCartesian, pt)
+    if (dist > maxDist) maxDist = dist
+  }
+  const radius = Math.max(maxDist * 1.15, 5000)   // at least 5 km so single-point doesn't snap to ground
+  const sphere = new Cesium.BoundingSphere(centerCartesian, radius)
+
+  // range=0 → Cesium auto-computes eye distance to fill the sphere in the viewport
+  viewer.camera.flyToBoundingSphere(sphere, {
+    duration: 2.2,
+    offset: new Cesium.HeadingPitchRange(
+      0,                                  // north-up heading
+      Cesium.Math.toRadians(-55),         // 3-D perspective tilt
+      0,                                  // 0 = auto-fit distance
+    ),
+    complete: onComplete,
   })
 }
 
@@ -3213,33 +3473,42 @@ function generateClusterBillboardImage(count, expansionZoom) {
 }
 
 function addHouseModelEntity(house, lng, lat) {
+  // Merge enriched member data if we fetched it previously (e.g. from a panel click).
+  const enriched = houseEnrichmentCache.get(Number(house.familyId))
+  const h = enriched ? { ...house, ...enriched } : house
+
   const selectedId       = selectedHouse.value?.familyId
   const hasProblemFilter = activeProblemFilters.value.length > 0
-  const isSelected       = house.familyId === selectedId
-  const isProblem        = hasProblemFilter && matchesAllProblems(house)
+  const isSelected       = h.familyId === selectedId
+  const isProblem        = hasProblemFilter && matchesAllProblems(h)
   const isBackground     = hasProblemFilter && !isProblem && !isSelected
 
-  const conditionColor = cesiumColor(house)
+  // Roof: always the colorMode condition color (selected = gold override only).
+  // Background (non-flagged) houses are dimmed to 35% alpha so flagged ones pop.
+  const conditionColor = cesiumColor(h)
   const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
   const roofColor      = isSelected
     ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
     : conditionColor.withAlpha(roofAlpha)
 
+  // Wall: sandstone base (reference project pattern) — keeps walls neutral so the
+  // roof colour (condition) is the primary visual signal. Flagged houses get a
+  // pale-red tint; background houses are dimmed.
   const wallColor = isSelected
     ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-      : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
+      : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
   const wallOutline = isSelected
     ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
     : isProblem
       ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-      : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
+      : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
 
   const footprint = 10
   const baseH     = 7
-  const roofH     = Math.max(2.5, Math.min(landHeight(house) * 0.22, 5))
+  const roofH     = Math.max(2.5, Math.min(landHeight(h) * 0.22, 5))
 
   const baseEnt = viewer.entities.add({
     position: Cesium.Cartesian3.fromDegrees(lng, lat, baseH / 2),
@@ -3263,7 +3532,7 @@ function addHouseModelEntity(house, lng, lat) {
       outlineColor: isSelected
         ? Cesium.Color.WHITE
         : isProblem
-          ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
+          ? roofColor.brighten(0.3, new Cesium.Color()).withAlpha(0.95)
           : roofColor.darken(0.25, new Cesium.Color()),
       outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
     },
@@ -3271,25 +3540,32 @@ function addHouseModelEntity(house, lng, lat) {
 
   buildingIds.add(baseEnt.id)
   buildingIds.add(roofEnt.id)
-  entityMap.set(baseEnt.id, house)
-  entityMap.set(roofEnt.id, house)
+  // Store the enriched house so the detail panel shows full member data on click.
+  entityMap.set(baseEnt.id, h)
+  entityMap.set(roofEnt.id, h)
   return [baseEnt.id, roofEnt.id]
 }
 
 function resolveHouseForRendering(pointId, lng, lat) {
   const id = Number(pointId)
+
+  // Priority 1: enrichment cache (full detail from /house/:id — has member stats).
+  const enriched = houseEnrichmentCache.get(id)
+
+  // Priority 2: viewport-loaded house data (has agriculture fields, member stats = 0).
   const detailed = detailedHouseById.value.get(id)
-  if (detailed) {
-    const latNum = Number(detailed.latitude)
-    const lngNum = Number(detailed.longitude)
-    return {
-      ...detailed,
-      latitude: Number.isFinite(latNum) ? latNum : Number(lat),
-      longitude: Number.isFinite(lngNum) ? lngNum : Number(lng),
-      familyId: Number.isFinite(Number(detailed.familyId)) ? Number(detailed.familyId) : id,
-    }
+
+  const base = detailed || toMapPointHouse({ id, lng, lat })
+  const merged = enriched ? { ...base, ...enriched } : base
+
+  const latNum = Number(merged.latitude)
+  const lngNum = Number(merged.longitude)
+  return {
+    ...merged,
+    latitude:  Number.isFinite(latNum) ? latNum  : Number(lat),
+    longitude: Number.isFinite(lngNum) ? lngNum  : Number(lng),
+    familyId:  Number.isFinite(Number(merged.familyId)) ? Number(merged.familyId) : id,
   }
-  return toMapPointHouse({ id, lng, lat })
 }
 
 function mergeHouseDetailWithFallback(detail, fallbackHouse) {
@@ -3541,7 +3817,27 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
   try {
     const detail = await getHouseById(numericId)
     if (detail) {
-      selectedHouse.value = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
+      const merged = mergeHouseDetailWithFallback(detail, cached || fallbackHouse)
+      selectedHouse.value = merged
+
+      // Store enriched data so 3D buildings use real member stats for color modes
+      // (population density, education level, divyang, occupation) without needing
+      // every house to have been clicked first.
+      if (detail.familyId != null) {
+        houseEnrichmentCache.set(Number(detail.familyId), detail)
+        // Repaint only the two box entities for this house if they're already on screen.
+        if (viewer && !viewer.isDestroyed()) {
+          entityMap.forEach((h, entityId) => {
+            if (Number(h.familyId) === numericId) {
+              const ent = viewer.entities.getById(entityId)
+              if (ent?.box) {
+                ent.box.material = cesiumColor(detail)
+              }
+            }
+          })
+          viewer.scene.requestRender()
+        }
+      }
     }
   } catch (error) {
     console.warn('[house-detail] fetch failed:', error?.message || error)
@@ -3963,22 +4259,24 @@ function buildBuildingEntitiesForViewport() {
     const isBackground = hasProblemFilter && !isProblem && !isSelected
 
     const conditionColor = cesiumColor(house)
-    const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.35 : 1.0
+    const roofAlpha      = isSelected ? 1.0 : isBackground ? 0.25 : 0.95
     const roofColor      = isSelected
       ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
       : conditionColor.withAlpha(roofAlpha)
 
-    const wallColor = isSelected
-      ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
-      : isProblem
-        ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
-        : Cesium.Color.fromCssColorString('#f87171').withAlpha(isBackground ? 0.3 : 1.0)
+    // Wall uses the same mode-based colour at reduced brightness so roof stands
+    // out, giving a clear 3D read while staying in sync with the active legend.
+    const wallBase   = isSelected
+      ? Cesium.Color.fromCssColorString('#fef3c7')
+      : conditionColor.darken(0.35, new Cesium.Color())
+    const wallAlpha  = isSelected ? 1.0 : isBackground ? 0.18 : 0.82
+    const wallColor  = wallBase.withAlpha(wallAlpha)
 
     const wallOutline = isSelected
       ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
       : isProblem
-        ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
-        : Cesium.Color.fromCssColorString('#b91c1c').withAlpha(isBackground ? 0.2 : 1.0)
+        ? conditionColor.withAlpha(1.0)
+        : conditionColor.darken(0.5, new Cesium.Color()).withAlpha(isBackground ? 0.15 : 0.9)
 
     const footprint = 10
     const baseH     = 7
@@ -4021,6 +4319,7 @@ function buildBuildingEntitiesForViewport() {
 
 // ── PDF download ──────────────────────────────────────────────────────────────
 const pdfLoading = ref(false)
+const isSummaryPdfLoading = ref(false)
 
 // Draws a donut chart onto an off-screen Canvas and returns a base64 PNG string.
 // This is purely client-side — no external library needed.
@@ -4070,15 +4369,23 @@ async function downloadPDF() {
   if (pdfLoading.value) return
   pdfLoading.value = true
   try {
-    // Resolve human-readable names from the currently applied filter IDs
+    // Resolve human-readable names from the master lists (allDistricts / allTalukas /
+    // allVillages) rather than from houses.value, which may be empty when no location
+    // filter is applied or the viewport hasn't loaded houses yet.
     const districtName = filterDistrict.value
-      ? (houses.value.find(h => String(h.districtId) === String(filterDistrict.value))?.districtName || '')
+      ? (allDistricts.value.find(d => String(d.id) === String(filterDistrict.value))?.name
+         || houses.value.find(h => String(h.districtId) === String(filterDistrict.value))?.districtName
+         || '')
       : ''
     const talukaName = filterTaluka.value
-      ? (houses.value.find(h => String(h.talukaId) === String(filterTaluka.value))?.talukaName || '')
+      ? (allTalukas.value.find(t => String(t.id) === String(filterTaluka.value))?.name
+         || houses.value.find(h => String(h.talukaId) === String(filterTaluka.value))?.talukaName
+         || '')
       : ''
     const villageName = filterVillage.value
-      ? (houses.value.find(h => String(h.villageId) === String(filterVillage.value))?.villageName || '')
+      ? (allVillages.value.find(v => String(v.id) === String(filterVillage.value))?.name
+         || houses.value.find(h => String(h.villageId) === String(filterVillage.value))?.villageName
+         || '')
       : ''
 
     // Render all sidebar donut charts to PNG and ship them to the backend
@@ -4091,12 +4398,15 @@ async function downloadPDF() {
       .filter(c => c.image)
 
     // Build problem filter summary to embed in PDF
+    const totalForFilters = filteredHouses.value.length
+      || agricultureInsights.value?.totalHouseholds
+      || 0
     const problemFilters = PROBLEM_FILTER_META.map(pf => ({
-      key:        pf.key,
-      label:      pf.label,
-      count:      problemFilterStats.value[pf.key] ?? 0,
-      total:      filteredHouses.value.length,
-      active:     activeProblemFilters.value.includes(pf.key),
+      key:    pf.key,
+      label:  pf.label,
+      count:  problemFilterStats.value[pf.key] ?? 0,
+      total:  totalForFilters,
+      active: activeProblemFilters.value.includes(pf.key),
     }))
     const problemMatchTotal = problemMatchCount.value
 
@@ -4112,22 +4422,23 @@ async function downloadPDF() {
       problemMatchTotal,
     }
 
-    const res = await fetch('/api/pdf/report', {
-      method:  'POST',
+    const res = await fetch('/pdf/report', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       console.error('[PDF] Generation failed:', err)
+      alert('PDF generation failed. Please try again.')
       return
     }
 
     const blob = await res.blob()
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
     const stem = ['AgriTwin',
       districtName.replace(/\s+/g, '_') || '',
       talukaName.replace(/\s+/g, '_')   || '',
@@ -4138,11 +4449,56 @@ async function downloadPDF() {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(blobUrl)
   } catch (err) {
     console.error('[PDF] Download error:', err)
   } finally {
     pdfLoading.value = false
+  }
+}
+
+async function downloadSummaryPdf() {
+  if (isSummaryPdfLoading.value) return
+  isSummaryPdfLoading.value = true
+  try {
+    const params = new URLSearchParams()
+    if (filterDistrict.value) params.set('district_id', filterDistrict.value)
+    if (filterTaluka.value)   params.set('taluka_id',   filterTaluka.value)
+    if (filterVillage.value)  params.set('village_id',  filterVillage.value)
+
+    const url = `/api/twin/export-pdf${params.toString() ? '?' + params.toString() : ''}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      console.error('[SummaryPDF] export failed:', response.status, await response.text())
+      alert('PDF generation failed. Please try again.')
+      return
+    }
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    const parts = ['Village_Summary']
+    const distLabel = allDistricts.value.find(d => String(d.id) === String(filterDistrict.value))?.name
+    const talLabel  = allTalukas.value.find(t  => String(t.id) === String(filterTaluka.value))?.name
+    const vilLabel  = allVillages.value.find(v  => String(v.id) === String(filterVillage.value))?.name
+    if (distLabel) parts.push(distLabel.replace(/\s+/g, '_'))
+    if (talLabel)  parts.push(talLabel.replace(/\s+/g, '_'))
+    if (vilLabel)  parts.push(vilLabel.replace(/\s+/g, '_'))
+    parts.push(new Date().toISOString().slice(0, 10))
+
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = parts.join('_') + '.pdf'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  } catch (err) {
+    console.error('[SummaryPDF] unexpected error:', err)
+    alert('An unexpected error occurred while generating the PDF.')
+  } finally {
+    isSummaryPdfLoading.value = false
   }
 }
 
@@ -4264,10 +4620,12 @@ async function loadInitialData(silent = false) {
   let attempt = 0
   while (attempt <= 5) {
     try {
+      // Fetch all map points — each point is only {id, lat, lng} so the
+      // payload is small even for 40 k+ households. No limit = all records.
       const res = await getHousesMapPoints({
         district_id: filterDistrict.value || undefined,
-        taluka_id: filterTaluka.value || undefined,
-        village_id: filterVillage.value || undefined,
+        taluka_id:   filterTaluka.value   || undefined,
+        village_id:  filterVillage.value  || undefined,
       })
 
       const normalizedPoints = normalizeMapPoints(res)
@@ -4285,6 +4643,17 @@ async function loadInitialData(silent = false) {
 
       buildSuperclusterIndexFromHouses()
       renderClustersForCurrentView()
+
+      // Auto-fit: fly camera so every loaded pin is visible at once.
+      // flyToFitAll uses a bounding Rectangle (no altitude cap) so the camera
+      // lands at the correct zoom level whether data spans one village or all Maharashtra.
+      if (normalizedPoints.length > 0) {
+        centeringMap.value = true
+        flyToFitAll(normalizedPoints, () => { centeringMap.value = false })
+        // Safety: clear indicator after 5 s even if Cesium never fires complete
+        setTimeout(() => { centeringMap.value = false }, 5000)
+      }
+
       return
 
     } catch (err) {
@@ -4700,8 +5069,10 @@ onMounted(async () => {
   }
 
   // Load insights in parallel (small, fast); initial house data fetched separately
-  getAgricultureInsights().then(v => { agricultureInsights.value = v }).catch(() => {})
-  getPopulationDashboard().then(v => { populationDashboard.value  = v }).catch(() => {})
+  // Pass current filter values to backend so aggregates respect location filters
+  const insightParams = buildLocationParams()
+  getAgricultureInsights(insightParams).then(v => { agricultureInsights.value = v }).catch(() => {})
+  getPopulationDashboard(insightParams).then(v => { populationDashboard.value  = v }).catch(() => {})
  await locationOptionsPromise.catch((err) => {
   console.warn('[initial] location options prime failed:', err?.message || err)
 })
@@ -5060,12 +5431,19 @@ onUnmounted(() => {
 .ctrl-btn.primary        { background: #16a34a; border-color: #15803d; color: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(22,163,74,0.3); }
 .ctrl-btn.primary:hover  { background: #15803d; border-color: #14532d; }
 
-/* ── Download PDF widget ── */
-.dl-wrap {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+/* ── Download PDF button ── */
+.pdf-btn-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   flex-shrink: 0;
 }
 .dl-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
   background: #2563eb; color: #ffffff;
   border: 1.5px solid #1d4ed8;
   border-radius: var(--radius-sm);
@@ -5078,10 +5456,96 @@ onUnmounted(() => {
 }
 .dl-btn:hover:not(:disabled) { background: #1d4ed8; border-color: #1e40af; }
 .dl-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.vs-pdf-wrap {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+.vs-pdf-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  background: #16a34a;
+  color: #ffffff;
+  border: 1.5px solid #15803d;
+  border-radius: var(--radius-sm);
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 0.38rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+  box-shadow: 0 1px 3px rgba(22,163,74,0.22);
+  line-height: 1;
+}
+.vs-pdf-btn:hover:not(:disabled) { background: #15803d; border-color: #166534; }
+.vs-pdf-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .dl-count {
   font-size: 0.6rem; color: #6b7280;
   font-variant-numeric: tabular-nums;
   text-align: right; line-height: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   VILLAGE SUMMARY CARD (reference project design)
+═══════════════════════════════════════════════ */
+.vs-card { padding-bottom: 10px; }
+
+/* top 3-stat row */
+.vs-top-row {
+  display: flex; gap: 0; margin-bottom: 10px;
+  border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;
+}
+.vs-stat {
+  flex: 1; text-align: center;
+  padding: 8px 4px;
+  border-right: 1px solid #e5e7eb;
+}
+.vs-stat:last-child { border-right: none; }
+.vs-stat-val {
+  font-size: 1.05rem; font-weight: 700; color: #111827;
+  line-height: 1.1;
+}
+.vs-stat-lbl {
+  font-size: 0.62rem; color: #6b7280; margin-top: 2px; font-weight: 500;
+}
+
+/* gender bar */
+.vs-gender-bar {
+  display: flex; height: 6px; border-radius: 3px;
+  overflow: hidden; background: #e5e7eb; margin-bottom: 4px;
+}
+.vs-gender-fill { height: 100%; transition: width 0.4s; }
+.vs-gender-male   { background: #3b82f6; }
+.vs-gender-female { background: #ec4899; }
+.vs-gender-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.62rem; color: #6b7280; margin-bottom: 10px;
+}
+.vs-gender-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; margin-right: 3px; vertical-align: middle;
+}
+
+/* problem stats rows */
+.vs-problems {
+  border-top: 1px solid #f3f4f6; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.vs-prob-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.72rem;
+}
+.vs-prob-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.vs-prob-lbl { flex: 1; color: #374151; }
+.vs-prob-val { font-weight: 600; color: #111827; min-width: 32px; text-align: right; }
+.vs-prob-pct {
+  color: #9ca3af; min-width: 30px; text-align: right; font-size: 0.65rem;
 }
 
 /* ═══════════════════════════════════════════════
@@ -5641,7 +6105,7 @@ onUnmounted(() => {
   font-size: 0.72rem; font-weight: 600; text-align: center;
 }
 .dp-chip-kharif { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-.dp-chip-rabi   { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.dp-chip-rabi   { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
 .dp-empty-note {
   margin: 0.45rem 1rem 0;
   padding: 0.5rem 0.6rem;

@@ -77,8 +77,33 @@ export function getHousesSummary(bbox, grid) {
   return fetchJSON(`/houses/summary?${qs}`, TIMEOUT_DATA, 1)
 }
 
+// Client-side cache for individual household details.
+// Keyed by numeric family ID. Survives for the lifetime of the page session.
+const _houseDetailCache = new Map()
+
+// Fetch member stats for multiple family IDs in one request.
+// Served entirely from the backend in-memory cache — O(1) per house.
+export function getBatchMemberStats(ids) {
+  if (!ids || ids.length === 0) return Promise.resolve([])
+  const idsParam = ids.join(',')
+  return fetchJSON(`/houses/batch-members?ids=${idsParam}`)
+}
+
 export function getHouseById(id) {
-  return fetchJSON(`/house/${id}`)
+  const key = Number(id)
+  if (_houseDetailCache.has(key)) {
+    return Promise.resolve(_houseDetailCache.get(key))
+  }
+  return fetchJSON(`/house/${id}`).then((data) => {
+    if (data && data.familyId != null) {
+      _houseDetailCache.set(key, data)
+    }
+    return data
+  })
+}
+
+export function clearHouseDetailCache() {
+  _houseDetailCache.clear()
 }
 
 export function getGovernanceInsights() {
@@ -99,8 +124,9 @@ export function getWelfareInsights() {
   return fetchJSON('/insights/welfare')
 }
 
-export function getPopulationDashboard() {
-  return fetchJSON('/population/dashboard', TIMEOUT_DATA)
+export function getPopulationDashboard(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/population/dashboard?${qs}` : '/population/dashboard', TIMEOUT_DATA)
 }
 
 export function getFarmers() {

@@ -9,8 +9,10 @@ import (
 )
 
 type LocationOption struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DistrictID string `json:"district_id,omitempty"`
+	TalukaID   string `json:"taluka_id,omitempty"`
 }
 
 type LocationHandler struct {
@@ -59,12 +61,15 @@ func (h *LocationHandler) GetDistricts(c *gin.Context) {
 // GetLocationOptions returns district/taluka/village dropdown options.
 // Optional filters:
 // - district_id or district_ids: single or comma-separated district IDs (narrows taluka/village options)
+// - district_name or district_names: single or comma-separated district names (narrows taluka/village options)
 // - taluka_id or taluka_ids: single or comma-separated taluka IDs (narrows village options)
 // - village_id or village_ids: single or comma-separated village IDs (for filtering)
 func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 	// Get parameters - support both singular and plural forms
 	districtID := c.Query("district_id")
 	districtIDs := c.Query("district_ids")
+	districtName := c.Query("district_name")
+	districtNames := c.Query("district_names")
 	talukaID := c.Query("taluka_id")
 	talukaIDs := c.Query("taluka_ids")
 
@@ -77,6 +82,17 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		}
 	} else if districtID != "" {
 		districtIDList = []string{strings.TrimSpace(districtID)}
+	}
+
+	// Normalize district names (support both single and multiple)
+	var districtNameList []string
+	if districtNames != "" {
+		districtNameList = strings.Split(districtNames, ",")
+		for i, name := range districtNameList {
+			districtNameList[i] = strings.ToLower(strings.TrimSpace(name))
+		}
+	} else if districtName != "" {
+		districtNameList = []string{strings.ToLower(strings.TrimSpace(districtName))}
 	}
 
 	// Normalize taluka IDs (support both single and multiple)
@@ -112,15 +128,24 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 		districts = append(districts, o)
 	}
 
-	// Build taluka query with support for multiple districts
+	// Build taluka query with support for district filtering by ID or name
 	tQuery := `
-		SELECT CAST(tm.pklTalukaId AS CHAR), COALESCE(tm.vsDisplayName, tm.vsTalukaName, '')
+		SELECT CAST(tm.pklTalukaId AS CHAR), COALESCE(tm.vsDisplayName, tm.vsTalukaName, ''), CAST(tm.fklDistrictId AS CHAR)
 		FROM taluka_master tm
+	`
+
+	if len(districtNameList) > 0 {
+		tQuery += `
+		JOIN district_master dm ON dm.pklDistrictId = tm.fklDistrictId
+		`
+	}
+
+	tQuery += `
 		WHERE tm.bEnabled = 1
 	`
 	tArgs := []interface{}{}
 
-	// Apply district filter if provided
+	// Apply district ID filter if provided
 	if len(districtIDList) > 0 {
 		placeholders := make([]string, len(districtIDList))
 		for i, id := range districtIDList {
@@ -128,6 +153,16 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 			tArgs = append(tArgs, id)
 		}
 		tQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + strings.Join(placeholders, ",") + ")"
+	}
+
+	// Apply district name filter if provided
+	if len(districtNameList) > 0 {
+		placeholders := make([]string, len(districtNameList))
+		for i, name := range districtNameList {
+			placeholders[i] = "?"
+			tArgs = append(tArgs, name)
+		}
+		tQuery += " AND LOWER(dm.vsDistrictName) IN (" + strings.Join(placeholders, ",") + ")"
 	}
 
 	tQuery += " ORDER BY COALESCE(tm.vsDisplayName, tm.vsTalukaName)"
@@ -140,21 +175,30 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 	defer tRows.Close()
 	for tRows.Next() {
 		var o LocationOption
-		tRows.Scan(&o.ID, &o.Name)
+		tRows.Scan(&o.ID, &o.Name, &o.DistrictID)
 		talukas = append(talukas, o)
 	}
 
 	// Build village query with support for multiple talukas and districts
 	vQuery := `
-		SELECT DISTINCT CAST(vm.pklVillageId AS CHAR), COALESCE(vm.vsDisplayName, vm.vsVillageName, '')
+		SELECT DISTINCT CAST(vm.pklVillageId AS CHAR), COALESCE(vm.vsDisplayName, vm.vsVillageName, ''), CAST(gm.fklTalukaId AS CHAR)
 		FROM village_master vm
 		JOIN grampanchayat_master gm ON gm.pklGramPanchayatId = vm.fklGramPanchayatId
 		JOIN taluka_master tm ON tm.pklTalukaId = gm.fklTalukaId
+	`
+
+	if len(districtNameList) > 0 {
+		vQuery += `
+		JOIN district_master dm ON dm.pklDistrictId = tm.fklDistrictId
+		`
+	}
+
+	vQuery += `
 		WHERE vm.bEnabled = 1
 	`
 	vArgs := []interface{}{}
 
-	// Apply district filter if provided
+	// Apply district ID filter if provided
 	if len(districtIDList) > 0 {
 		placeholders := make([]string, len(districtIDList))
 		for i, id := range districtIDList {
@@ -162,6 +206,16 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 			vArgs = append(vArgs, id)
 		}
 		vQuery += " AND CAST(tm.fklDistrictId AS CHAR) IN (" + strings.Join(placeholders, ",") + ")"
+	}
+
+	// Apply district name filter if provided
+	if len(districtNameList) > 0 {
+		placeholders := make([]string, len(districtNameList))
+		for i, name := range districtNameList {
+			placeholders[i] = "?"
+			vArgs = append(vArgs, name)
+		}
+		vQuery += " AND LOWER(dm.vsDistrictName) IN (" + strings.Join(placeholders, ",") + ")"
 	}
 
 	// Apply taluka filter if provided
@@ -184,7 +238,7 @@ func (h *LocationHandler) GetLocationOptions(c *gin.Context) {
 	defer vRows.Close()
 	for vRows.Next() {
 		var o LocationOption
-		vRows.Scan(&o.ID, &o.Name)
+		vRows.Scan(&o.ID, &o.Name, &o.TalukaID)
 		villages = append(villages, o)
 	}
 

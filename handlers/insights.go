@@ -152,23 +152,44 @@ func (h *InsightHandler) GetAgricultureInsights(c *gin.Context) {
 	result["landUtilizationRows"] = []gin.H{}
 	result["seasonCropRows"] = []gin.H{}
 
-	// ── DB-wide totals (all households, not just GPS-tagged ones) ─────────────
+	// ── Totals respecting the location filters (district/taluka/village)
 	var totalHouseholds int
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY").Scan(&totalHouseholds)
+	if err := h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM FAMILY f WHERE %s", where), args...).Scan(&totalHouseholds); err != nil {
+		// fallback to zero on error
+		totalHouseholds = 0
+	}
 	result["totalHouseholds"] = totalHouseholds
 
 	var totalPopulation int
-	h.DB.QueryRow("SELECT COUNT(*) FROM FAMILY_MEMBER").Scan(&totalPopulation)
+	if err := h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE %s
+	`, where), args...).Scan(&totalPopulation); err != nil {
+		totalPopulation = 0
+	}
 	result["totalPopulation"] = totalPopulation
 
 	var totalMale int
-	h.DB.QueryRow(`SELECT COUNT(*) FROM FAMILY_MEMBER
-		WHERE LOWER(TRIM(COALESCE(GENDER,''))) IN ('male','m')`).Scan(&totalMale)
+	if err := h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m')
+		  AND %s
+	`, where), args...).Scan(&totalMale); err != nil {
+		totalMale = 0
+	}
 	result["totalMale"] = totalMale
 
 	var totalFemale int
-	h.DB.QueryRow(`SELECT COUNT(*) FROM FAMILY_MEMBER
-		WHERE LOWER(TRIM(COALESCE(GENDER,''))) IN ('female','f')`).Scan(&totalFemale)
+	if err := h.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*) FROM FAMILY_MEMBER fm
+		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		WHERE LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('female','f')
+		  AND %s
+	`, where), args...).Scan(&totalFemale); err != nil {
+		totalFemale = 0
+	}
 	result["totalFemale"] = totalFemale
 
 	var totalFarmers int

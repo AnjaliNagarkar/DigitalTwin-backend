@@ -39,6 +39,7 @@ func main() {
 	districtSurveyCountHandler := &handlers.DistrictSurveyCountHandler{DB: conn}
 	districtCentroidsHandler := &handlers.DistrictCentroidsHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
+	pdfTwinHandler := &handlers.TwinPDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
 	unifiedRegistryHandler := handlers.NewUnifiedRegistryHandler(conn)
 	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
@@ -95,11 +96,15 @@ func main() {
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong", "mode": "read-only"})
 	})
+	r.GET("/api/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "pong", "mode": "read-only"})
+	})
 
 	// ── Digital Twin APIs (new) ───────────────────────────────────────────────
 	r.GET("/houses", houseHandler.GetHouses)
 	r.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
 	r.GET("/houses/summary", houseHandler.GetHousesSummary)
+	r.GET("/houses/batch-members", houseHandler.GetBatchMemberStats)
 	r.GET("/house/:id", houseHandler.GetHouseByID)
 	r.GET("/districts", locationHandler.GetDistricts)
 	r.GET("/location-options", locationHandler.GetLocationOptions)
@@ -109,6 +114,9 @@ func main() {
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	r.POST("/pdf/report", pdfHandler.GeneratePDF)
 	r.POST("/pdf/population-report", populationHandler.GeneratePopulationPDF)
+
+	// 3D Twin summary PDF (GET with query params) — streams generated PDF
+	r.GET("/twin/export-pdf", pdfTwinHandler.GenerateTwinPDF)
 
 	// ── Insights Engine (new) ─────────────────────────────────────────────────
 	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
