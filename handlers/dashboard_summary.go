@@ -348,6 +348,40 @@ func nonEmpty(value, fallback string) string {
 	return v
 }
 
+func normalizeLandDistributionLabel(label string) string {
+	hyphenNormalizer := strings.NewReplacer(
+		"‐", "-", // hyphen
+		"‑", "-", // non-breaking hyphen
+		"‒", "-", // figure dash
+		"–", "-", // en dash
+		"—", "-", // em dash
+		"−", "-", // minus sign
+	)
+	normalized := hyphenNormalizer.Replace(strings.TrimSpace(label))
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return normalized
+}
+
+func canonicalLandDistributionLabel(label string) string {
+	normalized := normalizeLandDistributionLabel(label)
+	switch strings.ToLower(normalized) {
+	case "landless":
+		return "Landless"
+	case "small",
+		"marginal (0-1 acre)", "marginal (0-1 acres)",
+		"small (1-2.5 acre)", "small (1-2.5 acres)":
+		return "Small"
+	case "medium",
+		"semi medium (2.5-5 acres)", "semi-medium (2.5-5 acres)", "semi medium (2.5-5 acre)", "semi-medium (2.5-5 acre)",
+		"medium (5-10 acre)", "medium (5-10 acres)":
+		return "Medium"
+	case "large", "large (>10 acre)", "large (>10 acres)":
+		return "Large"
+	default:
+		return normalized
+	}
+}
+
 func withInvalidConnectionRetry(op func() error) error {
 	err := op()
 	if err == nil {
@@ -944,20 +978,21 @@ func (h *DashboardSummaryHandler) fetchAgricultureSection(ctx context.Context, w
 	landDistributionQuery := injectWhere(`
 		SELECT
 			CASE
-				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) = 0 THEN 'Landless'
-				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 1 THEN 'Marginal (0-1 acre)'
-				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 2.5 THEN 'Small (1-2.5 acres)'
-				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 5 THEN 'Semi-Medium (2.5-5 acres)'
-				WHEN CAST(f.AREA_AGRICULTURE_LAND_ACRES AS DECIMAL(10,2)) <= 10 THEN 'Medium (5-10 acres)'
-				ELSE 'Large (>10 acres)'
+				WHEN CAST(TRIM(f.AREA_AGRICULTURE_LAND_ACRES) AS DECIMAL(10,2)) = 0 THEN 'Landless'
+				WHEN CAST(TRIM(f.AREA_AGRICULTURE_LAND_ACRES) AS DECIMAL(10,2)) > 0
+				     AND CAST(TRIM(f.AREA_AGRICULTURE_LAND_ACRES) AS DECIMAL(10,2)) <= 2.5 THEN 'Small'
+				WHEN CAST(TRIM(f.AREA_AGRICULTURE_LAND_ACRES) AS DECIMAL(10,2)) > 2.5
+				     AND CAST(TRIM(f.AREA_AGRICULTURE_LAND_ACRES) AS DECIMAL(10,2)) <= 10 THEN 'Medium'
+				ELSE 'Large'
 			END AS category,
 			COUNT(*) AS cnt
 		FROM FAMILY f
 		WHERE f.OWN_AGRICULTURE_LAND = 'Yes'
+		  AND f.AREA_AGRICULTURE_LAND_ACRES IS NOT NULL
+		  AND TRIM(f.AREA_AGRICULTURE_LAND_ACRES) <> ''
+		  AND TRIM(f.AREA_AGRICULTURE_LAND_ACRES) REGEXP '^[0-9]*\\.?[0-9]+$'
 		  AND __WHERE_CLAUSE__
 		GROUP BY category
-		ORDER BY cnt DESC
-		LIMIT 6
 	`, whereF)
 	cropQuery := injectWhere(`
 		SELECT season, crop, SUM(cnt) AS cnt
@@ -1059,7 +1094,7 @@ func (h *DashboardSummaryHandler) fetchAgricultureSection(ctx context.Context, w
 		}
 		defer landRows.Close()
 
-		tmp := []gin.H{}
+		labelTotals := map[string]int{}
 		for landRows.Next() {
 			var category string
 			var cnt int
@@ -1067,14 +1102,29 @@ func (h *DashboardSummaryHandler) fetchAgricultureSection(ctx context.Context, w
 				recordErr(fmt.Errorf("land distribution scan failed: %w", scanErr))
 				return
 			}
-			tmp = append(tmp, gin.H{"label": category, "count": cnt})
+			canonical := canonicalLandDistributionLabel(category)
+			labelTotals[canonical] += cnt
+		}
+		canonicalOrder := []string{
+			"Landless",
+			"Small",
+			"Medium",
+			"Large",
+		}
+		tmp := make([]gin.H, 0, len(canonicalOrder))
+		for _, label := range canonicalOrder {
+			tmp = append(tmp, gin.H{"label": label, "count": labelTotals[label]})
 		}
 		landDistribution = tmp
 	}()
 
 	go func() {
 		defer wg.Done()
-		cropRows, err := queryRowsWithRetry(ctx, h.DB, cropQuery, args...)
+		// cropQuery injects the same location filter twice (Kharif + Rabi subqueries),
+		// so bind args must be provided twice to match all placeholders.
+		cropArgs := append([]interface{}{}, args...)
+		cropArgs = append(cropArgs, args...)
+		cropRows, err := queryRowsWithRetry(ctx, h.DB, cropQuery, cropArgs...)
 		if err != nil {
 			recordErr(fmt.Errorf("season crop query failed: %w", err))
 			return

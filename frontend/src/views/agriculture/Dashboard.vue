@@ -324,8 +324,8 @@
               <div class="agri-chart-grid">
                 <article class="agri-chart-card">
                   <h3 class="dist-title">Land Holdings Distribution</h3>
-                  <div v-if="agriculture.landDistribution?.length" class="agri-land-bars">
-                    <div class="land-bar-item" v-for="d in agriculture.landDistribution" :key="d.label">
+                  <div v-if="landDistributionRows.length" class="agri-land-bars">
+                    <div class="land-bar-item" v-for="(d, index) in landDistributionRows" :key="`${d.label}-${index}`">
                       <div class="land-bar-label">{{ d.label }}</div>
                       <div class="land-bar-track">
                         <div class="land-bar-fill" :style="{ width: landPct(d.count) + '%' }"></div>
@@ -1392,9 +1392,24 @@ const seasonCropOptions = computed(() => ({
 }))
 
 function landPct(count) {
-  const max = Math.max(...(agriculture.value.landDistribution || []).map(d => d.count), 1)
+  const max = Math.max(...landDistributionRows.value.map(d => d.count), 1)
   return (count / max * 100).toFixed(1)
 }
+
+const landDistributionRows = computed(() => {
+  const rows = Array.isArray(agriculture.value?.landDistribution)
+    ? agriculture.value.landDistribution
+    : []
+  return rows
+    .map((row) => {
+      const label = String(row?.label ?? '')
+        .trim()
+        .replace(/\s+/g, ' ')
+      const count = Number(row?.count || 0)
+      return { label, count }
+    })
+    .filter(row => row.label !== '')
+})
 </script>
 
 <style scoped>
