@@ -98,8 +98,16 @@ type HouseMapPoint struct {
 }
 
 type MemberRecord struct {
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
+	FirstName            string `json:"firstName"`
+	LastName             string `json:"lastName"`
+	Gender               string `json:"gender"`
+	DOB                  string `json:"dob"`
+	Qualification        string `json:"qualification"`
+	Occupation           string `json:"occupation"`
+	Divyang              string `json:"divyang"`
+	DisabilityPercentage string `json:"disabilityPercentage"`
+	Aadhaar              string `json:"aadhaar"`
+	CasteCertificate     string `json:"casteCertificate"`
 }
 
 type HouseHandler struct {
@@ -293,7 +301,7 @@ func (h *HouseHandler) buildCasteCertificateCoverageSQL() string {
 		familyJoinExpr = "''"
 	}
 
-	casteCertificateAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(fm.CASTE_CERTIFICATE)) = 'yes' THEN 1 ELSE 0 END)"
+	casteCertificateAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.CASTE_CERTIFICATE, ''))) = 'yes' THEN 1 ELSE 0 END)"
 
 	return fmt.Sprintf(`
 		SELECT %s AS family_join_id,
@@ -436,25 +444,39 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		return err
 	}
 
-	// Query individual members using dual-join strategy (EXTERNAL_FAMILY_ID preferred, fallback to FAMILY_ID)
-	memberFirstNameExpr := "COALESCE(fm.FIRST_NAME, '')"
-	memberLastNameExpr := "COALESCE(fm.LAST_NAME, '')"
-	if !h.memberColExists("FIRST_NAME") {
-		memberFirstNameExpr = "''"
+	// Query individual members — include all gap-analysis fields
+	mCol := func(col, alias string) string {
+		if h.memberColExists(col) {
+			return fmt.Sprintf("COALESCE(%s, '') AS %s", "fm."+col, alias)
+		}
+		return fmt.Sprintf("'' AS %s", alias)
 	}
-	if !h.memberColExists("LAST_NAME") {
-		memberLastNameExpr = "''"
+	mColCast := func(col, alias string) string {
+		if h.memberColExists(col) {
+			return fmt.Sprintf("COALESCE(CAST(fm.%s AS CHAR), '') AS %s", col, alias)
+		}
+		return fmt.Sprintf("'' AS %s", alias)
 	}
 
 	memberQuery := fmt.Sprintf(`
 		SELECT
 			CAST(fm.EXTERNAL_FAMILY_ID AS CHAR),
-			%s,
-			%s
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM FAMILY_MEMBER fm
 		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
 		ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID
-	`, memberFirstNameExpr, memberLastNameExpr)
+	`,
+		mCol("FIRST_NAME", "first_name"),
+		mCol("LAST_NAME", "last_name"),
+		mCol("GENDER", "gender"),
+		mCol("DOB", "dob"),
+		mCol("QUALIFICATION", "qualification"),
+		mCol("OCCUPATION", "occupation"),
+		mCol("DIVYANG", "divyang"),
+		mColCast("DISABILITY_PERCENTAGE", "disability_percentage"),
+		mCol("AADHAAR", "aadhaar"),
+		mCol("CASTE_CERTIFICATE", "caste_certificate"),
+	)
 
 	memberRows, err := h.DB.Query(memberQuery)
 	if err != nil {
@@ -463,10 +485,8 @@ func (h *HouseHandler) PreloadHouseCache() error {
 	defer memberRows.Close()
 
 	for memberRows.Next() {
-		var familyIDRaw string
-		var firstName string
-		var lastName string
-		if err := memberRows.Scan(&familyIDRaw, &firstName, &lastName); err != nil {
+		var familyIDRaw, firstName, lastName, gender, dob, qualification, occupation, divyang, disabilityPct, aadhaar, casteCert string
+		if err := memberRows.Scan(&familyIDRaw, &firstName, &lastName, &gender, &dob, &qualification, &occupation, &divyang, &disabilityPct, &aadhaar, &casteCert); err != nil {
 			continue
 		}
 
@@ -481,8 +501,16 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		}
 
 		detail.Members = append(detail.Members, MemberRecord{
-			FirstName: strings.TrimSpace(firstName),
-			LastName:  strings.TrimSpace(lastName),
+			FirstName:            strings.TrimSpace(firstName),
+			LastName:             strings.TrimSpace(lastName),
+			Gender:               strings.TrimSpace(gender),
+			DOB:                  strings.TrimSpace(dob),
+			Qualification:        strings.TrimSpace(qualification),
+			Occupation:           strings.TrimSpace(occupation),
+			Divyang:              strings.TrimSpace(divyang),
+			DisabilityPercentage: strings.TrimSpace(disabilityPct),
+			Aadhaar:              strings.TrimSpace(aadhaar),
+			CasteCertificate:     strings.TrimSpace(casteCert),
 		})
 	}
 	if err := memberRows.Err(); err != nil {
@@ -1145,9 +1173,10 @@ func (h *HouseHandler) getHouseByIDFromDB(c *gin.Context, numericID int) {
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
 			COALESCE(f.LAND_UNDER_CULTIVATION_ACRES, ''),
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
-			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.DRINKING_WATER_SOURCE, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(f.TYPE_HOUSE, ''),
 			COALESCE(f.OWNERSHIP_HOUSE, ''),
 			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
@@ -1208,7 +1237,7 @@ COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI
 		&house.Latitude, &house.Longitude,
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
-		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
+		&house.TypeHouse, &house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
 		&house.AadhaarCoverageStatus, &house.MembersWithAadhaar, &house.TotalFamilyMembers,
 		&house.CasteCertificateCoverageStatus, &house.MembersWithCasteCertificate,
 		&house.Latrine, &house.Lighting, &house.RationCard,
@@ -1299,15 +1328,19 @@ func (h *HouseHandler) buildSingleFamilyMemberQuery(familyID int, externalFamily
 	`, workingExpr, illiterateExpr, divyangExpr, unemployedExpr, occExpr, whereClause)
 }
 
-// fetchMemberNames returns the list of individual member name records for a family.
+// fetchMemberNames returns per-member detail records for gap analysis.
 func (h *HouseHandler) fetchMemberNames(familyID int, externalFamilyID string) []MemberRecord {
-	firstNameExpr := "''"
-	lastNameExpr := "''"
-	if h.memberColExists("FIRST_NAME") {
-		firstNameExpr = "COALESCE(fm.FIRST_NAME, '')"
+	col := func(c string) string {
+		if h.memberColExists(c) {
+			return "COALESCE(fm." + c + ", '')"
+		}
+		return "''"
 	}
-	if h.memberColExists("LAST_NAME") {
-		lastNameExpr = "COALESCE(fm.LAST_NAME, '')"
+	colCast := func(c string) string {
+		if h.memberColExists(c) {
+			return "COALESCE(CAST(fm." + c + " AS CHAR), '')"
+		}
+		return "''"
 	}
 
 	var whereClause string
@@ -1319,7 +1352,18 @@ func (h *HouseHandler) fetchMemberNames(familyID int, externalFamilyID string) [
 		return []MemberRecord{}
 	}
 
-	q := fmt.Sprintf(`SELECT %s, %s FROM FAMILY_MEMBER fm %s ORDER BY fm.FAMILY_MEMBER_ID`, firstNameExpr, lastNameExpr, whereClause)
+	q := fmt.Sprintf(`
+		SELECT
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM FAMILY_MEMBER fm %s ORDER BY fm.FAMILY_MEMBER_ID`,
+		col("FIRST_NAME"), col("LAST_NAME"),
+		col("GENDER"), col("DOB"),
+		col("QUALIFICATION"), col("OCCUPATION"),
+		col("DIVYANG"), colCast("DISABILITY_PERCENTAGE"),
+		col("AADHAAR"), col("CASTE_CERTIFICATE"),
+		whereClause,
+	)
+
 	rows, err := h.DB.Query(q)
 	if err != nil {
 		return []MemberRecord{}
@@ -1328,13 +1372,21 @@ func (h *HouseHandler) fetchMemberNames(familyID int, externalFamilyID string) [
 
 	var members []MemberRecord
 	for rows.Next() {
-		var m MemberRecord
-		if err := rows.Scan(&m.FirstName, &m.LastName); err != nil {
+		var firstName, lastName, gender, dob, qualification, occupation, divyang, disabilityPct, aadhaar, casteCert string
+		if err := rows.Scan(&firstName, &lastName, &gender, &dob, &qualification, &occupation, &divyang, &disabilityPct, &aadhaar, &casteCert); err != nil {
 			continue
 		}
 		members = append(members, MemberRecord{
-			FirstName: strings.TrimSpace(m.FirstName),
-			LastName:  strings.TrimSpace(m.LastName),
+			FirstName:            strings.TrimSpace(firstName),
+			LastName:             strings.TrimSpace(lastName),
+			Gender:               strings.TrimSpace(gender),
+			DOB:                  strings.TrimSpace(dob),
+			Qualification:        strings.TrimSpace(qualification),
+			Occupation:           strings.TrimSpace(occupation),
+			Divyang:              strings.TrimSpace(divyang),
+			DisabilityPercentage: strings.TrimSpace(disabilityPct),
+			Aadhaar:              strings.TrimSpace(aadhaar),
+			CasteCertificate:     strings.TrimSpace(casteCert),
 		})
 	}
 	if members == nil {
