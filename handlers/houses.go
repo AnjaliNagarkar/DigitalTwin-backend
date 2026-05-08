@@ -594,8 +594,14 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	sanitationExpr := h.firstNonEmptyExpr("TYPE_OF_LATRINE", "SANITATION_TOILET_FACILITY")
 	lightingExpr := h.yesNoExpr("SOURCE_OF_LIGHTING", "ELECTRICITY_CONNECTION")
 	rationExpr := h.firstNonEmptyExpr("TYPE_OF_RATION_CARD", "RATION_CARD_TYPE")
-	aadhaarCoverageSQL := h.buildAadhaarCoverageSQL()
-	casteCertificateCoverageSQL := h.buildCasteCertificateCoverageSQL()
+	// Join expression for FAMILY_MEMBER.EXTERNAL_FAMILY_ID (mirrors buildAadhaarCoverageSQL guard).
+	memberFamilyJoinExpr := "CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)"
+	if !h.memberColExists("EXTERNAL_FAMILY_ID") {
+		memberFamilyJoinExpr = "''"
+	}
+	aadhaarAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.AADHAAR, ''))) = 'yes' THEN 1 ELSE 0 END)"
+	casteCertAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.CASTE_CERTIFICATE, ''))) = 'yes' THEN 1 ELSE 0 END)"
+	mfj := memberFamilyJoinExpr // alias for brevity in the format call below
 
 	// Build member aggregation expressions with optional-column safety.
 	memberOccExpr := "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
@@ -618,11 +624,18 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		}
 	}
 
-	// Reuse the exact FAMILY filter logic for aggregation pre-filtering.
-	aggFamilyWhere := strings.ReplaceAll(where, "f.", "f2.")
-
-	// Single query: FAMILY + location masters + one filtered FAMILY_MEMBER aggregate join.
+	// CTE-scoped query: page families are materialised once; all three FAMILY_MEMBER
+	// aggregations (fm_agg, aadhaar_agg, caste_agg) join against that CTE so they
+	// aggregate ONLY the members belonging to the returned page — no full-table scans.
+	// The filter + LIMIT/OFFSET also appear exactly once, removing the doubled queryArgs.
 	query := fmt.Sprintf(`
+		WITH page_families AS (
+			SELECT f.*
+			FROM FAMILY f
+			%s
+			ORDER BY f.FAMILY_ID
+			LIMIT %d OFFSET %d
+		)
 		SELECT
 			f.FAMILY_ID,
 			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), ''),
@@ -670,10 +683,10 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(fm_agg.unemployed_members, 0),
 			%s,
 			%s
-		FROM FAMILY f
+		FROM page_families f
 		LEFT JOIN (
 			SELECT
-				CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+				%s AS family_join_id,
 				%s AS primary_occupation,
 				COUNT(*) AS total_members,
 				SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER,''))) IN ('male','m') THEN 1 ELSE 0 END) AS male_members,
@@ -683,43 +696,67 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 				%s AS divyang_members,
 				%s AS unemployed_members
 			FROM FAMILY_MEMBER fm
-			WHERE CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) IN (
-				SELECT CAST(COALESCE(f2.EXTERNAL_FAMILY_ID, '') AS CHAR)
-				FROM FAMILY f2
-				%s
-			)
-			GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)
+			INNER JOIN page_families pf
+				ON %s = CAST(COALESCE(pf.EXTERNAL_FAMILY_ID, '') AS CHAR)
+			GROUP BY %s
 		) fm_agg ON fm_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) caste_agg ON caste_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (
+			SELECT
+				%s AS family_join_id,
+				COUNT(*) AS total_family_members,
+				%s AS members_with_aadhaar,
+				CASE
+					WHEN COUNT(*) = 0 THEN 'unknown'
+					WHEN %s = COUNT(*) THEN 'complete'
+					WHEN %s > 0 THEN 'partial'
+					ELSE 'missing'
+				END AS aadhaar_coverage_status
+			FROM FAMILY_MEMBER fm
+			INNER JOIN page_families pf
+				ON %s = CAST(COALESCE(pf.EXTERNAL_FAMILY_ID, '') AS CHAR)
+			GROUP BY %s
+		) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (
+			SELECT
+				%s AS family_join_id,
+				%s AS members_with_caste_certificate,
+				CASE
+					WHEN COUNT(*) = 0 THEN 'unknown'
+					WHEN %s = COUNT(*) THEN 'complete'
+					WHEN %s > 0 THEN 'partial'
+					ELSE 'missing'
+				END AS caste_certificate_coverage_status
+			FROM FAMILY_MEMBER fm
+			INNER JOIN page_families pf
+				ON %s = CAST(COALESCE(pf.EXTERNAL_FAMILY_ID, '') AS CHAR)
+			GROUP BY %s
+		) caste_agg ON caste_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
-		%s
 		ORDER BY f.FAMILY_ID
-		LIMIT %d OFFSET %d
 	`,
-		latCol,
-		lngCol,
-		sanitationExpr,
-		lightingExpr,
-		rationExpr,
-		bplExpr,
-		incomeExpr,
-		memberOccExpr,
-		memberWorkingExpr,
-		memberIlliterateExpr,
-		memberDivyangExpr,
-		memberUnemployedExpr,
-		aggFamilyWhere,
-		aadhaarCoverageSQL,
-		casteCertificateCoverageSQL,
-		where,
-		limit,
-		offset,
+		// CTE: filter + pagination (args used once here — not doubled)
+		where, limit, offset,
+		// SELECT list column names
+		latCol, lngCol,
+		// optional FAMILY-level expressions
+		sanitationExpr, lightingExpr, rationExpr, bplExpr, incomeExpr,
+		// fm_agg subquery
+		mfj, memberOccExpr,
+		memberWorkingExpr, memberIlliterateExpr, memberDivyangExpr, memberUnemployedExpr,
+		mfj, mfj, // INNER JOIN ON + GROUP BY
+		// aadhaar_agg subquery
+		mfj,
+		aadhaarAvailableExpr, aadhaarAvailableExpr, aadhaarAvailableExpr,
+		mfj, mfj, // INNER JOIN ON + GROUP BY
+		// caste_agg subquery
+		mfj,
+		casteCertAvailableExpr, casteCertAvailableExpr, casteCertAvailableExpr,
+		mfj, mfj, // INNER JOIN ON + GROUP BY
 	)
+	// args used exactly once — the CTE contains the only WHERE clause in the query
 	queryArgs := append([]interface{}{}, args...)
-	queryArgs = append(queryArgs, args...)
 
 	if os.Getenv("HOUSES_DIAGNOSTIC") == "1" {
 		log.Println("LAT COL:", latCol, "LNG COL:", lngCol)

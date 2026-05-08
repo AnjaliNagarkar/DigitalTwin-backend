@@ -1235,23 +1235,36 @@ function collectFamilyMembers(pageResponse, familyRows) {
   return allMembers
 }
 
-function getPopulationStats(family, familyMembers) {
+/**
+ * Build a Map<externalFamilyId → stats> from a member array in a single O(n) pass.
+ * Replaces the previous O(houses × members) pattern where familyMembers.filter(...)
+ * was called once per household inside getPopulationStats.
+ */
+function buildMemberStatsLookup(members = []) {
+  const lookup = new Map()
+  for (const m of members) {
+    const key = normalizeId(m?.EXTERNAL_FAMILY_ID ?? m?.external_family_id)
+    if (!key) continue
+    let entry = lookup.get(key)
+    if (!entry) {
+      entry = { hasData: true, total_members: 0, male_count: 0, female_count: 0, divyang_members: 0, working_members: 0 }
+      lookup.set(key, entry)
+    }
+    entry.total_members += 1
+    if (normalizeText(m?.GENDER || m?.gender) === 'male') entry.male_count += 1
+    if (normalizeText(m?.GENDER || m?.gender) === 'female') entry.female_count += 1
+    if (isYesValue(m?.DIVYANG || m?.divyang)) entry.divyang_members += 1
+    if (String(m?.OCCUPATION || m?.occupation || '').trim() !== '') entry.working_members += 1
+  }
+  return lookup
+}
+
+function getPopulationStats(family, memberStatsLookup) {
   const familyExternalId = normalizeId(family?.EXTERNAL_FAMILY_ID ?? family?.external_family_id ?? family?.externalFamilyId)
 
-  const members = familyMembers.filter(
-    member => normalizeId(member?.EXTERNAL_FAMILY_ID ?? member?.external_family_id) === familyExternalId
-  )
-
-  if (members.length > 0) {
-    return {
-      hasData: true,
-      total_members: members.length,
-      male_count: members.filter(m => normalizeText(m?.GENDER || m?.gender) === 'male').length,
-      female_count: members.filter(m => normalizeText(m?.GENDER || m?.gender) === 'female').length,
-      divyang_members: members.filter(m => isYesValue(m?.DIVYANG || m?.divyang)).length,
-      working_members: members.filter(m => String(m?.OCCUPATION || m?.occupation || '').trim() !== '').length,
-    }
-  }
+  // O(1) lookup — the lookup map was built once by buildMemberStatsLookup before the enrichment loop
+  const fromLookup = (memberStatsLookup instanceof Map) ? memberStatsLookup.get(familyExternalId) : null
+  if (fromLookup) return fromLookup
 
   const fallback = populationStatsByFamily.value.get(familyExternalId)
   if (fallback) {
@@ -1323,7 +1336,7 @@ function inferExternalFamilyId(family) {
   return normalizeId(matchedByHouseVillage?.external_family_id ?? matchedByHouseVillage?.EXTERNAL_FAMILY_ID)
 }
 
-function enrichHouseholdForPopulation(family, familyMembers) {
+function enrichHouseholdForPopulation(family, memberStatsLookup) {
   // Wall time for all households is aggregated as console.time("enrichLoop") in fetchAllHouses()
   const familyId = resolveFamilyId(family)
   const inferredExternalFamilyId = inferExternalFamilyId(family)
@@ -1333,7 +1346,7 @@ function enrichHouseholdForPopulation(family, familyMembers) {
       EXTERNAL_FAMILY_ID: family?.EXTERNAL_FAMILY_ID || family?.externalFamilyId || inferredExternalFamilyId,
       external_family_id: family?.external_family_id || family?.externalFamilyId || inferredExternalFamilyId,
     },
-    familyMembers
+    memberStatsLookup
   )
   const hasMemberRows = stats.hasData
 
@@ -1501,6 +1514,16 @@ let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid ma
 const MARKER_RENDER_CHUNK_SIZE = 100
 let markerRenderToken = 0
 let markerRenderFrame = null
+let lastRenderedHouseSignature = ''
+
+/**
+ * Fingerprint a house array by familyId + coordinates.
+ * Used to skip plotMarkers when Apply returns identical data to what is already rendered.
+ */
+function buildHouseRenderSignature(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return ''
+  return rows.map(h => `${h.familyId ?? h.family_id}|${h.lat ?? h.latitude}|${h.lng ?? h.longitude}`).join(';')
+}
 
 function clearDistrictCentroids() {
   if (map && districtCentroidMarkerLayer) {
@@ -1773,6 +1796,8 @@ async function fetchAllHouses(requestToken = activeHouseLoadToken) {
   const families = extractFamiliesFromResponse(res)
   const houseResponseMembers = collectFamilyMembers(res, families)
   const sourceMembers = houseResponseMembers.length ? houseResponseMembers : familyMembers.value
+  // Build the lookup map once (O(n)) — enrichHouseholdForPopulation will use O(1) .get() per house
+  const memberStatsLookup = buildMemberStatsLookup(sourceMembers)
   if (profile) {
     applyClickProfile.t4 = performance.now()
     console.log('Mapping time:', applyClickProfile.t4 - applyClickProfile.t3, 'ms')
@@ -1783,7 +1808,7 @@ async function fetchAllHouses(requestToken = activeHouseLoadToken) {
     console.log('Before enrichment')
     console.time('enrichLoop')
   }
-  const enriched = families.map(family => enrichHouseholdForPopulation(family, sourceMembers))
+  const enriched = families.map(family => enrichHouseholdForPopulation(family, memberStatsLookup))
   if (profile) console.timeEnd('enrichLoop')
   if (profile) {
     applyClickProfile.t6 = performance.now()
@@ -1873,6 +1898,7 @@ async function resetFilters() {
   fitAfterLoad = false          // reset will fly back to Maharashtra, not fitBounds
   houses.value = []
   selectedHouse.value = null
+  lastRenderedHouseSignature = ''
   clearMarkers()
   loading.value = false
   if (map) {
@@ -3051,7 +3077,11 @@ async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
         applyClickProfile.t7 = performance.now()
         console.log('Before rendering markers')
       }
-      plotMarkers(real, profile ? requestToken : null)
+      const nextSig = buildHouseRenderSignature(real)
+      if (!nextSig || nextSig !== lastRenderedHouseSignature || markerRefs.length !== real.length) {
+        lastRenderedHouseSignature = nextSig
+        plotMarkers(real, profile ? requestToken : null)
+      }
       if (viewMode.value === 'villages') {
         drawClusters(buildVillageClusters(real))
       }
@@ -3148,6 +3178,7 @@ onUnmounted(() => {
   clearAnomalyLayer()
   clearDistrictCentroids()
   clearMarkers()
+  lastRenderedHouseSignature = ''
   window.removeEventListener('resize', handleMapResize)
   window.removeEventListener('click', closeDropdowns)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
