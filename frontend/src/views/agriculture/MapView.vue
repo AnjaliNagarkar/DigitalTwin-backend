@@ -512,7 +512,7 @@
                 </span>
               </div>
 
-              <template v-if="colorMode !== 'irrigation'">
+              <template v-if="colorMode !== 'irrigation' && colorMode !== 'land'">
                 <!-- ── Infrastructure ── -->
                 <div class="dp-section-label">
                   <span class="dp-section-icon">🏠</span> Infrastructure
