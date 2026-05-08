@@ -81,10 +81,12 @@ type PopulationMapMarker struct {
 	FamilyBelongBPLCategory string   `json:"FAMILY_BELONG_BPL_CATEGORY"`
 	RationCardType          string   `json:"RATION_CARD_TYPE"`
 	AnnualIncome            string   `json:"ANNUAL_INCOME"`
-	LocationQuality         string   `json:"location_quality"`
-	LocationReason          string   `json:"location_reason"`
-	DuplicateCount          int      `json:"duplicate_count,omitempty"`
-	DuplicateHouses         []string `json:"duplicate_houses,omitempty"`
+	AadhaarCoverageStatus          string   `json:"aadhaarCoverageStatus"`
+	CasteCertificateCoverageStatus string   `json:"casteCertificateCoverageStatus"`
+	LocationQuality                string   `json:"location_quality"`
+	LocationReason                 string   `json:"location_reason"`
+	DuplicateCount                 int      `json:"duplicate_count,omitempty"`
+	DuplicateHouses                []string `json:"duplicate_houses,omitempty"`
 }
 
 type PopulationMapInsightsResponse struct {
@@ -645,6 +647,36 @@ func (h *PopulationHandler) familyColumnExists(column string) bool {
 	return count > 0
 }
 
+func (h *PopulationHandler) buildPopulationAadhaarCoverageSQL() string {
+	aadhaarExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.AADHAAR, ''))) = 'yes' THEN 1 ELSE 0 END)"
+	return fmt.Sprintf(`
+		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+			CASE
+				WHEN COUNT(*) = 0 THEN 'unknown'
+				WHEN %s = COUNT(*) THEN 'complete'
+				WHEN %s > 0 THEN 'partial'
+				ELSE 'missing'
+			END AS aadhaar_coverage_status
+		FROM FAMILY_MEMBER fm
+		GROUP BY fm.EXTERNAL_FAMILY_ID`,
+		aadhaarExpr, aadhaarExpr)
+}
+
+func (h *PopulationHandler) buildPopulationCasteCertificateCoverageSQL() string {
+	casteExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.CASTE_CERTIFICATE, ''))) = 'yes' THEN 1 ELSE 0 END)"
+	return fmt.Sprintf(`
+		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+			CASE
+				WHEN COUNT(*) = 0 THEN 'unknown'
+				WHEN %s = COUNT(*) THEN 'complete'
+				WHEN %s > 0 THEN 'partial'
+				ELSE 'missing'
+			END AS caste_certificate_coverage_status
+		FROM FAMILY_MEMBER fm
+		GROUP BY fm.EXTERNAL_FAMILY_ID`,
+		casteExpr, casteExpr)
+}
+
 func (h *PopulationHandler) populationMemberColumnExists(column string) bool {
 	var count int
 	if err := h.DB.QueryRow(`
@@ -764,6 +796,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 	}
 	divyangMembersExpr := fmt.Sprintf("SUM(%s)", divyangCase)
 
+	aadhaarCoverageSQL := h.buildPopulationAadhaarCoverageSQL()
+	casteCertificateCoverageSQL := h.buildPopulationCasteCertificateCoverageSQL()
+
 	query := fmt.Sprintf(`
 		SELECT
 			COALESCE(CAST(f.EXTERNAL_FAMILY_ID AS CHAR), '') AS external_family_id,
@@ -792,7 +827,9 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			COALESCE(fm_agg.working_members, 0) AS working_members,
 			(COALESCE(fm_agg.total_members, 0) - COALESCE(fm_agg.working_members, 0)) AS non_working_members,
 			COALESCE(REPLACE(fm_agg.occupation_list, '|', ', '), '') AS working_occupations,
-			COALESCE(fm_agg.occupation_list, '') AS occupation_list
+			COALESCE(fm_agg.occupation_list, '') AS occupation_list,
+			COALESCE(aadhaar_agg.aadhaar_coverage_status, 'unknown') AS aadhaar_coverage_status,
+			COALESCE(caste_agg.caste_certificate_coverage_status, 'unknown') AS caste_certificate_coverage_status
 		FROM FAMILY f
 		LEFT JOIN (
 			SELECT
@@ -858,9 +895,11 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			FROM FAMILY_MEMBER fm
 			GROUP BY fm.EXTERNAL_FAMILY_ID
 		) fm_agg ON fm_agg.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) caste_agg ON caste_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		%s
 		ORDER BY f.HOUSE_NO, f.EXTERNAL_FAMILY_ID
-	`, villageNameExpr, literateMembersExpr, illiterateMembersExpr, villageWorkingMembersExpr, unemployedMembersExpr, divyangMembersExpr, where)
+	`, villageNameExpr, literateMembersExpr, illiterateMembersExpr, villageWorkingMembersExpr, unemployedMembersExpr, divyangMembersExpr, aadhaarCoverageSQL, casteCertificateCoverageSQL, where)
 
 	rows, err := h.DB.Query(query, args...)
 	if err != nil {
@@ -896,6 +935,8 @@ func (h *PopulationHandler) GetPopulationMapData(c *gin.Context) {
 			&marker.NonWorkingMembers,
 			&marker.WorkingOccupations,
 			&marker.OccupationListRaw,
+			&marker.AadhaarCoverageStatus,
+			&marker.CasteCertificateCoverageStatus,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan population map marker", "detail": err.Error()})
 			return

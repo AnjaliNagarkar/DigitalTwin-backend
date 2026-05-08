@@ -83,6 +83,9 @@
               <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }" @click="selectColorMode('bpl_status')">BPL Status</div>
               <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }" @click="selectColorMode('divyang_presence')">Divyang Presence</div>
               <div class="cs-option" :class="{ selected: colorMode === 'employment_status' }" @click="selectColorMode('employment_status')">Employment Status</div>
+              <div class="cs-option-group-label">— Document Gap Analysis —</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'aadhaar_coverage' }" @click="selectColorMode('aadhaar_coverage')">Aadhaar Coverage</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'caste_certificate_coverage' }" @click="selectColorMode('caste_certificate_coverage')">Caste Certificate Coverage</div>
             </div>
           </div>
         </div>
@@ -220,16 +223,38 @@
 
         <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 Zoom to House</button>
 
-        <div class="detail-section">Population</div>
-        <div class="kv-grid">
-          <div class="kv"><span class="kv-k">Members</span><span class="kv-v">{{ Number(selectedHouse.total_members || 0) }}</span></div>
-          <div class="kv"><span class="kv-k">Male</span><span class="kv-v">{{ Number(selectedHouse.male_members || 0) }}</span></div>
-          <div class="kv"><span class="kv-k">Female</span><span class="kv-v">{{ Number(selectedHouse.female_members || 0) }}</span></div>
-          <div class="kv" v-if="colorMode === 'employment_status'"><span class="kv-k">Working Members</span><span class="kv-v">{{ Number(selectedHouse.working_members || 0) }}</span></div>
-          <div class="kv" v-if="colorMode === 'employment_status'"><span class="kv-k">Non-working</span><span class="kv-v">{{ Math.max(Number(selectedHouse.total_members || 0) - Number(selectedHouse.working_members || 0), 0) }}</span></div>
-          <div class="kv" v-if="colorMode === 'employment_status'"><span class="kv-k">Occupations</span><span class="kv-v">{{ selectedHouse.working_occupations || selectedHouse.occupation_list || 'N/A' }}</span></div>
-          <div class="kv" v-if="colorMode === 'divyang_presence'"><span class="kv-k">Disability</span><span class="kv-v">{{ Number(selectedHouse.has_disability || 0) === 1 ? 'Yes' : 'No' }}</span></div>
-          <div class="kv" v-if="colorMode === 'bpl_status'"><span class="kv-k">BPL Status</span><span class="kv-v">{{ getBplStatusLabel(selectedHouse) }}</span></div>
+        <!-- Context-Aware Field Filter Dropdown -->
+        <div class="filter-section">
+          <label class="filter-label">View Fields</label>
+          <div class="custom-select" :class="{ open: openDropdown === 'drawerFilter' }" @click.stop="openDropdown = openDropdown === 'drawerFilter' ? null : 'drawerFilter'">
+            <button class="cs-trigger" type="button">
+              <span class="cs-value">{{ DRAWER_FILTER_OPTIONS.find(f => f.value === activeDrawerFilter)?.label || 'All Fields' }}</span>
+              <span class="cs-arrow">▾</span>
+            </button>
+            <div class="cs-dropdown" v-show="openDropdown === 'drawerFilter'" @click.stop>
+              <div v-for="filter in DRAWER_FILTER_OPTIONS" :key="filter.value"
+                   class="cs-option" :class="{ selected: activeDrawerFilter === filter.value }"
+                   @click="activeDrawerFilter = filter.value; openDropdown = null">
+                {{ filter.label }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Field Sections Based on Active Filter -->
+        <template v-for="section in displayedSections" :key="section.title">
+          <div class="detail-section">{{ section.title }}</div>
+          <div class="kv-grid">
+            <div v-for="field in section.fields" :key="field.key" class="kv">
+              <span class="kv-k">{{ field.label }}</span>
+              <span class="kv-v">{{ field.value }}</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- Empty State -->
+        <div v-if="!displayedSections.length || displayedSections.every(s => s.fields.length === 0)" class="detail-empty">
+          No data available for the selected filter.
         </div>
       </div>
     </transition>
@@ -287,6 +312,7 @@ const houses = ref([])
 const insights = ref(null)
 const loadingLiveData = ref(true)
 const selectedHouse = ref(null)
+const previouslySelectedHouseNo = ref(null)
 const hoveredHouse = ref(null)
 const mouseX = ref(0)
 const mouseY = ref(0)
@@ -300,6 +326,7 @@ const colorMode = selectedColorBy
 const openDropdown = ref(null)
 const activeProblemFilters = ref([])
 const selectedCluster = ref(null)
+const activeDrawerFilter = ref('')
 
 const districtOptions = ref([])
 const talukaOptions = ref([])
@@ -339,6 +366,117 @@ const COLOR_MODE_LABELS = {
   education_status: 'Education Status',
   employment_status: 'Employment Status',
   divyang_presence: 'Divyang Presence',
+  aadhaar_coverage: 'Aadhaar Coverage',
+  caste_certificate_coverage: 'Caste Certificate Coverage',
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════════
+ * CONTEXT-AWARE DRAWER SYSTEM
+ * ════════════════════════════════════════════════════════════════════════════════
+ * Provides modular field filtering for detail panel based on active filter.
+ * Maps each filter (BPL, Student, Divyang) to relevant household data fields.
+ * ════════════════════════════════════════════════════════════════════════════════
+ */
+
+const DRAWER_FILTER_OPTIONS = [
+  { label: 'All Fields', value: '' },
+  { label: 'BPL & Welfare', value: 'bpl' },
+  { label: 'Education & Students', value: 'student' },
+  { label: 'Disability & Support', value: 'divyang' },
+]
+
+const FIELD_LABELS = {
+  total_members: 'Total Members',
+  male_members: 'Male',
+  female_members: 'Female',
+  working_members: 'Working Members',
+  unemployed_members: 'Unemployed Members',
+  literate_members: 'Literate Members',
+  illiterate_members: 'Illiterate Members',
+  divyang_members: 'Divyang Members',
+  has_disability: 'Disability Status',
+  working_occupations: 'Occupations',
+  FAMILY_BELONG_BPL_CATEGORY: 'BPL Category',
+  RATION_CARD_TYPE: 'Ration Card Type',
+  ANNUAL_INCOME: 'Annual Income',
+  aadhaarCoverageStatus: 'Aadhaar Coverage',
+  casteCertificateCoverageStatus: 'Caste Certificate Coverage',
+}
+
+const FIELD_MAPPINGS = {
+  '': {
+    sections: [
+      {
+        title: 'Population',
+        fields: ['total_members', 'male_members', 'female_members'],
+      },
+      {
+        title: 'Employment & Occupation',
+        fields: ['working_members', 'unemployed_members', 'working_occupations'],
+      },
+      {
+        title: 'Education & Literacy',
+        fields: ['literate_members', 'illiterate_members'],
+      },
+      {
+        title: 'Welfare & Income',
+        fields: ['FAMILY_BELONG_BPL_CATEGORY', 'RATION_CARD_TYPE', 'ANNUAL_INCOME'],
+      },
+      {
+        title: 'Documents & Coverage',
+        fields: ['aadhaarCoverageStatus', 'casteCertificateCoverageStatus'],
+      },
+      {
+        title: 'Disability & Health',
+        fields: ['divyang_members', 'has_disability'],
+      },
+    ],
+  },
+  bpl: {
+    sections: [
+      {
+        title: 'BPL Status & Welfare',
+        fields: ['FAMILY_BELONG_BPL_CATEGORY', 'RATION_CARD_TYPE'],
+      },
+      {
+        title: 'Economic Indicators',
+        fields: ['ANNUAL_INCOME', 'working_members', 'unemployed_members'],
+      },
+      {
+        title: 'Family Composition',
+        fields: ['total_members', 'male_members', 'female_members'],
+      },
+    ],
+  },
+  student: {
+    sections: [
+      {
+        title: 'Education Status',
+        fields: ['literate_members', 'illiterate_members', 'total_members'],
+      },
+      {
+        title: 'Employment Context',
+        fields: ['working_members', 'unemployed_members', 'working_occupations'],
+      },
+    ],
+  },
+  divyang: {
+    sections: [
+      {
+        title: 'Disability Information',
+        fields: ['divyang_members', 'has_disability'],
+      },
+      {
+        title: 'Family Context',
+        fields: ['total_members', 'male_members', 'female_members'],
+      },
+      {
+        title: 'Economic Support Eligibility',
+        fields: ['FAMILY_BELONG_BPL_CATEGORY', 'ANNUAL_INCOME'],
+      },
+    ],
+  },
 }
 
 const legendTitle = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Legend')
@@ -376,6 +514,22 @@ const currentLegend = computed(() => {
       { color: '#f59e0b', label: 'No earning member' },
     ]
   }
+  if (colorMode.value === 'aadhaar_coverage') {
+    return [
+      { color: '#2563eb', label: 'Complete — all members covered' },
+      { color: '#f59e0b', label: 'Partial — some members missing' },
+      { color: '#dc2626', label: 'Missing — no Aadhaar recorded' },
+      { color: '#9ca3af', label: 'Unknown' },
+    ]
+  }
+  if (colorMode.value === 'caste_certificate_coverage') {
+    return [
+      { color: '#2563eb', label: 'Complete — all members covered' },
+      { color: '#f59e0b', label: 'Partial — some members missing' },
+      { color: '#dc2626', label: 'Missing — no certificate recorded' },
+      { color: '#9ca3af', label: 'Unknown' },
+    ]
+  }
   return [
     { color: '#7b1fa2', label: 'Disability present' },
     { color: '#16a34a', label: 'No disability' },
@@ -387,6 +541,8 @@ const PROBLEM_FILTER_META = [
   { key: 'illiterateMembers', label: 'Illiterate Members', color: '#f59e0b' },
   { key: 'unemployedMembers', label: 'Unemployed Members', color: '#ef4444' },
   { key: 'divyangMembers', label: 'Divyang Members', color: '#7b1fa2' },
+  { key: 'missingAadhaar', label: 'Missing Aadhaar', color: '#dc2626' },
+  { key: 'missingCasteCertificate', label: 'Missing Caste Certificate', color: '#b91c1c' },
 ]
 
 function matchesProblemFilter(house, key) {
@@ -402,6 +558,12 @@ function matchesProblemFilter(house, key) {
   if (key === 'divyangMembers') {
     return Number(house.divyang_members || 0) > 0 || Number(house.has_disability || 0) === 1
   }
+  if (key === 'missingAadhaar') {
+    return getAadhaarCoverageStatus(house) === 'missing' || getAadhaarCoverageStatus(house) === 'partial'
+  }
+  if (key === 'missingCasteCertificate') {
+    return getCasteCertificateCoverageStatus(house) === 'missing' || getCasteCertificateCoverageStatus(house) === 'partial'
+  }
   return false
 }
 
@@ -414,6 +576,8 @@ const problemFilterStats = computed(() => ({
   illiterateMembers: houses.value.filter((h) => matchesProblemFilter(h, 'illiterateMembers')).length,
   unemployedMembers: houses.value.filter((h) => matchesProblemFilter(h, 'unemployedMembers')).length,
   divyangMembers: houses.value.filter((h) => matchesProblemFilter(h, 'divyangMembers')).length,
+  missingAadhaar: houses.value.filter((h) => matchesProblemFilter(h, 'missingAadhaar')).length,
+  missingCasteCertificate: houses.value.filter((h) => matchesProblemFilter(h, 'missingCasteCertificate')).length,
 }))
 
 const problemMatchCount = computed(() => {
@@ -453,6 +617,22 @@ const CLUSTER_PROBLEM_META = [
     action: 'Verify disability certification and pension enrollment status',
     solution: 'Ensure disability certificate and enrollment in disability pension schemes.',
     scheme: 'Disability Pension Support',
+  },
+  {
+    key: 'missingAadhaar',
+    label: 'Missing Aadhaar',
+    emoji: '🪪',
+    action: 'Organise Aadhaar enrollment camp for households with incomplete coverage',
+    solution: 'Facilitate Aadhaar enrollment for members without an Aadhaar card.',
+    scheme: 'Aadhaar Enrollment Drive',
+  },
+  {
+    key: 'missingCasteCertificate',
+    label: 'Missing Caste Certificate',
+    emoji: '📄',
+    action: 'Assist households in obtaining caste certificates through local administration',
+    solution: 'Guide eligible households to apply for caste certificates at the district office.',
+    scheme: 'Caste Certificate Issuance Support',
   },
 ]
 
@@ -600,6 +780,151 @@ function getBplStatusLabel(house) {
   return 'Non-BPL'
 }
 
+/**
+ * Formats field values for display in the detail drawer.
+ * Handles boolean values, null/undefined, and special cases.
+ */
+function formatFieldValue(field, value) {
+  // Handle null/undefined
+  if (value === null || value === undefined || value === '') return '—'
+
+  // Handle disability status (boolean as number)
+  if (field === 'has_disability') {
+    return Number(value) === 1 ? 'Yes' : 'No'
+  }
+
+  // Handle calculated field: non-working members
+  if (field === 'non_working_members' && selectedHouse.value) {
+    const total = Number(selectedHouse.value.total_members || 0)
+    const working = Number(selectedHouse.value.working_members || 0)
+    return Math.max(0, total - working)
+  }
+
+  // Default: return as-is
+  return String(value)
+}
+
+/**
+ * Returns the sections and fields to display based on active drawer filter.
+ * Provides a clean API for the template to render filtered field groups.
+ */
+const displayedSections = computed(() => {
+  if (!selectedHouse.value) return []
+
+  const house = selectedHouse.value
+  const filter = activeDrawerFilter.value
+  const mapping = FIELD_MAPPINGS[filter] || FIELD_MAPPINGS['']
+
+  return mapping.sections.map((section) => ({
+    title: section.title,
+    fields: section.fields.map((fieldKey) => ({
+      key: fieldKey,
+      label: FIELD_LABELS[fieldKey] || fieldKey,
+      value: formatFieldValue(fieldKey, house[fieldKey]),
+    })),
+  }))
+})
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════════
+ * COLOR PERSISTENCE & DATA READINESS FIX
+ * ════════════════════════════════════════════════════════════════════════════════
+ * Problem: Houses were displaying gap indicators (yellow) initially, then changing
+ * color after data loaded or on user interaction, because:
+ *   1. Colors were calculated before document coverage fields were populated
+ *   2. No validation of data completeness before rendering
+ *   3. Color changes on every click/watcher due to cache misses
+ *
+ * Solution:
+ *   • isHouseDataReady() - Validates required fields exist before color calculation
+ *   • getCachedConditionColor() - Prevents thrashing via stable color cache
+ *   • clearColorCache() - Invalidates cache only on mode changes, not on clicks
+ *   • Fallback gray color for incomplete document data
+ * ════════════════════════════════════════════════════════════════════════════════
+ */
+
+function getAadhaarCoverageStatus(house) {
+  return String(house?.aadhaarCoverageStatus || '').toLowerCase().trim()
+}
+
+function getCasteCertificateCoverageStatus(house) {
+  return String(house?.casteCertificateCoverageStatus || '').toLowerCase().trim()
+}
+
+function getDocCoverageColor(status) {
+  if (status === 'complete') return '#2563eb'
+  if (status === 'partial') return '#f59e0b'
+  if (status === 'missing') return '#dc2626'
+  return '#9ca3af'
+}
+
+/**
+ * Validates that house data is fully loaded and has required fields for accurate color calculation.
+ * Prevents color calculation on incomplete data that would yield misleading gap indicators.
+ */
+function isHouseDataReady(house) {
+  if (!house) return false
+
+  // Basic fields required for any color mode
+  if (house.total_members === undefined || house.total_members === null) return false
+
+  // For document gap modes, ensure coverage status fields exist AND have meaningful values
+  if (colorMode.value === 'aadhaar_coverage') {
+    const status = String(house.aadhaarCoverageStatus || '').toLowerCase().trim()
+    // Only consider ready if status is explicitly set to a real value, not empty/default
+    return status === 'complete' || status === 'partial' || status === 'missing'
+  }
+
+  if (colorMode.value === 'caste_certificate_coverage') {
+    const status = String(house.casteCertificateCoverageStatus || '').toLowerCase().trim()
+    return status === 'complete' || status === 'partial' || status === 'missing'
+  }
+
+  // For employment_status, ensure working_members is present (may be 0)
+  if (colorMode.value === 'employment_status') {
+    return house.working_members !== undefined && house.working_members !== null
+  }
+
+  // For education_status, ensure both fields exist
+  if (colorMode.value === 'education_status') {
+    return house.literate_members !== undefined && house.illiterate_members !== undefined
+  }
+
+  // For BPL status, check for bpl indicator field
+  if (colorMode.value === 'bpl_status') {
+    return house.bpl_status !== undefined || house.bpl !== undefined || house.bpl_category !== undefined
+  }
+
+  // For population_density, total_members is enough (already checked above)
+  if (colorMode.value === 'population_density') {
+    return true
+  }
+
+  return true
+}
+
+/**
+ * Cached color calculation to ensure consistency within a single render cycle.
+ * Prevents color thrashing when data updates trigger multiple render calls.
+ */
+const colorCache = new Map()
+function getCachedConditionColor(house) {
+  if (!house) return '#9ca3af'
+
+  const cacheKey = `${house.house_no || house.id}|${colorMode.value}`
+  if (colorCache.has(cacheKey)) {
+    return colorCache.get(cacheKey)
+  }
+
+  const color = getConditionColor(house)
+  colorCache.set(cacheKey, color)
+  return color
+}
+
+function clearColorCache() {
+  colorCache.clear()
+}
+
 function getConditionColor(house) {
   const members = Number(house.total_members || 0)
 
@@ -623,11 +948,21 @@ function getConditionColor(house) {
     return Number(house.working_members || 0) >= 1 ? '#16a34a' : '#f59e0b'
   }
 
+  if (colorMode.value === 'aadhaar_coverage') {
+    return getDocCoverageColor(getAadhaarCoverageStatus(house))
+  }
+
+  if (colorMode.value === 'caste_certificate_coverage') {
+    return getDocCoverageColor(getCasteCertificateCoverageStatus(house))
+  }
+
   return Number(house.has_disability || 0) === 1 ? '#7b1fa2' : '#16a34a'
 }
 
 function cesiumColor(house) {
-  const base = Cesium.Color.fromCssColorString(getConditionColor(house))
+  // Use cached color to prevent recalculation thrashing
+  const colorHex = getCachedConditionColor(house)
+  const base = Cesium.Color.fromCssColorString(colorHex)
   return new Cesium.Color(base.red * 0.8, base.green * 0.8, base.blue * 0.8, 1.0)
 }
 
@@ -1124,8 +1459,166 @@ function addClusterEntities(problemHouses) {
   applyClusterVisualization(viewer.camera.positionCartographic?.height ?? cameraHeight.value)
 }
 
-function buildEntities() {
+/**
+ * Efficiently updates only the visual states (selected/problem highlighting) of affected houses
+ * without recalculating all colors or rebuilding entities.
+ * This prevents the yellow selection color from masking the actual color temporarily.
+ */
+function updateHouseSelectionState() {
   if (!viewer) return
+
+  const newSelectedNo = selectedHouse.value?.house_no
+  const prevSelectedNo = previouslySelectedHouseNo.value
+
+  // Only rebuild if selection actually changed and data is ready
+  if (newSelectedNo === prevSelectedNo) return
+  if (!isDatasetReady()) return
+
+  previouslySelectedHouseNo.value = newSelectedNo
+
+  // Update visual properties of affected house entities
+  const updateHouseVisuals = (houseNo, isSelected) => {
+    const house = houses.value.find(h => String(h.house_no || '') === String(houseNo || ''))
+    if (!house) return
+
+    houseEntities.forEach((entity) => {
+      if (entity.houseData?.house_no === houseNo) {
+        if (entity.box) {
+          // Update materials for building entities
+          if (entity.box.material && isSelected) {
+            entity.box.material = Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
+            entity.box.outlineColor = Cesium.Color.fromCssColorString('#f59e0b')
+            entity.box.outlineWidth = 2
+          } else if (entity.box.material && !isSelected) {
+            // Restore original color based on data
+            entity.box.material = cesiumColor(house).withAlpha(1.0)
+            const roofColor = cesiumColor(house)
+            entity.box.outlineColor = roofColor.darken(0.25, new Cesium.Color())
+            entity.box.outlineWidth = 1.5
+          }
+        }
+
+        if (entity.point) {
+          // Update point entities (far zoom)
+          if (isSelected) {
+            entity.point.pixelSize = 13
+            entity.point.color = Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
+            entity.point.outlineColor = Cesium.Color.WHITE
+            entity.point.outlineWidth = 2
+          } else {
+            entity.point.pixelSize = 8
+            entity.point.color = cesiumColor(house).withAlpha(1.0)
+            entity.point.outlineColor = Cesium.Color.fromCssColorString('#1a1a1a').withAlpha(0.7)
+            entity.point.outlineWidth = 1.5
+          }
+        }
+      }
+    })
+  }
+
+  // Update previous selection (turn off yellow)
+  if (prevSelectedNo) {
+    updateHouseVisuals(prevSelectedNo, false)
+  }
+
+  // Update new selection (turn on yellow)
+  if (newSelectedNo) {
+    updateHouseVisuals(newSelectedNo, true)
+  }
+}
+
+/**
+ * Validates coverage status completeness across entire dataset.
+ * Uses statistical sampling for large datasets (2000+ houses).
+ * Requires meaningful values, not just field existence.
+ */
+function isCoverageCoverageReady() {
+  if (!houses.value.length) return true
+
+  const needsCoverage = colorMode.value === 'aadhaar_coverage' || colorMode.value === 'caste_certificate_coverage'
+  if (!needsCoverage) return true
+
+  // For large datasets, use statistical sampling to avoid checking all 2000+ houses
+  const sampleSize = Math.min(Math.max(Math.ceil(houses.value.length * 0.05), 20), 100) // 5-20% or 20-100 houses
+  const sampleIndices = []
+  for (let i = 0; i < sampleSize; i++) {
+    sampleIndices.push(Math.floor((i * houses.value.length) / sampleSize))
+  }
+
+  if (colorMode.value === 'aadhaar_coverage') {
+    // ALL sampled houses must have MEANINGFUL coverage status (not empty string)
+    return sampleIndices.every(idx => {
+      const h = houses.value[idx]
+      const status = String(h?.aadhaarCoverageStatus || '').toLowerCase().trim()
+      // Explicitly require valid status values - empty string means data not calculated yet
+      return status === 'complete' || status === 'partial' || status === 'missing'
+    })
+  }
+
+  if (colorMode.value === 'caste_certificate_coverage') {
+    return sampleIndices.every(idx => {
+      const h = houses.value[idx]
+      const status = String(h?.casteCertificateCoverageStatus || '').toLowerCase().trim()
+      return status === 'complete' || status === 'partial' || status === 'missing'
+    })
+  }
+
+  return true
+}
+
+/**
+ * Check if dataset has required fields for current color mode.
+ * Prevents rendering incomplete data that would show wrong colors.
+ */
+function isDatasetReady() {
+  if (!houses.value.length) return true // Empty dataset is "ready"
+
+  const sampleHouses = houses.value.slice(0, 10) // Check first 10 for efficiency
+
+  if (colorMode.value === 'employment_status') {
+    // Ensure working_members is present (may be 0)
+    return sampleHouses.every(h => h.working_members !== undefined && h.working_members !== null)
+  }
+
+  if (colorMode.value === 'education_status') {
+    return sampleHouses.every(h => h.literate_members !== undefined && h.illiterate_members !== undefined)
+  }
+
+  // For coverage modes, use the more thorough statistical validation
+  if (colorMode.value === 'aadhaar_coverage' || colorMode.value === 'caste_certificate_coverage') {
+    return isCoverageCoverageReady()
+  }
+
+  if (colorMode.value === 'bpl_status') {
+    return sampleHouses.every(h => h.FAMILY_BELONG_BPL_CATEGORY !== undefined || h.bpl_status !== undefined)
+  }
+
+  // population_density and divyang_presence only need total_members and has_disability
+  return true
+}
+
+function buildEntities() {
+  if (!viewer || !houses.value.length) return
+
+  // Skip rendering if critical data fields are missing
+  // This prevents flashing wrong colors during initial load
+  if (!isDatasetReady()) {
+    console.debug('[buildEntities] Skipped: Dataset not ready for color mode', colorMode.value)
+    return
+  }
+
+  // Clear color cache to ensure fresh calculations
+  clearColorCache()
+
+  // Log render trigger for debugging
+  console.debug('[buildEntities] Render triggered:', {
+    houseCount: houses.value.length,
+    selectedHouseNo: selectedHouse.value?.house_no,
+    colorMode: colorMode.value,
+    hasProblemFilter: activeProblemFilters.value.length > 0,
+    timestamp: new Date().toLocaleTimeString(),
+  })
+
   viewer.entities.removeAll()
   entityMap.clear()
   buildingIds.clear()
@@ -1158,9 +1651,22 @@ function buildEntities() {
       problemHouses.push(house)
     }
 
-    const roofColor = isSelected
-      ? Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
-      : cesiumColor(house).withAlpha(isBackground ? 0.35 : 1.0)
+    // Determine roof color with data validation
+    let roofColor
+    if (isSelected) {
+      roofColor = Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
+    } else {
+      // For incomplete data, use neutral gray instead of potentially misleading colors
+      const needsDataValidation =
+        (colorMode.value === 'aadhaar_coverage' || colorMode.value === 'caste_certificate_coverage' || colorMode.value === 'employment_status')
+        && !isHouseDataReady(house)
+
+      if (needsDataValidation) {
+        roofColor = Cesium.Color.fromCssColorString('#9ca3af').withAlpha(isBackground ? 0.35 : 1.0)
+      } else {
+        roofColor = cesiumColor(house).withAlpha(isBackground ? 0.35 : 1.0)
+      }
+    }
 
     const wallColor = isSelected
       ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
@@ -1238,6 +1744,9 @@ function buildEntities() {
   if (hasProblemFilter && problemHouses.length) {
     addClusterEntities(problemHouses)
   }
+
+  // Track current selection state for efficient future updates
+  previouslySelectedHouseNo.value = selectedHouse.value?.house_no || null
 
   updateZoomVisibility()
 }
@@ -1456,6 +1965,7 @@ async function loadTwinData() {
 }
 
 watch(colorMode, () => {
+  clearColorCache()
   if (viewer) buildEntities()
 })
 
@@ -1463,8 +1973,27 @@ watch(activeProblemFilters, () => {
   if (viewer) buildEntities()
 }, { deep: true })
 
-watch(selectedHouse, () => {
-  if (viewer) buildEntities()
+/**
+ * When house is selected, ONLY update visual selection state (yellow highlight)
+ * without recalculating all colors. This prevents color thrashing and color-flip bugs.
+ */
+watch(selectedHouse, (newHouse) => {
+  if (!viewer) return
+
+  // Log for debugging color-flip issues
+  if (newHouse) {
+    console.debug('[Selection] House selected:', {
+      house_no: newHouse.house_no,
+      total_members: newHouse.total_members,
+      working_members: newHouse.working_members,
+      aadhaarCoverageStatus: newHouse.aadhaarCoverageStatus,
+      colorMode: colorMode.value,
+      dataReady: isDatasetReady(),
+    })
+  }
+
+  // Use efficient state update instead of full rebuild
+  updateHouseSelectionState()
 })
 
 onMounted(async () => {
@@ -1776,6 +2305,18 @@ onUnmounted(() => {
   color: #15803d;
   font-weight: 600;
 }
+.cs-option-group-label {
+  padding: 0.3rem 0.75rem 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+  pointer-events: none;
+  user-select: none;
+}
+.cs-option-group-label:first-child { border-top: none; }
 
 .filter-arrow { color: #9ca3af; font-size: 0.9rem; flex-shrink: 0; font-weight: 600; }
 
@@ -2221,6 +2762,70 @@ onUnmounted(() => {
   color: #374151; font-weight: 800;            /* was text3 = invisible */
   padding: 0.75rem 0.9rem 0.32rem;
   border-top: 1px solid #f3f4f6;
+}
+
+.filter-section {
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1.5px solid #e5e7eb;
+}
+.filter-label {
+  display: block; font-size: 0.66rem; color: #6b7280;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  font-weight: 600; margin-bottom: 0.4rem;
+}
+.filter-section .custom-select {
+  position: relative;
+}
+.filter-section .cs-trigger {
+  width: 100%; padding: 0.4rem 0.6rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  background: #f9fafb;
+  cursor: pointer;
+  font-size: 0.73rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+.filter-section .cs-trigger:hover {
+  border-color: #d1d5db;
+}
+.filter-section .cs-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: var(--radius-sm);
+  margin-top: 0.25rem;
+  z-index: 200;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.filter-section .cs-option {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.73rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s;
+}
+.filter-section .cs-option:last-child {
+  border-bottom: none;
+}
+.filter-section .cs-option:hover {
+  background: #f3f4f6;
+}
+.filter-section .cs-option.selected {
+  background: #dbeafe;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.detail-empty {
+  padding: 1rem 0.9rem;
+  text-align: center;
+  font-size: 0.73rem;
+  color: #9ca3af;
 }
 
 .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.38rem; padding: 0 0.9rem; }
