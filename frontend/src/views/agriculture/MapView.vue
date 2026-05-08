@@ -512,39 +512,41 @@
                 </span>
               </div>
 
-              <!-- ── Infrastructure ── -->
-              <div class="dp-section-label">
-                <span class="dp-section-icon">🏠</span> Infrastructure
-              </div>
+              <template v-if="colorMode !== 'irrigation'">
+                <!-- ── Infrastructure ── -->
+                <div class="dp-section-label">
+                  <span class="dp-section-icon">🏠</span> Infrastructure
+                </div>
 
-              <div class="dp-field-row">
-                <span class="dp-field-icon">🚽</span>
-                <span class="dp-field-key">Latrine / Sanitation</span>
-                <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
-                  {{ selectedHouse.latrine || '—' }}
-                </span>
-              </div>
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">🚽</span>
+                  <span class="dp-field-key">Latrine / Sanitation</span>
+                  <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
+                    {{ selectedHouse.latrine || '—' }}
+                  </span>
+                </div>
 
-              <div class="dp-field-row">
-                <span class="dp-field-icon">⚡</span>
-                <span class="dp-field-key">Lighting / Electricity</span>
-                <span class="dp-field-val"
-                      :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
-                  {{ selectedHouse.lighting || '—' }}
-                </span>
-              </div>
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">⚡</span>
+                  <span class="dp-field-key">Lighting / Electricity</span>
+                  <span class="dp-field-val"
+                        :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
+                    {{ selectedHouse.lighting || '—' }}
+                  </span>
+                </div>
 
-              <div class="dp-field-row">
-                <span class="dp-field-icon">🪪</span>
-                <span class="dp-field-key">Ration Card</span>
-                <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
-              </div>
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">🪪</span>
+                  <span class="dp-field-key">Ration Card</span>
+                  <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
+                </div>
 
-              <div class="dp-field-row">
-                <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val" :style="{ color: getHousingColor(selectedHouse) }">{{ formatHousingLabel(selectedHouse) }}</span>
-              </div>
+                <div class="dp-field-row">
+                  <span class="dp-field-icon">🏠</span>
+                  <span class="dp-field-key">House Type</span>
+                  <span class="dp-field-val" :style="{ color: getHousingColor(selectedHouse) }">{{ formatHousingLabel(selectedHouse) }}</span>
+                </div>
+              </template>
             </template>
 
             <!-- ── Village Mismatch (shown for GPS anomaly markers) ── -->
@@ -960,6 +962,17 @@ function normalizeText(value) {
 
 function hasCropValue(value) {
   return String(value ?? '').trim() !== ''
+}
+
+function isNoIrrigationValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return true
+  return (
+    normalized === 'no' ||
+    normalized === 'none' ||
+    normalized === 'rain fed' ||
+    normalized === 'no source of water irrigation'
+  )
 }
 
 function isYesValue(value) {
@@ -1947,7 +1960,7 @@ const stats = computed(() => {
   if (!houses.value.length) return null
   const total = houses.value.length
   const farmers = houses.value.filter(h => (h.ownLand || '').toLowerCase() === 'yes').length
-  const noIrrigation = houses.value.filter(h => !h.waterSource || h.waterSource === 'Rain Fed' || h.waterSource === 'None').length
+  const noIrrigation = houses.value.filter(h => isNoIrrigationValue(h?.SOURCE_WATER_IRRIGATION ?? h?.waterSource)).length
   const kharif = houses.value.filter(h => hasCropValue(h.kharif)).length
   const rabi = houses.value.filter(h => hasCropValue(h.rabi)).length
 
@@ -2292,9 +2305,8 @@ function getMarkerColor(house) {
     return '#10b981'
   }
   if (colorMode.value === 'irrigation') {
-    const irrigation = String(house.SOURCE_WATER_IRRIGATION || house.waterSource || '').trim()
-    if (irrigation && irrigation !== 'No') return '#16a34a'
-    return '#ef4444'
+    const irrigation = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource
+    return isNoIrrigationValue(irrigation) ? '#ef4444' : '#16a34a'
   }
 
   // sanitation fallback for other legacy modes
@@ -2463,12 +2475,12 @@ function buildVillageClusters(rows) {
     existing.count += 1
     const latrine = (house.latrine || '').toLowerCase()
     const lighting = (house.lighting || '').toLowerCase()
-    const water = (house.waterSource || '').toLowerCase()
+    const irrigationValue = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource
     const ration = (house.rationCard || '').toLowerCase()
 
     if (!latrine || latrine === 'no latrine' || latrine === 'none') existing.noToilet += 1
     if (!lighting || lighting === 'kerosene' || lighting === 'none') existing.noElec += 1
-    if (!water || water === 'rain fed' || water === 'none') existing.noIrrig += 1
+    if (isNoIrrigationValue(irrigationValue)) existing.noIrrig += 1
     if (ration.includes('bpl') || ration.includes('antyodaya')) existing.bpl += 1
 
     buckets.set(key, existing)
