@@ -201,13 +201,18 @@ export const GAP_RULES = [
     severity: 'critical',
     icon: '🆔',
     label: 'Missing Aadhaar',
-    // DB: FAMILY_MEMBER.AADHAAR != 'yes' (null/empty/no)
-    //     Age guard uses FAMILY_MEMBER.DOB — skips children under 5
+    // DB: FAMILY_MEMBER.AADHAAR != 'yes'
+    // Column-existence guard: if the family-level aggregate is 'unknown' AND the member
+    // field is also '' (empty), the AADHAAR column likely doesn't exist in this DB —
+    // skip to avoid flooding every member with false-positive critical gaps.
     detail: (member) => `${memberFullName(member)} does not have an Aadhaar card recorded.`,
     scheme: 'Aadhaar Enrollment (UIDAI)',
-    check: (member) => {
+    check: (member, _idx, family) => {
+      // Skip if column appears absent at the DB level
+      const familyStatus = n(family?.aadhaarCoverageStatus || '')
+      if (familyStatus === 'unknown' && member.aadhaar === '') return false
       const age = ageFromDOB(member.dob)
-      if (age !== null && age < 5) return false   // infants don't need Aadhaar
+      if (age !== null && age < 5) return false   // infants exempted
       return n(member.aadhaar) !== 'yes'
     },
   },
@@ -219,9 +224,14 @@ export const GAP_RULES = [
     icon: '📄',
     label: 'Missing Caste Certificate',
     // DB: FAMILY_MEMBER.CASTE_CERTIFICATE != 'yes'
+    // Column-existence guard: same pattern as member_no_aadhaar.
     detail: (member) => `${memberFullName(member)} does not have a caste certificate recorded.`,
     scheme: 'Revenue Department — Certificate Issuance',
-    check: (member) => n(member.casteCertificate) !== 'yes',
+    check: (member, _idx, family) => {
+      const familyStatus = n(family?.casteCertificateCoverageStatus || '')
+      if (familyStatus === 'unknown' && member.casteCertificate === '') return false
+      return n(member.casteCertificate) !== 'yes'
+    },
   },
 
   {

@@ -311,9 +311,8 @@ export const FILTER_FOCUS_CONFIG = {
     icon: '👥',
     accent: '#059669',
     metrics: (house) => {
-      // Use members[] length for total when available — more accurate
-      const mems   = getMembers(house)
-      const total  = mems ? mems.length : Number(house.totalMembers  ?? 0)
+      // Use the household member fields directly - these are the source of truth
+      const total  = Number(house.totalMembers  ?? 0)
       const male   = Number(house.maleMembers   ?? 0)
       const female = Number(house.femaleMembers ?? 0)
       return [
@@ -337,6 +336,7 @@ export const FILTER_FOCUS_CONFIG = {
     icon: '📚',
     accent: '#0891b2',
     metrics: (house) => {
+      // Use household literacy fields directly - source of truth
       const ill   = Number(house.illiterateMembers ?? 0)
       const total = Number(house.totalMembers ?? 1)
       const rate  = pct(total - ill, total)
@@ -358,15 +358,16 @@ export const FILTER_FOCUS_CONFIG = {
     icon: '♿',
     accent: '#7b1fa2',
     metrics: (house) => {
-      const { count } = divyangStats(house)
-      const total = getMembers(house)?.length ?? Number(house.totalMembers ?? 0)
+      // Use household divyang field directly - source of truth
+      const count = Number(house.divyangMembers ?? 0)
+      const total = Number(house.totalMembers ?? 0)
       return [
         { label: 'Divyang Members', value: count, icon: '♿', status: count > 0 ? 'warn' : 'ok' },
         { label: 'Total Members',   value: total, icon: '👥', status: 'neutral' },
       ]
     },
     status: (house) => {
-      const { count } = divyangStats(house)
+      const count = Number(house.divyangMembers ?? 0)
       if (count === 0) return { level: 'ok', message: 'No divyang members in this household.' }
       return { level: 'warn', message: `${count} divyang member(s) — ensure pension and certificate enrollment.` }
     },

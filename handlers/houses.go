@@ -301,7 +301,7 @@ func (h *HouseHandler) buildCasteCertificateCoverageSQL() string {
 		familyJoinExpr = "''"
 	}
 
-	casteCertificateAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(fm.CASTE_CERTIFICATE)) = 'yes' THEN 1 ELSE 0 END)"
+	casteCertificateAvailableExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.CASTE_CERTIFICATE, ''))) = 'yes' THEN 1 ELSE 0 END)"
 
 	return fmt.Sprintf(`
 		SELECT %s AS family_join_id,
@@ -1136,9 +1136,10 @@ func (h *HouseHandler) getHouseByIDFromDB(c *gin.Context, numericID int) {
 			COALESCE(f.AREA_AGRICULTURE_LAND_ACRES, ''),
 			COALESCE(f.LAND_UNDER_CULTIVATION_ACRES, ''),
 			COALESCE(f.OWN_AGRICULTURE_LAND, ''),
-			COALESCE(f.SOURCE_WATER_IRRIGATION, ''),
+			COALESCE(f.DRINKING_WATER_SOURCE, ''),
 			COALESCE(f.CULTIVATING_DURING_KHARIF_SEASON, ''),
 COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI_SEASON, ''),
+			COALESCE(f.TYPE_HOUSE, ''),
 			COALESCE(f.OWNERSHIP_HOUSE, ''),
 			COALESCE(f.PRADHAN_MANTRI_AWAS, ''),
 			COALESCE(f.SANITATION_TOILET_FACILITY_HOME, ''),
@@ -1199,7 +1200,7 @@ COALESCE(NULLIF(TRIM(f.CULTIVATING_DURING_RABI_SEASON), ''), f.TAKING_CROPS_RABI
 		&house.Latitude, &house.Longitude,
 		&house.TotalLand, &house.CultivatedLand, &house.OwnLand,
 		&house.WaterSource, &house.Kharif, &house.Rabi,
-		&house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
+		&house.TypeHouse, &house.OwnershipHouse, &house.PradhanMantriAwas, &house.SanitationToiletFacilityHome, &house.ASoakpitManagingWastewater, &house.RationCardColor,
 		&house.AadhaarCoverageStatus, &house.MembersWithAadhaar, &house.TotalFamilyMembers,
 		&house.CasteCertificateCoverageStatus, &house.MembersWithCasteCertificate,
 		&house.Latrine, &house.Lighting, &house.RationCard,

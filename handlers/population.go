@@ -648,6 +648,14 @@ func (h *PopulationHandler) familyColumnExists(column string) bool {
 }
 
 func (h *PopulationHandler) buildPopulationAadhaarCoverageSQL() string {
+	// Guard: if EXTERNAL_FAMILY_ID doesn't exist in FAMILY_MEMBER, the GROUP BY will fail.
+	// Return a no-op subquery that yields no rows so the LEFT JOIN returns 'unknown'.
+	if !h.populationMemberColumnExists("EXTERNAL_FAMILY_ID") {
+		return "SELECT '' AS family_join_id, 'unknown' AS aadhaar_coverage_status FROM FAMILY_MEMBER fm WHERE 1=0"
+	}
+	if !h.populationMemberColumnExists("AADHAAR") {
+		return "SELECT '' AS family_join_id, 'unknown' AS aadhaar_coverage_status FROM FAMILY_MEMBER fm WHERE 1=0"
+	}
 	aadhaarExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.AADHAAR, ''))) = 'yes' THEN 1 ELSE 0 END)"
 	return fmt.Sprintf(`
 		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
@@ -658,11 +666,18 @@ func (h *PopulationHandler) buildPopulationAadhaarCoverageSQL() string {
 				ELSE 'missing'
 			END AS aadhaar_coverage_status
 		FROM FAMILY_MEMBER fm
+		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
 		GROUP BY fm.EXTERNAL_FAMILY_ID`,
 		aadhaarExpr, aadhaarExpr)
 }
 
 func (h *PopulationHandler) buildPopulationCasteCertificateCoverageSQL() string {
+	if !h.populationMemberColumnExists("EXTERNAL_FAMILY_ID") {
+		return "SELECT '' AS family_join_id, 'unknown' AS caste_certificate_coverage_status FROM FAMILY_MEMBER fm WHERE 1=0"
+	}
+	if !h.populationMemberColumnExists("CASTE_CERTIFICATE") {
+		return "SELECT '' AS family_join_id, 'unknown' AS caste_certificate_coverage_status FROM FAMILY_MEMBER fm WHERE 1=0"
+	}
 	casteExpr := "SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.CASTE_CERTIFICATE, ''))) = 'yes' THEN 1 ELSE 0 END)"
 	return fmt.Sprintf(`
 		SELECT CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
@@ -673,6 +688,7 @@ func (h *PopulationHandler) buildPopulationCasteCertificateCoverageSQL() string 
 				ELSE 'missing'
 			END AS caste_certificate_coverage_status
 		FROM FAMILY_MEMBER fm
+		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
 		GROUP BY fm.EXTERNAL_FAMILY_ID`,
 		casteExpr, casteExpr)
 }

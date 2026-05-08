@@ -2827,7 +2827,7 @@ const issueListAll = computed(() => {
   return [
     { key: 'noSanitation',      label: 'No Sanitation',      count: noToilet,     pct: pct(noToilet),     color: '#ef4444', mode: 'sanitation',         ...ISSUE_META.sanitation    },
     { key: 'noElectricity',     label: 'No Electricity',     count: noElec,       pct: pct(noElec),       color: '#f59e0b', mode: 'lighting',           ...ISSUE_META.lighting      },
-    { key: 'noRationCard',      label: 'No Ration Card',     count: noRationCard,  pct: pct(noRationCard), color: '#f97316', mode: 'sanitation',         ...ISSUE_META.noRationCard  },
+    { key: 'noRationCard',      label: 'No Ration Card',     count: noRationCard,  pct: pct(noRationCard), color: '#f97316', mode: 'ration',             ...ISSUE_META.noRationCard  },
     { key: 'noIrrigation',      label: 'No Irrigation',      count: noIrrig,       pct: pct(noIrrig),      color: '#a78bfa', mode: 'irrigation',         ...ISSUE_META.irrigation    },
     { key: 'noLand',            label: 'No Own Land',        count: noLand,        pct: pct(noLand),       color: '#ef4444', mode: 'land',               ...ISSUE_META.land          },
     { key: 'farmers',           label: 'Farmers',            count: farmers,       pct: pct(farmers),      color: '#22c55e', mode: 'occupation',         cause: 'Farm-owning or farm-working households drive agricultural output.', solution: 'Link farmers to irrigation, crop diversification, and market support.', scheme: 'PM-KISAN · FPO Support' },
@@ -3275,10 +3275,10 @@ function getConditionColor(house) {
   }
   // Population modes
   if (colorMode.value === 'population_density') {
-    const rawMembers = Number(house?.totalMembers)
-    const hasMemberData = Number.isFinite(rawMembers) && rawMembers > 0
+    // Use household member fields - source of truth
+    const m = Number(house?.totalMembers || 0)
+    const hasMemberData = Number.isFinite(m) && m > 0
     if (!hasMemberData) return '#94a3b8'
-    const m = rawMembers
     if (m <= 2) return '#22c55e'
     if (m <= 5) return '#f59e0b'
     return '#ef4444'
@@ -3287,11 +3287,13 @@ function getConditionColor(house) {
     return isBPL(house) ? '#ef4444' : '#16a34a'
   }
   if (colorMode.value === 'education_level') {
+    // Use household literacy fields - source of truth
     const ill = house.illiterateMembers || 0
     const total = house.totalMembers || 1
     return (ill / total) > 0.4 ? '#f59e0b' : '#16a34a'
   }
   if (colorMode.value === 'divyang_presence') {
+    // Use household divyang field - source of truth
     return (house.divyangMembers || 0) > 0 ? '#7b1fa2' : '#16a34a'
   }
   if (colorMode.value === 'document_gap') {
@@ -3311,13 +3313,12 @@ function getConditionColor(house) {
   }
 
   if (colorMode.value === 'bpl_ration_status') {
-    // DB: FAMILY_BELONG_BPL_CATEGORY vs RATION_CARD_TYPE — fully in bulk data
-    const bpl = String(house.bplCategory || '').toLowerCase().trim() === 'yes'
-    if (!bpl) return '#9ca3af'                                          // non-BPL
-    const rc  = String(house.rationCard || '').toLowerCase().trim()
-    if (rc === '' || rc === '—' || rc === 'no') return '#dc2626'        // BPL, no card
-    if (rc.includes('bpl') || rc.includes('antyodaya')) return '#16a34a' // BPL, matches
-    return '#f59e0b'                                                    // BPL, type mismatch
+    // Use isBPL() — accepts 'yes', 'bpl', 'antyodaya' consistently with the rest of the app
+    if (!isBPL(house)) return '#9ca3af'                                  // non-BPL
+    const rc = String(house.rationCard || '').toLowerCase().trim()
+    if (rc === '' || rc === '—' || rc === 'no') return '#dc2626'         // BPL, no card
+    if (rc.includes('bpl') || rc.includes('antyodaya')) return '#16a34a' // BPL, card matches
+    return '#f59e0b'                                                     // BPL, type mismatch
   }
 
   if (colorMode.value === 'unemployed_gap') {
@@ -3330,12 +3331,17 @@ function getConditionColor(house) {
   }
 
   if (colorMode.value === 'divyang_gap') {
-    // DB: divyangMembers aggregate — in bulk data
-    // Per-member disability% available only after enrichment; use aggregate as proxy
-    const div  = Number(house.divyangMembers || 0)
-    if (div === 0) return '#16a34a'                    // no divyang members
     const enriched = houseEnrichmentCache.get(Number(house.familyId))
-    if (enriched?.members?.length) {
+    // When member-level data is loaded, count divyang from individual records —
+    // this is the same source the drawer uses, avoiding stale bulk-aggregate mismatches.
+    let divCount
+    if (Array.isArray(enriched?.members) && enriched.members.length > 0) {
+      divCount = enriched.members.filter(m => String(m.divyang || '').toLowerCase() === 'yes').length
+    } else {
+      divCount = Number((enriched ?? house).divyangMembers || 0)
+    }
+    if (divCount === 0) return '#16a34a'               // no divyang members
+    if (Array.isArray(enriched?.members) && enriched.members.length > 0) {
       const hasCert = enriched.members.some(m =>
         String(m.divyang || '').toLowerCase() === 'yes' &&
         m.disabilityPercentage && m.disabilityPercentage.trim() !== '' && m.disabilityPercentage !== '0'

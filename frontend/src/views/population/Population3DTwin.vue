@@ -895,9 +895,9 @@ function isHouseDataReady(house) {
     return house.bpl_status !== undefined || house.bpl !== undefined || house.bpl_category !== undefined
   }
 
-  // For population_density, total_members is enough (already checked above)
+  // For population_density, must have at least 1 member to assign a meaningful color
   if (colorMode.value === 'population_density') {
-    return true
+    return Number(house.total_members || 0) > 0
   }
 
   return true
@@ -929,6 +929,8 @@ function getConditionColor(house) {
   const members = Number(house.total_members || 0)
 
   if (colorMode.value === 'population_density') {
+    // Guard: 0 members means data not loaded — show neutral, not green (0 ≤ 2 was firing)
+    if (members === 0) return '#9ca3af'
     if (members <= 2) return '#22c55e'
     if (members <= 5) return '#f59e0b'
     return '#ef4444'
@@ -939,13 +941,17 @@ function getConditionColor(house) {
   }
 
   if (colorMode.value === 'education_status') {
-    const literate = Number(house.literate_members || 0)
-    const illiterate = Number(house.illiterate_members || 0)
+    const literate   = Number(house.literate_members   ?? -1)
+    const illiterate = Number(house.illiterate_members ?? -1)
+    // Guard: both -1 (field absent) or both 0 (column may not exist) → no data
+    if (literate < 0 || (literate === 0 && illiterate === 0)) return '#9ca3af'
     return literate > illiterate ? '#16a34a' : '#f59e0b'
   }
 
   if (colorMode.value === 'employment_status') {
-    return Number(house.working_members || 0) >= 1 ? '#16a34a' : '#f59e0b'
+    // Guard: field absent means no data — distinguish from genuinely 0 working members
+    if (house.working_members === undefined || house.working_members === null) return '#9ca3af'
+    return Number(house.working_members) >= 1 ? '#16a34a' : '#f59e0b'
   }
 
   if (colorMode.value === 'aadhaar_coverage') {
