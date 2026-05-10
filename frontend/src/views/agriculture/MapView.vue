@@ -2947,38 +2947,83 @@ function addHouseMarker(house) {
     }
   })
 
-  // Tooltip: include GPS mismatch warning if anomaly detection is active
+  // Tooltip: content adapts to the active View By mode.
+  // Anomaly warning is always highest priority; generic identity shown when no mode selected.
   marker.bindTooltip(() => {
+    const name = house.headName || 'Household'
+    const id   = house.familyId || house.FAMILY_ID || house.EXTERNAL_FAMILY_ID || '—'
+    const village = house.villageName || ''
+    const taluka  = house.talukaName  || ''
+    const location = [village, taluka].filter(Boolean).join(', ') || '—'
+
+    // 1. GPS anomaly warning — always shown when anomaly mode active and marker is flagged
     const isAnomaly = showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)
     if (isAnomaly) {
       const enriched = anomalies.value.find(a => a.familyId === house.familyId)
       const km = enriched?._distanceKm ?? '?'
       return `
-        <strong>${house.headName || 'Household'}</strong><br/>
+        <strong>${name}</strong><br/>
         <span style="color:#ef4444;font-weight:600;">⚠️ Village Mismatch</span><br/>
         <span style="color:#ef4444;font-weight:700;">${km} km</span> <span style="color:#64748b;">from registered village</span><br/>
         <span style="color:#94a3b8;font-size:0.7em;">Click to see details</span>
       `
     }
 
-    if (populationFilters.includes(colorMode.value)) {
+    const mode = colorMode.value
+
+    // 2. No View By selected — show generic household identity only
+    if (!mode) {
       return `
-        <strong>${house.headName || getHouseHeadName(house) || 'Household'}</strong><br/>
+        <strong>${name}</strong><br/>
+        ID ${id}<br/>
+        ${location}
+      `
+    }
+
+    // 3. Population modes
+    if (populationFilters.includes(mode)) {
+      return `
+        <strong>${name}</strong><br/>
         House No: ${getHouseNumber(house) || 'N/A'}<br/>
         Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
       `
     }
 
-    if (colorMode.value === 'crops') {
+    // 4. Agriculture modes: Crops / Season, Land Holdings, Irrigation
+    if (mode === 'crops' || mode === 'land' || mode === 'irrigation') {
       return `
-        <strong>${house.headName || 'Household'}</strong><br/>
-        ID ${house.familyId || house.FAMILY_ID || house.EXTERNAL_FAMILY_ID || '—'}
+        <strong>${name}</strong><br/>
+        Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
       `
     }
 
+    // 5. Infrastructure modes: Housing Quality, Electricity, Toilet Access, Wastewater
+    if (mode === 'housing_quality' || mode === 'electricity' || mode === 'toilet_access' || mode === 'wastewater_management') {
+      const elec   = house.lighting || house.ELECTRICITY_CONNECTION || '—'
+      const toilet = house.latrine  || house.SANITATION_TOILET_FACILITY_HOME || '—'
+      const water  = house.waterSource || house.DRINKING_WATER_SOURCE || '—'
+      return `
+        <strong>${name}</strong><br/>
+        Electricity: ${elec} · Toilet: ${toilet}<br/>
+        Water: ${water}
+      `
+    }
+
+    // 6. Welfare / Document Gap modes: Aadhaar Coverage, Caste Certificate Coverage
+    if (mode === 'aadhaar_coverage' || mode === 'caste_certificate_coverage') {
+      const aadhaar = house.aadhaarCoverageStatus || house.AadhaarCoverageStatus || '—'
+      const caste   = house.casteCertificateCoverageStatus || house.CasteCertificateCoverageStatus || '—'
+      return `
+        <strong>${name}</strong><br/>
+        Aadhaar: ${aadhaar} · Caste Cert: ${caste}
+      `
+    }
+
+    // 7. Safe generic fallback for any future modes
     return `
-      <strong>${house.headName || 'Household'}</strong><br/>
-      Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
+      <strong>${name}</strong><br/>
+      ID ${id}<br/>
+      ${location}
     `
   }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -6) })
 }
