@@ -3061,6 +3061,44 @@ function addHouseMarker(house) {
       `
     }
 
+    // 3a. BPL Status mode — show BPL category and ration card
+    if (mode === 'bpl_status') {
+      const houseNo = getHouseNumber(house) || '—'
+      const bpl     = house.bplCategory || house.FAMILY_BELONG_BPL_CATEGORY || 'Unknown'
+      const ration  = house.rationCard  || house.RATION_CARD_COLOR || house.RATION_CARD_TYPE || '—'
+      return `
+        <strong>${name}</strong><br/>
+        House No: ${houseNo}<br/>
+        BPL Status: ${bpl}<br/>
+        Ration Card: ${ration}
+      `
+    }
+
+    // 3b. Divyang Presence mode — show divyang status and member count
+    if (mode === 'divyang_presence') {
+      const houseNo      = getHouseNumber(house) || '—'
+      const present      = hasDivyangPresence(house) ? 'Yes' : 'No'
+      const divyangCount = Number(house?.divyang_members || house?.divyangMembers || house?.DIVYANG_MEMBERS || 0)
+      return `
+        <strong>${name}</strong><br/>
+        House No: ${houseNo}<br/>
+        Divyang Present: ${present}${divyangCount > 0 ? `<br/>Divyang Members: ${divyangCount}` : ''}
+      `
+    }
+
+    // 3c. Employment Status mode — show working status and working member count
+    if (mode === 'employment_status' || mode === 'employment') {
+      const houseNo      = getHouseNumber(house) || '—'
+      const isWorking    = hasEmployment(house)
+      const status       = isWorking ? 'Working' : 'Non-working'
+      const workingCount = getWorkingMembers(house)
+      return `
+        <strong>${name}</strong><br/>
+        House No: ${houseNo}<br/>
+        Employment Status: ${status}${workingCount > 0 ? `<br/>Working Members: ${workingCount}` : ''}
+      `
+    }
+
     // 3. Population modes
     if (populationFilters.includes(mode)) {
       return `
@@ -3070,11 +3108,53 @@ function addHouseMarker(house) {
       `
     }
 
-    // 4. Agriculture modes: Crops / Season, Land Holdings, Irrigation
-    if (mode === 'crops' || mode === 'land' || mode === 'irrigation') {
+    // 4a. Crops / Season mode — show season classification only
+    if (mode === 'crops') {
+      const houseNo = getHouseNumber(house) || '—'
+      const k = hasCropValue(house.kharif)
+      const r = hasCropValue(house.rabi)
+      const seasonType = k && r ? 'Both Seasons' : k ? 'Kharif Only' : r ? 'Rabi Only' : 'No Crops'
       return `
         <strong>${name}</strong><br/>
-        Land: ${house.totalLand || '0'} acres · Kharif: ${house.kharif || '—'} · Rabi: ${house.rabi || '—'}
+        House No: ${houseNo}<br/>
+        Season Type: ${seasonType}
+      `
+    }
+
+    // 4b. Irrigation mode — show irrigation status and water source
+    if (mode === 'irrigation') {
+      const houseNo    = getHouseNumber(house) || '—'
+      const rawSource  = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource ?? ''
+      const noIrrig    = isNoIrrigationValue(rawSource)
+      const statusLine = noIrrig ? 'No Irrigation' : 'Available'
+      const sourceLine = (!noIrrig && String(rawSource).trim()) ? `<br/>Water Source: ${rawSource}` : ''
+      return `
+        <strong>${name}</strong><br/>
+        House No: ${houseNo}<br/>
+        Irrigation: ${statusLine}${sourceLine}
+      `
+    }
+
+    // 4. Land Holdings mode — show land holding category and total land
+    if (mode === 'land') {
+      const houseNo = getHouseNumber(house) || '—'
+      const acres   =
+        toFiniteNumber(house?.AREA_AGRICULTURE_LAND_ACRES) ??
+        toFiniteNumber(house?.area_agriculture_land_acres) ??
+        toFiniteNumber(house?.LAND_UNDER_CULTIVATION_ACRES) ??
+        toFiniteNumber(house?.land_under_cultivation_acres) ??
+        toFiniteNumber(house?.totalLand)
+      const hasData  = acres !== null && acres !== undefined && !Number.isNaN(acres) && acres > 0
+      const category = !hasData         ? 'Data not available'
+                     : acres <= 1       ? 'Marginal (<1 ac)'
+                     : acres <= 2.5     ? 'Small (1–2.5 ac)'
+                     : acres <= 5       ? 'Medium (2.5–5 ac)'
+                     :                    'Large (>5 ac)'
+      const landLine = hasData ? `<br/>Total Land: ${acres} acres` : ''
+      return `
+        <strong>${name}</strong><br/>
+        House No: ${houseNo}<br/>
+        Land Holding: ${category}${landLine}
       `
     }
 
