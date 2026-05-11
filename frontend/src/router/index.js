@@ -3,19 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    component: () => import('../layouts/MainLayout.vue'),
-    children: [
-      {
-        path: '',
-        name: 'MainDashboard',
-        component: () => import('../views/agriculture/Dashboard.vue'),
-      },
-      {
-        path: 'infrastructure/dashboard',
-        name: 'InfrastructureDashboard',
-        component: () => import('../views/agriculture/Dashboard.vue'),
-      },
-    ],
+    redirect: '/agriculture/dashboard',
   },
   {
     path: '/agriculture',
@@ -91,7 +79,7 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/',
+    redirect: '/agriculture/dashboard',
   },
 ]
 
