@@ -836,7 +836,12 @@ const groupedColorOptions = computed(() => {
 })
 
 function toggleDropdown(name) {
-  openDropdown.value = openDropdown.value === name ? null : name
+  const isOpening = openDropdown.value !== name
+  // Close household detail panel when View By dropdown is being opened
+  if (name === 'colorMode' && isOpening) {
+    selectedHouse.value = null
+  }
+  openDropdown.value = isOpening ? name : null
 }
 
 function closeDropdowns() {
