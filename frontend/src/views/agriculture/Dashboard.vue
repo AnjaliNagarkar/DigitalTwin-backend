@@ -852,7 +852,10 @@ watch(
     selectedVillages.value = []
     talukaSearchText.value = ''
     villageSearchText.value = ''
-    openDropdown.value = null
+    // Only close taluka/village dropdowns — district dropdown stays open for multi-select
+    if (openDropdown.value === 'taluka' || openDropdown.value === 'village') {
+      openDropdown.value = null
+    }
 
     if (newDistricts.length === 0) {
       talukaOptions.value = []
@@ -871,7 +874,10 @@ watch(
   async (newTalukas) => {
     selectedVillages.value = []
     villageSearchText.value = ''
-    openDropdown.value = null
+    // Only close village dropdown — taluka dropdown stays open for multi-select
+    if (openDropdown.value === 'village') {
+      openDropdown.value = null
+    }
 
     if (newTalukas.length === 0) {
       villageOptions.value = []
