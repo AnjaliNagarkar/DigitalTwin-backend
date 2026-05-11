@@ -262,8 +262,8 @@
             </div>
 
             <div class="compact-note">
-              <div><strong>Literacy Rate:</strong> {{ literacyRateLabel }}</div>
-              <div>{{ Number(education.literate_population || 0).toLocaleString() }} literate out of {{ Number(populationStats.total_population || 0).toLocaleString() }} population</div>
+              <div class="literacy-rate-line"><strong>Literacy Rate:</strong> {{ literacyRateLabel }}</div>
+              <div class="literacy-sub-line">{{ Number(education.literate_population || 0).toLocaleString() }} literate out of {{ Number(populationStats.total_population || 0).toLocaleString() }} population</div>
             </div>
           </article>
 
@@ -326,7 +326,7 @@
                   <h3 class="dist-title">Land Holdings Distribution</h3>
                   <div v-if="landDistributionRows.length" class="agri-land-bars">
                     <div class="land-bar-item" v-for="(d, index) in landDistributionRows" :key="`${d.label}-${index}`">
-                      <div class="land-bar-label">{{ d.label }}</div>
+                      <div class="land-bar-label">{{ d.displayLabel }}</div>
                       <div class="land-bar-track">
                         <div class="land-bar-fill" :style="{ width: landPct(d.count) + '%' }"></div>
                       </div>
@@ -563,23 +563,22 @@ function syncAgeIncomeGenderChart() {
           label(context) {
             const raw = context.raw || {}
             const families = Number(raw.families || 0)
-            const avgIncome = Math.round(Number(raw.avg_income || 0))
-            return [
-              `Families: ${families.toLocaleString()}`,
-              `Average Family Income: ₹${avgIncome.toLocaleString()}`,
-            ]
+            return [`Families: ${families.toLocaleString()}`]
           },
         },
       },
       datalabels: {
-        display: false,
+        display: true,
         anchor: 'end',
         align: 'end',
-        offset: 6,
+        offset: 4,
         clamp: true,
         clip: false,
         color: '#374151',
-        formatter: value => Number(value || 0).toLocaleString(),
+        formatter: value => {
+          const income = Math.round(Number(value?.avg_income || 0))
+          return `₹${income.toLocaleString()}`
+        },
         font: {
           weight: '600',
           size: 11,
@@ -1397,6 +1396,12 @@ function landPct(count) {
 }
 
 const landDistributionRows = computed(() => {
+  const LAND_LABEL_DISPLAY = {
+    Landless: 'Landless (0 acres)',
+    Small:    'Small (0–2.5 acres)',
+    Medium:   'Medium (2.5–10 acres)',
+    Large:    'Large (>10 acres)',
+  }
   const rows = Array.isArray(agriculture.value?.landDistribution)
     ? agriculture.value.landDistribution
     : []
@@ -1406,7 +1411,8 @@ const landDistributionRows = computed(() => {
         .trim()
         .replace(/\s+/g, ' ')
       const count = Number(row?.count || 0)
-      return { label, count }
+      const displayLabel = LAND_LABEL_DISPLAY[label] || label
+      return { label, displayLabel, count }
     })
     .filter(row => row.label !== '')
 })
@@ -1700,12 +1706,24 @@ const landDistributionRows = computed(() => {
 }
 
 .compact-note {
-  margin-top: 0.85rem;
-  padding-top: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border);
   color: var(--text-dim);
-  font-size: 0.76rem;
-  line-height: 1.4;
+  line-height: 1.6;
+}
+
+.literacy-rate-line {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main, #111827);
+  margin-bottom: 0.35rem;
+}
+
+.literacy-sub-line {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-dim);
 }
 
 .empty-state {
