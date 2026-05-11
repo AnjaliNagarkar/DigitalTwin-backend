@@ -464,10 +464,49 @@
               </div>
             </template>
 
-            <template v-else>
-              <!-- ── Land & Crops ── -->
+            <template v-else-if="colorMode === 'irrigation'">
+              <!-- ── Irrigation Details ── -->
               <div class="dp-section-label">
-                <span class="dp-section-icon">🌾</span> Agriculture
+                <span class="dp-section-icon">💧</span> Irrigation Details
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">💧</span>
+                <span class="dp-field-key">Water Source</span>
+                <span class="dp-field-val"
+                      :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#16a34a' }">
+                  {{ selectedHouse.waterSource || selectedHouse.SOURCE_WATER_IRRIGATION || '—' }}
+                </span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🌾</span>
+                <span class="dp-field-key">Own Agriculture Land</span>
+                <span class="dp-field-val">{{ selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND || '—' }}</span>
+              </div>
+
+              <div class="dp-stat-row">
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Total Land</div>
+                </div>
+                <div class="dp-stat">
+                  <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
+                  <div class="dp-stat-key">Cultivated</div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="colorMode === 'land'">
+              <!-- ── Land Holdings ── -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">🌾</span> Land Holdings
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🌾</span>
+                <span class="dp-field-key">Own Agriculture Land</span>
+                <span class="dp-field-val">{{ selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND || '—' }}</span>
               </div>
 
               <div class="dp-stat-row">
@@ -491,49 +530,68 @@
                   <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
                 </div>
               </div>
+            </template>
 
-              <div class="dp-field-row">
-                <span class="dp-field-icon">💧</span>
-                <span class="dp-field-key">Irrigation Source</span>
-                <span class="dp-field-val"
-                      :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
-                  {{ selectedHouse.waterSource || '—' }}
-                </span>
+            <template v-else>
+              <!-- ── Default household summary (no View By selected) ── -->
+
+              <!-- Location -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">📍</span> Location
               </div>
 
-              <template v-if="colorMode !== 'irrigation' && colorMode !== 'land'">
-                <!-- ── Infrastructure ── -->
-                <div class="dp-section-label">
-                  <span class="dp-section-icon">🏠</span> Infrastructure
-                </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏘️</span>
+                <span class="dp-field-key">House No.</span>
+                <span class="dp-field-val">{{ getHouseNumber(selectedHouse) || '—' }}</span>
+              </div>
 
-                <div class="dp-field-row">
-                  <span class="dp-field-icon">🚽</span>
-                  <span class="dp-field-key">Latrine / Sanitation</span>
-                  <span class="dp-field-val" :style="{ color: getConditionColor(selectedHouse) }">
-                    {{ selectedHouse.latrine || '—' }}
-                  </span>
-                </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏙️</span>
+                <span class="dp-field-key">Village</span>
+                <span class="dp-field-val">{{ selectedHouse.villageName || '—' }}</span>
+              </div>
 
-                <div class="dp-field-row">
-                  <span class="dp-field-icon">⚡</span>
-                  <span class="dp-field-key">Lighting / Electricity</span>
-                  <span class="dp-field-val"
-                        :style="{ color: (selectedHouse.lighting || '').toLowerCase() === 'electricity' ? '#15803d' : '#b45309' }">
-                    {{ selectedHouse.lighting || '—' }}
-                  </span>
-                </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🗺️</span>
+                <span class="dp-field-key">Taluka</span>
+                <span class="dp-field-val">{{ selectedHouse.talukaName || '—' }}</span>
+              </div>
 
-                <div class="dp-field-row">
-                  <span class="dp-field-icon">🪪</span>
-                  <span class="dp-field-key">Ration Card</span>
-                  <span class="dp-field-val">{{ selectedHouse.rationCard || '—' }}</span>
-                </div>
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏛️</span>
+                <span class="dp-field-key">District</span>
+                <span class="dp-field-val">{{ selectedHouse.districtName || '—' }}</span>
+              </div>
 
+              <!-- Family -->
+              <div class="dp-section-label">
+                <span class="dp-section-icon">👥</span> Family
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">🏠</span>
+                <span class="dp-field-key">House Type</span>
+                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">👤</span>
+                <span class="dp-field-key">Family Members</span>
+                <span class="dp-field-val">{{ (selectedHouse.totalMembers || selectedHouse.totalFamilyMembers || 0).toLocaleString() }}</span>
+              </div>
+
+              <div class="dp-field-row">
+                <span class="dp-field-icon">📊</span>
+                <span class="dp-field-key">BPL Status</span>
+                <span class="dp-field-val">{{ selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+              </div>
+
+              <template v-if="selectedHouse.annualIncome && selectedHouse.annualIncome !== '0'">
                 <div class="dp-field-row">
-                  <span class="dp-field-icon">🏠</span>
-                  <span class="dp-field-key">House Type</span>
-                  <span class="dp-field-val" :style="{ color: getHousingColor(selectedHouse) }">{{ formatHousingLabel(selectedHouse) }}</span>
+                  <span class="dp-field-icon">💰</span>
+                  <span class="dp-field-key">Annual Income</span>
+                  <span class="dp-field-val">{{ selectedHouse.annualIncome }}</span>
                 </div>
               </template>
             </template>
@@ -945,7 +1003,7 @@ const normalizedSelectedHouse = computed(() => {
     RATION_CARD_COLOR:
       house.RATION_CARD_COLOR ?? house.rationCard ?? '',
     FAMILY_BELONG_BPL_CATEGORY:
-      house.FAMILY_BELONG_BPL_CATEGORY ?? house.bplCategory ?? '',
+      house.FAMILY_BELONG_BPL_CATEGORY || house.bplCategory || '',
   }
 })
 
@@ -1391,7 +1449,7 @@ function enrichHouseholdForPopulation(family, memberStatsLookup) {
     femaleMembers: hasMemberRows ? stats.female_count : (existingFemale ?? 0),
     divyang_members: hasMemberRows ? stats.divyang_members : (existingDivyang ?? Number(fallback?.divyang_members || 0)),
     working_members: hasMemberRows ? stats.working_members : (existingWorking ?? Number(fallback?.working_members || 0)),
-    FAMILY_BELONG_BPL_CATEGORY: family?.FAMILY_BELONG_BPL_CATEGORY || fallback?.FAMILY_BELONG_BPL_CATEGORY || '',
+    FAMILY_BELONG_BPL_CATEGORY: family?.FAMILY_BELONG_BPL_CATEGORY || family?.bplCategory || fallback?.FAMILY_BELONG_BPL_CATEGORY || fallback?.bplCategory || '',
     occupation_list: family?.occupation_list || fallback?.occupation_list || '',
     working_occupations: family?.working_occupations || fallback?.working_occupations || '',
   }
@@ -2146,6 +2204,24 @@ const analyticsChart = computed(() => {
         { label: 'Marginal', value: landless, color: '#fb7185' },
         { label: 'Small', value: small, color: '#eab308' },
         { label: 'Medium/Large', value: mediumLarge, color: '#14b8a6' },
+      ],
+    }
+  }
+
+  if (mode === 'housing_quality') {
+    const pucca   = rows.filter(h => String(h?.TYPE_HOUSE || h?.type_house || '').toUpperCase().trim() === 'PUCCA').length
+    const kucha   = rows.filter(h => String(h?.TYPE_HOUSE || h?.type_house || '').toUpperCase().trim() === 'KUCHA').length
+    const unknown = Math.max(rows.length - pucca - kucha, 0)
+    return {
+      title: 'Housing Quality Distribution',
+      subtitle: 'Household structure type',
+      totalLabel: `${rows.length.toLocaleString()} households`,
+      centerLabel: 'Households',
+      centerValue: rows.length.toLocaleString(),
+      segments: [
+        { label: 'Pucca',   value: pucca,   color: '#22c55e' },
+        { label: 'Kucha',   value: kucha,   color: '#ef4444' },
+        { label: 'Unknown', value: unknown, color: '#9ca3af' },
       ],
     }
   }
