@@ -236,3 +236,7 @@ export function getSchemesForProblem(problemKey, profile = {}) {
   const qs = toQueryString(params)
   return fetchJSON(`/schemes/recommend?${qs}`)
 }
+
+export function getViewOptions() {
+  return fetchJSON('/view-options')
+}

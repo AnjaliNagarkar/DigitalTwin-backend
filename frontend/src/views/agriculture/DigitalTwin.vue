@@ -458,25 +458,16 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div class="cs-option-group-label">— Population —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'education_level' }"    @click="selectColorMode('education_level')">Education Level</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }"   @click="selectColorMode('divyang_presence')">Divyang Presence</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'occupation' }"         @click="selectColorMode('occupation')">Occupation</div>
-              <div class="cs-option-group-label">— Infrastructure —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'sanitation' }"        @click="selectColorMode('sanitation')">Sanitation / Toilet</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'lighting' }"          @click="selectColorMode('lighting')">Electricity</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'ration' }"            @click="selectColorMode('ration')">Ration Card</div>
-              <div class="cs-option-group-label">— Document Gap Analysis —</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'bpl_ration_status' }"          @click="selectColorMode('bpl_ration_status')">BPL / Ration Card Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'aadhaar_coverage' }"           @click="selectColorMode('aadhaar_coverage')">Aadhaar Coverage</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'caste_certificate_coverage' }" @click="selectColorMode('caste_certificate_coverage')">Caste Certificate Coverage</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'unemployed_gap' }"             @click="selectColorMode('unemployed_gap')">Unemployed Adults</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'divyang_gap' }"                @click="selectColorMode('divyang_gap')">Divyang — Certificate Gap</div>
-              <div class="cs-option-group-label">— Agriculture —</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'crop' }"               @click="selectView('crop')">Crop Type</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'irrigation' }"         @click="selectView('irrigation')">Irrigation</div>
-              <div class="cs-option" :class="{ selected: selectedView === 'land' }"               @click="selectView('land')">Land Holdings</div>
+              <template v-for="group in viewOptions" :key="group.label">
+                <div class="cs-option-group-label">— {{ group.label }} —</div>
+                <div
+                  v-for="option in group.options"
+                  :key="option.value"
+                  class="cs-option"
+                  :class="{ selected: colorMode === option.value || selectedView === option.value }"
+                  @click="option.action === 'view' ? selectView(option.value) : selectColorMode(option.value)"
+                >{{ option.label }}</div>
+              </template>
             </div>
           </div>
         </div>
@@ -943,7 +934,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getBatchMemberStats, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory } from '../../api/index.js'
+import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getBatchMemberStats, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory, getViewOptions } from '../../api/index.js'
 import { analyzeGaps, gapSeverityForHouse, SEVERITY_META } from '../../utils/gapAnalysis.js'
 import { buildFocusData, STATUS_META, METRIC_STATUS_COLOR } from '../../utils/filterFocusConfig.js'
 import * as Cesium from 'cesium'
@@ -963,6 +954,34 @@ const mouseY              = ref(0)
 const selectedView        = ref('')
 const hasUserSelectedView = ref(false)
 const colorMode           = ref(null)
+
+// VIEW BY dropdown options — fetched from /view-options on mount; fallback keeps UI working if API fails
+const viewOptions = ref([])
+const VIEW_OPTIONS_FALLBACK = [
+  { label: 'Population', options: [
+    { value: 'population_density',         label: 'Population Density',         action: 'colorMode' },
+    { value: 'education_level',            label: 'Education Level',            action: 'colorMode' },
+    { value: 'divyang_presence',           label: 'Divyang Presence',           action: 'colorMode' },
+    { value: 'occupation',                 label: 'Occupation',                 action: 'colorMode' },
+  ]},
+  { label: 'Infrastructure', options: [
+    { value: 'sanitation', label: 'Sanitation / Toilet', action: 'colorMode' },
+    { value: 'lighting',   label: 'Electricity',         action: 'colorMode' },
+    { value: 'ration',     label: 'Ration Card',         action: 'colorMode' },
+  ]},
+  { label: 'Document Gap Analysis', options: [
+    { value: 'bpl_ration_status',          label: 'BPL / Ration Card Status',   action: 'colorMode' },
+    { value: 'aadhaar_coverage',           label: 'Aadhaar Coverage',           action: 'colorMode' },
+    { value: 'caste_certificate_coverage', label: 'Caste Certificate Coverage', action: 'colorMode' },
+    { value: 'unemployed_gap',             label: 'Unemployed Adults',          action: 'colorMode' },
+    { value: 'divyang_gap',                label: 'Divyang — Certificate Gap',  action: 'colorMode' },
+  ]},
+  { label: 'Agriculture', options: [
+    { value: 'crop',       label: 'Crop Type',     action: 'view' },
+    { value: 'irrigation', label: 'Irrigation',    action: 'view' },
+    { value: 'land',       label: 'Land Holdings', action: 'view' },
+  ]},
+]
 const activeIssue         = ref(null)
 const agriOverviewOpen    = ref(false)
 const isHouseDetailsLoading = ref(false)
@@ -2392,10 +2411,14 @@ function formatProblemCount(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0
 }
 
-// Total households matching ALL active problem filters simultaneously
+// Total households matching ALL active problem filters simultaneously.
+// Uses enrichedHouse() so the count reflects real DB values (batch-member stats
+// and full house-detail data) rather than the potentially-stale aggregate from
+// the initial /houses bulk query (which joins on EXTERNAL_FAMILY_ID and can mismatch).
 const problemMatchCount = computed(() => {
+  void enrichmentTick.value  // recompute whenever enrichment cache is updated
   if (!activeProblemFilters.value.length) return 0
-  return filteredHouses.value.filter(matchesAllProblems).length
+  return filteredHouses.value.filter(h => matchesAllProblems(enrichedHouse(h))).length
 })
 
 // ── Cluster solution panel state ──────────────────────────────────────────────
@@ -4215,6 +4238,12 @@ async function selectHouseDetailsById(id, fallbackHouse = null, options = {}) {
       // every house to have been clicked first.
       if (detail.familyId != null) {
         houseEnrichmentCache.set(Number(detail.familyId), detail)
+        // Increment enrichmentTick so computed properties that depend on it
+        // (problemMatchCount, problemFilterStats, issueList, etc.) immediately
+        // recompute with the authoritative data from /house/:id — which joins on
+        // FAMILY_ID directly and is never affected by the EXTERNAL_FAMILY_ID
+        // mismatch that can make the bulk /houses aggregate wrong.
+        enrichmentTick.value++
         // Do NOT repaint here — selectedHouse.value = merged (line above) already
         // triggers the watch which calls buildBuildingEntitiesForViewport() and
         // rebuilds every entity with the correct selection highlight + mode color.
@@ -5456,6 +5485,9 @@ onMounted(async () => {
   const insightParams = buildLocationParams()
   getAgricultureInsights(insightParams).then(v => { agricultureInsights.value = v }).catch(() => {})
   getPopulationDashboard(insightParams).then(v => { populationDashboard.value  = v }).catch(() => {})
+  getViewOptions()
+    .then(data => { viewOptions.value = (data?.groups?.length > 0) ? data.groups : VIEW_OPTIONS_FALLBACK })
+    .catch(() => { viewOptions.value = VIEW_OPTIONS_FALLBACK })
  await locationOptionsPromise.catch((err) => {
   console.warn('[initial] location options prime failed:', err?.message || err)
 })
