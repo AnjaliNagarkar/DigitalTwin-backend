@@ -6,7 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterPopulationRoutes(r *gin.Engine, populationHandler *handlers.PopulationHandler) {
+// IRouter is satisfied by both *gin.Engine and *gin.RouterGroup so routes can
+// be registered on either a plain engine or an auth-protected group.
+type IRouter interface {
+	GET(string, ...gin.HandlerFunc) gin.IRoutes
+}
+
+func RegisterPopulationRoutes(r IRouter, populationHandler *handlers.PopulationHandler) {
 	r.GET("/population/dashboard", populationHandler.GetPopulationDashboard)
 	r.GET("/population/demographics", populationHandler.GetPopulationDemographics)
 	r.GET("/population/education", populationHandler.GetPopulationEducation)

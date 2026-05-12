@@ -59,6 +59,13 @@
           <div class="system-dot" :class="apiStatus"></div>
           <span>API {{ apiStatus === 'online' ? 'Connected' : 'Offline' }}</span>
         </div>
+
+        <button class="logout-btn" @click="handleLogout" title="Sign out">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="logout-icon">
+            <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h7a1 1 0 100-2H4V5h6a1 1 0 100-2H3zm10.293 4.293a1 1 0 011.414 0L17 9.586V8a1 1 0 112 0v4a1 1 0 01-1 1h-4a1 1 0 110-2h1.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+          </svg>
+          <span class="logout-label">{{ authUsername }}</span>
+        </button>
       </div>
     </header>
 
@@ -76,12 +83,18 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { logout } from '../../api/index.js'
 
-const apiStatus = ref('offline')
-const theme = ref(localStorage.getItem('agritwin-theme') || 'dark')
+const apiStatus   = ref('offline')
+const theme       = ref(localStorage.getItem('agritwin-theme') || 'dark')
+const authUsername = ref(localStorage.getItem('auth_username') || 'User')
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+async function handleLogout() {
+  await logout()
 }
 
 watch(theme, (val) => {
@@ -372,6 +385,38 @@ html, body {
 .system-dot.online {
   background: var(--green);
   box-shadow: 0 0 6px var(--green);
+}
+
+/* ── Logout button ── */
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px;
+  padding: 0.38rem 0.7rem;
+  color: #fca5a5;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+.logout-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.logout-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Main Content ── */

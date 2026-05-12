@@ -444,7 +444,10 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		return err
 	}
 
-	// Query individual members — include all gap-analysis fields
+	// Query individual members — include all gap-analysis fields.
+	// Prefer fm.FAMILY_ID (direct FK to FAMILY.FAMILY_ID — always reliable) over
+	// fm.EXTERNAL_FAMILY_ID (can collide with FAMILY.FAMILY_ID when NULL on the
+	// family side, causing the wrong aggregate colour before a house is clicked).
 	mCol := func(col, alias string) string {
 		if h.memberColExists(col) {
 			return fmt.Sprintf("COALESCE(%s, '') AS %s", "fm."+col, alias)
@@ -458,14 +461,23 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		return fmt.Sprintf("'' AS %s", alias)
 	}
 
+	// Choose the most reliable join column available in FAMILY_MEMBER.
+	memberIDCol := "EXTERNAL_FAMILY_ID"
+	memberIDFilter := "fm.EXTERNAL_FAMILY_ID IS NOT NULL"
+	if h.memberColExists("FAMILY_ID") {
+		memberIDCol = "FAMILY_ID"
+		memberIDFilter = "fm.FAMILY_ID IS NOT NULL"
+	}
+
 	memberQuery := fmt.Sprintf(`
 		SELECT
-			CAST(fm.EXTERNAL_FAMILY_ID AS CHAR),
+			CAST(fm.%s AS CHAR),
 			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM FAMILY_MEMBER fm
-		WHERE fm.EXTERNAL_FAMILY_ID IS NOT NULL
-		ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID
+		WHERE %s
+		ORDER BY fm.%s, fm.FAMILY_MEMBER_ID
 	`,
+		memberIDCol,
 		mCol("FIRST_NAME", "first_name"),
 		mCol("LAST_NAME", "last_name"),
 		mCol("GENDER", "gender"),
@@ -476,6 +488,8 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		mColCast("DISABILITY_PERCENTAGE", "disability_percentage"),
 		mCol("AADHAAR", "aadhaar"),
 		mCol("CASTE_CERTIFICATE", "caste_certificate"),
+		memberIDFilter,
+		memberIDCol,
 	)
 
 	memberRows, err := h.DB.Query(memberQuery)
@@ -517,9 +531,45 @@ func (h *HouseHandler) PreloadHouseCache() error {
 		return err
 	}
 
+	// Recompute aggregate counts directly from the attached Members array.
+	// This guarantees that DivyangMembers, WorkingMembers, etc. always match
+	// what the frontend computes when it iterates over members[] — eliminating
+	// the red→green colour flip that occurs when the JOIN-based aggregate
+	// disagrees with the authoritative per-member data.
+	unemployedOccs := map[string]bool{
+		"": true, "UNEMPLOYED": true, "NOT WORKING": true, "NO WORK": true,
+		"HOUSEWIFE": true, "HOMEMAKER": true, "NOT APPLICABLE": true, "STUDYING": true,
+	}
 	for id, detail := range details {
 		if detail.Members == nil {
 			detail.Members = []MemberRecord{}
+		}
+		if len(detail.Members) > 0 {
+			var divyang, illiterate, working, unemployed, male, female int
+			for _, m := range detail.Members {
+				if strings.ToUpper(strings.TrimSpace(m.Divyang)) == "YES" {
+					divyang++
+				}
+				occ := strings.ToUpper(strings.TrimSpace(m.Occupation))
+				if unemployedOccs[occ] {
+					unemployed++
+				} else {
+					working++
+				}
+				g := strings.ToLower(strings.TrimSpace(m.Gender))
+				if g == "male" || g == "m" {
+					male++
+				} else if g == "female" || g == "f" {
+					female++
+				}
+				_ = illiterate // recomputed if EVER_ATTENDED_SCHOOL is present; keep aggregate otherwise
+			}
+			detail.TotalMembers = len(detail.Members)
+			detail.MaleMembers = male
+			detail.FemaleMembers = female
+			detail.DivyangMembers = divyang
+			detail.WorkingMembers = working
+			detail.UnemployedMembers = unemployed
 		}
 		houseCache.Store(id, detail)
 	}

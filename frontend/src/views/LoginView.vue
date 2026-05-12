@@ -1,0 +1,374 @@
+<template>
+  <div class="login-shell">
+    <!-- Topographic background (matches AgricultureLayout) -->
+    <svg class="topo-bg" viewBox="0 0 1440 900" preserveAspectRatio="none">
+      <defs>
+        <pattern id="topo-login" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+          <path d="M0 80 Q50 60 100 80 T200 80"  fill="none" stroke="rgba(232,168,56,0.05)" stroke-width="1"/>
+          <path d="M0 120 Q50 100 100 120 T200 120" fill="none" stroke="rgba(232,168,56,0.03)" stroke-width="1"/>
+          <path d="M0 160 Q50 140 100 160 T200 160" fill="none" stroke="rgba(45,212,191,0.03)" stroke-width="1"/>
+          <circle cx="150" cy="50" r="1" fill="rgba(232,168,56,0.07)"/>
+          <circle cx="30"  cy="140" r="0.8" fill="rgba(45,212,191,0.06)"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#topo-login)"/>
+    </svg>
+
+    <div class="login-card">
+      <!-- Brand -->
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3"  y="18" width="7"  height="19" rx="1.5" fill="#e8a838"/>
+            <rect x="13" y="10" width="7"  height="27" rx="1.5" fill="#2dd4bf"/>
+            <rect x="23" y="5"  width="7"  height="32" rx="1.5" fill="#e8a838" opacity="0.75"/>
+            <rect x="33" y="13" width="5"  height="24" rx="1.5" fill="#2dd4bf"  opacity="0.65"/>
+            <line x1="0" y1="37" x2="40" y2="37" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Digital Twin Platform</span>
+          <span class="brand-sub">IVDP — Integrated Village Development</span>
+        </div>
+      </div>
+
+      <h2 class="form-title">Sign in to continue</h2>
+
+      <form @submit.prevent="handleLogin" novalidate>
+        <!-- Error banner -->
+        <div v-if="error" class="error-banner" role="alert">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="error-icon">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+          </svg>
+          {{ error }}
+        </div>
+
+        <div class="field">
+          <label for="username">Username</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+            </svg>
+            <input
+              id="username"
+              v-model="username"
+              type="text"
+              placeholder="Enter your IVDP username"
+              autocomplete="username"
+              autofocus
+              required
+            />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+            </svg>
+            <input
+              id="password"
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" class="toggle-pw" @click="showPassword = !showPassword" tabindex="-1" :title="showPassword ? 'Hide password' : 'Show password'">
+              <svg v-if="showPassword" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+                <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
+              </svg>
+              <svg v-else viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/>
+                <path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.064 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" :disabled="loading">
+          <span v-if="loading" class="spinner"></span>
+          <span>{{ loading ? 'Signing in…' : 'Sign In' }}</span>
+        </button>
+      </form>
+
+      <p class="footer-note">Use your IVDP portal credentials — contact your administrator if you need access.</p>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { login } from '../api/index.js'
+
+const router   = useRouter()
+const username = ref('')
+const password = ref('')
+const error    = ref('')
+const loading  = ref(false)
+const showPassword = ref(false)
+
+async function handleLogin() {
+  error.value   = ''
+  loading.value = true
+  try {
+    const data = await login(username.value.trim(), password.value)
+    localStorage.setItem('auth_token',    data.token)
+    localStorage.setItem('auth_username', data.username)
+    localStorage.setItem('auth_expires',  data.expires_at)
+    router.push('/')
+  } catch (e) {
+    error.value = e.message || 'Login failed. Please check your credentials.'
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<style scoped>
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0a1f18 0%, #0f2a22 50%, #0d2318 100%);
+  position: relative;
+  overflow: hidden;
+  padding: 1.5rem;
+}
+
+.topo-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background: rgba(15, 42, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 16px;
+  padding: 2.4rem 2.2rem 2rem;
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.3),
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(232, 168, 56, 0.06);
+}
+
+/* ── Brand ──────────────────────────────────────────────────────────────── */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 0.72rem;
+  color: #8bb3a1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* ── Form title ─────────────────────────────────────────────────────────── */
+.form-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #d5e5dd;
+  margin: 0 0 1.4rem;
+}
+
+/* ── Error banner ───────────────────────────────────────────────────────── */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  color: #fca5a5;
+  font-size: 0.85rem;
+  margin-bottom: 1.2rem;
+}
+
+.error-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+.field {
+  margin-bottom: 1.1rem;
+}
+
+.field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #8bb3a1;
+  margin-bottom: 0.45rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.input-wrap {
+  position: relative;
+}
+
+.input-icon {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #8bb3a1;
+  pointer-events: none;
+}
+
+.input-wrap input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.65rem 2.5rem 0.65rem 2.4rem;
+  font-size: 0.9rem;
+  color: #e8f4ee;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.input-wrap input::placeholder {
+  color: rgba(139, 179, 161, 0.5);
+}
+
+.input-wrap input:focus {
+  border-color: #e8a838;
+  box-shadow: 0 0 0 3px rgba(232, 168, 56, 0.12);
+}
+
+/* show/hide password toggle */
+.toggle-pw {
+  position: absolute;
+  right: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #8bb3a1;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-pw:hover {
+  color: #e8a838;
+}
+
+.toggle-pw svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Submit button ──────────────────────────────────────────────────────── */
+.submit-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #d09b2a 0%, #e8a838 100%);
+  color: #1c1302;
+  border: none;
+  border-radius: 9px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  letter-spacing: 0.01em;
+}
+
+.submit-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* spinner */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(28, 19, 2, 0.3);
+  border-top-color: #1c1302;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Footer note ────────────────────────────────────────────────────────── */
+.footer-note {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(139, 179, 161, 0.55);
+  line-height: 1.5;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 1.8rem 1.4rem 1.6rem;
+  }
+}
+</style>

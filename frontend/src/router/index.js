@@ -1,6 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
+  // ── Public ─────────────────────────────────────────────────────────────────
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/LoginView.vue'),
+    meta: { public: true },
+  },
+
+  // ── Protected ──────────────────────────────────────────────────────────────
   {
     path: '/',
     redirect: '/agriculture/dashboard',
@@ -83,7 +92,37 @@ const routes = [
   },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
+// ── Navigation guard ──────────────────────────────────────────────────────────
+// Every route that is not marked { meta: { public: true } } requires a valid
+// session token in localStorage.  If the token is missing or the session has
+// expired the user is redirected to /login.
+router.beforeEach((to, _from, next) => {
+  const token     = localStorage.getItem('auth_token')
+  const expiresAt = localStorage.getItem('auth_expires')
+  const isExpired = expiresAt ? new Date() > new Date(expiresAt) : true
+  const isAuthenticated = !!token && !isExpired
+
+  if (to.meta?.public) {
+    // Already logged in — skip the login page
+    if (isAuthenticated) return next('/agriculture/dashboard')
+    return next()
+  }
+
+  // Protected route
+  if (!isAuthenticated) {
+    // Clear stale tokens
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_username')
+    localStorage.removeItem('auth_expires')
+    return next('/login')
+  }
+
+  next()
+})
+
+export default router

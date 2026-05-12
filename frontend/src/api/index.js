@@ -1,6 +1,6 @@
 const BASE = '/api'
 const TIMEOUT_DEFAULT = 15000
-const TIMEOUT_DATA    = 30000  // large dataset queries can take longer
+const TIMEOUT_DATA    = 30000
 const RETRY_ATTEMPTS  = 2
 const RETRY_DELAY_MS  = 400
 
@@ -12,6 +12,19 @@ function isRetryableError(err) {
   return err?.name === 'AbortError' || err instanceof TypeError
 }
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('auth_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function handleUnauthorized() {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_username')
+  localStorage.removeItem('auth_expires')
+  // Redirect to login without leaving a broken history entry.
+  window.location.replace('/login')
+}
+
 async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
   for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     const controller = new AbortController()
@@ -21,8 +34,14 @@ async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
       const res = await fetch(`${BASE}${url}`, {
         signal: controller.signal,
         cache: 'no-store',
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', ...getAuthHeaders() },
       })
+
+      // Session expired or invalid — force re-login
+      if (res.status === 401) {
+        handleUnauthorized()
+        throw new Error('Session expired — redirecting to login')
+      }
 
       if (!res.ok) {
         const isServerError = res.status >= 500
@@ -46,6 +65,35 @@ async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
   }
 
   throw new Error('Request failed after retries')
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function login(username, password) {
+  const res = await fetch('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `Login failed (${res.status})`)
+  }
+  return data // { token, username, expires_at }
+}
+
+export async function logout() {
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    await fetch('/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {})
+  }
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_username')
+  localStorage.removeItem('auth_expires')
+  window.location.replace('/login')
 }
 
 function toQueryString(params = {}) {

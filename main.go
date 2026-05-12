@@ -45,6 +45,9 @@ func main() {
 	schemeRecommendHandler := handlers.NewSchemeRecommendHandler(conn)
 	advisoryHandler := handlers.NewAdvisoryHandler(conn)
 	clusterAdvisoryHandler := handlers.NewClusterAdvisoryHandler(conn)
+	viewOptionsHandler := handlers.NewViewOptionsHandler(conn, cc)
+
+	authHandler := handlers.NewAuthHandler()
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -61,7 +64,6 @@ func main() {
 	// ── CORS ─────────────────────────────────────────────────────────────────
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		// POST is allowed for PDF generation; all other mutations remain blocked.
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
@@ -72,13 +74,13 @@ func main() {
 	})
 
 	// ── Read-only enforcement ─────────────────────────────────────────────────
-	// Block any non-GET/OPTIONS request with a 405, EXCEPT POST /pdf/* which
-	// only reads from the DB and streams a generated PDF (no writes at all).
+	// Allow POST only for: PDF generation, auth login/logout.
+	// Everything else must be GET.
 	r.Use(func(c *gin.Context) {
 		method := strings.ToUpper(c.Request.Method)
-		path := c.Request.URL.Path // reliable in middleware (set by Vite proxy rewrite)
-		isPDFPost := method == http.MethodPost && strings.HasPrefix(path, "/pdf/")
-		if isPDFPost {
+		path := c.Request.URL.Path
+		if method == http.MethodPost && (strings.HasPrefix(path, "/pdf/") ||
+			path == "/auth/login" || path == "/auth/logout") {
 			c.Next()
 			return
 		}
@@ -92,7 +94,7 @@ func main() {
 		c.Next()
 	})
 
-	// ── Health check ──────────────────────────────────────────────────────────
+	// ── Health check (public) ─────────────────────────────────────────────────
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong", "mode": "read-only"})
 	})
@@ -100,48 +102,59 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": "pong", "mode": "read-only"})
 	})
 
+	// ── Auth endpoints (public — no login required) ───────────────────────────
+	r.POST("/auth/login", authHandler.Login)
+	r.POST("/auth/logout", authHandler.Logout)
+
+	// ── All data routes require a valid session ───────────────────────────────
+	protected := r.Group("/")
+	protected.Use(handlers.AuthMiddleware())
+	protected.GET("/auth/me", authHandler.Me)
+
 	// ── Digital Twin APIs (new) ───────────────────────────────────────────────
-	r.GET("/houses", houseHandler.GetHouses)
-	r.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
-	r.GET("/houses/summary", houseHandler.GetHousesSummary)
-	r.GET("/houses/batch-members", houseHandler.GetBatchMemberStats)
-	r.GET("/house/:id", houseHandler.GetHouseByID)
-	r.GET("/districts", locationHandler.GetDistricts)
-	r.GET("/location-options", locationHandler.GetLocationOptions)
-	r.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)
-	r.GET("/map/district-centroids", districtCentroidsHandler.GetDistrictCentroids)
+	protected.GET("/view-options", viewOptionsHandler.GetViewOptions)
+	protected.GET("/houses", houseHandler.GetHouses)
+	protected.GET("/houses/map-points", houseHandler.GetHousesMapPoints)
+	protected.GET("/houses/summary", houseHandler.GetHousesSummary)
+	protected.GET("/houses/batch-members", houseHandler.GetBatchMemberStats)
+	protected.GET("/house/:id", houseHandler.GetHouseByID)
+	protected.GET("/districts", locationHandler.GetDistricts)
+	protected.GET("/location-options", locationHandler.GetLocationOptions)
+	protected.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)
+	protected.GET("/map/district-centroids", districtCentroidsHandler.GetDistrictCentroids)
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
-	r.POST("/pdf/report", pdfHandler.GeneratePDF)
-	r.POST("/pdf/population-report", populationHandler.GeneratePopulationPDF)
+	protected.POST("/pdf/report", pdfHandler.GeneratePDF)
+	protected.POST("/pdf/population-report", populationHandler.GeneratePopulationPDF)
 
 	// 3D Twin summary PDF (GET with query params) — streams generated PDF
-	r.GET("/twin/export-pdf", pdfTwinHandler.GenerateTwinPDF)
+	protected.GET("/twin/export-pdf", pdfTwinHandler.GenerateTwinPDF)
 
 	// ── Insights Engine (new) ─────────────────────────────────────────────────
-	r.GET("/insights/governance", insightHandler.GetGovernanceInsights)
-	r.GET("/insights/agriculture", insightHandler.GetAgricultureInsights)
-	r.GET("/insights/welfare", insightHandler.GetWelfareInsights)
-	r.GET("/dashboard/summary", dashboardSummaryHandler.GetDashboardSummary)
-	routes.RegisterPopulationRoutes(r, populationHandler)
+	protected.GET("/insights/governance", insightHandler.GetGovernanceInsights)
+	protected.GET("/insights/agriculture", insightHandler.GetAgricultureInsights)
+	protected.GET("/insights/welfare", insightHandler.GetWelfareInsights)
+	protected.GET("/dashboard/summary", dashboardSummaryHandler.GetDashboardSummary)
+	routes.RegisterPopulationRoutes(protected, populationHandler)
 
 	// ── Existing agri data endpoints ──────────────────────────────────────────
-	r.GET("/crops", cropHandler.GetCrops)
-	r.GET("/land", landHandler.GetLand)
-	r.GET("/irrigation", irrigationHandler.GetIrrigation)
-	r.GET("/citizens", farmerHandler.GetFarmers)
-	r.GET("/farmers", farmerHandler.GetFarmers)
-	r.GET("/unified-registry", unifiedRegistryHandler.GetUnifiedRegistry)
+	protected.GET("/crops", cropHandler.GetCrops)
+	protected.GET("/land", landHandler.GetLand)
+	protected.GET("/irrigation", irrigationHandler.GetIrrigation)
+	protected.GET("/citizens", farmerHandler.GetFarmers)
+	protected.GET("/farmers", farmerHandler.GetFarmers)
+	protected.GET("/unified-registry", unifiedRegistryHandler.GetUnifiedRegistry)
 
 	// ── Static/in-memory modules ──────────────────────────────────────────────
-	r.GET("/soil", handlers.GetSoil)
-	r.GET("/schemes", handlers.GetSchemes)
-	r.GET("/schemes/recommend", schemeRecommendHandler.GetRecommendations)
-	r.GET("/advisory", advisoryHandler.GetAdvisory)
-	r.GET("/advisory/cluster", clusterAdvisoryHandler.GetClusterAdvisory)
-	r.GET("/market", handlers.GetMarket)
+	protected.GET("/soil", handlers.GetSoil)
+	protected.GET("/schemes", handlers.GetSchemes)
+	protected.GET("/schemes/recommend", schemeRecommendHandler.GetRecommendations)
+	protected.GET("/advisory", advisoryHandler.GetAdvisory)
+	protected.GET("/advisory/cluster", clusterAdvisoryHandler.GetClusterAdvisory)
+	protected.GET("/market", handlers.GetMarket)
 
 	log.Println("[STARTUP] Routes registered:")
+	log.Println("  GET /view-options        — dynamic VIEW BY dropdown options (schema-driven)")
 	log.Println("  GET /ping")
 	log.Println("  GET /houses           — geo-mapped household data (2D map + 3D twin)")
 	log.Println("  GET /houses/map-points — lightweight map coordinates for client clustering")

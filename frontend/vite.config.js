@@ -12,6 +12,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
+      '/auth':             { target: 'http://localhost:8081', changeOrigin: true },
       '/ping':             { target: 'http://localhost:8081', changeOrigin: true },
       '/houses':           { target: 'http://localhost:8081', changeOrigin: true },
       '/houses/batch-members': { target: 'http://localhost:8081', changeOrigin: true },
