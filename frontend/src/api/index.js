@@ -69,11 +69,11 @@ async function fetchJSON(url, timeoutMs = TIMEOUT_DEFAULT) {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-export async function login(username, password) {
+export async function login(username, password, captcha) {
   const res = await fetch('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, captcha }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {

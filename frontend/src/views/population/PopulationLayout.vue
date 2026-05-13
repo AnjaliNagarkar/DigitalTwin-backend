@@ -50,10 +50,13 @@
         </div>
 
         <button class="logout-btn" @click="handleLogout" title="Sign out">
-          <svg viewBox="0 0 20 20" fill="currentColor" class="logout-icon">
-            <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h7a1 1 0 100-2H4V5h6a1 1 0 100-2H3zm10.293 4.293a1 1 0 011.414 0L17 9.586V8a1 1 0 112 0v4a1 1 0 01-1 1h-4a1 1 0 110-2h1.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+          <!-- Power-off / logout icon -->
+          <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
-          <span class="logout-label">{{ authUsername }}</span>
+          <span>Logout</span>
         </button>
       </div>
     </header>
@@ -74,9 +77,8 @@
 import { ref, onMounted, watch } from 'vue'
 import { logout } from '../../api/index.js'
 
-const apiStatus    = ref('offline')
-const theme        = ref(localStorage.getItem('agritwin-theme') || 'dark')
-const authUsername = ref(localStorage.getItem('auth_username') || 'User')
+const apiStatus = ref('offline')
+const theme     = ref(localStorage.getItem('agritwin-theme') || 'dark')
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
@@ -380,25 +382,34 @@ html, body {
 .logout-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  gap: 0.45rem;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.30);
   border-radius: 8px;
-  padding: 0.38rem 0.7rem;
+  padding: 0.42rem 0.85rem;
   color: #fca5a5;
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
   white-space: nowrap;
-  max-width: 160px;
+  transition: background 0.18s ease, border-color 0.18s ease,
+              color 0.18s ease, transform 0.1s ease;
 }
 .logout-btn:hover {
-  background: rgba(239, 68, 68, 0.16);
-  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #ffffff;
+  transform: translateY(-1px);
 }
-.logout-icon { width: 14px; height: 14px; flex-shrink: 0; }
-.logout-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logout-btn:active {
+  transform: translateY(0);
+}
+.logout-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
 
 .main-content {
   position: relative;

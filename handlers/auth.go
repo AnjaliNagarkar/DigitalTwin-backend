@@ -70,22 +70,34 @@ func NewAuthHandler() *AuthHandler {
 }
 
 // Login handles POST /auth/login.
-// Body: { "username": "...", "password": "..." }
+// Body: { "username": "...", "password": "...", "captcha": "..." }
 // Forwards to the IVDP MQL auth server and, on success, issues a local session token.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Captcha  string `json:"captcha"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
 		return
 	}
 
+	// Trim leading/trailing whitespace from all fields before any validation.
 	username := strings.TrimSpace(req.Username)
 	password := strings.TrimSpace(req.Password)
-	if username == "" || password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password cannot be blank"})
+	captcha  := strings.TrimSpace(req.Captcha)
+
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
+		return
+	}
+	if password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
+		return
+	}
+	if captcha == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Please enter the captcha"})
 		return
 	}
 
