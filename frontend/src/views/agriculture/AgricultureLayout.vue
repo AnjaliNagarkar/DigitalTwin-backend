@@ -1,28 +1,41 @@
 <template>
   <div class="app-shell" :data-theme="theme">
-    <!-- Topographic background pattern -->
+    <!-- Subtle topographic background -->
     <svg class="topo-bg" viewBox="0 0 1440 900" preserveAspectRatio="none">
       <defs>
         <pattern id="topo" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-          <path d="M0 80 Q50 60 100 80 T200 80" fill="none" stroke="rgba(232,168,56,0.04)" stroke-width="1"/>
+          <path d="M0 80 Q50 60 100 80 T200 80"  fill="none" stroke="rgba(232,168,56,0.04)" stroke-width="1"/>
           <path d="M0 120 Q50 100 100 120 T200 120" fill="none" stroke="rgba(232,168,56,0.03)" stroke-width="1"/>
           <path d="M0 160 Q50 140 100 160 T200 160" fill="none" stroke="rgba(45,212,191,0.03)" stroke-width="1"/>
           <circle cx="150" cy="50" r="1" fill="rgba(232,168,56,0.06)"/>
-          <circle cx="30" cy="140" r="0.8" fill="rgba(45,212,191,0.05)"/>
+          <circle cx="30"  cy="140" r="0.8" fill="rgba(45,212,191,0.05)"/>
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#topo)"/>
     </svg>
 
-    <header class="top-nav">
-      <div class="nav-left">
+    <!-- ── Thin top bar: hamburger + logo on left, logout on right ── -->
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <!-- Hamburger toggle -->
+        <button class="hamburger-btn" @click="toggleSidebar"
+                :title="isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+                :aria-expanded="isSidebarOpen" aria-controls="app-sidebar">
+          <svg class="hamburger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6"  x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
         <router-link to="/agriculture/dashboard" class="brand-link">
           <div class="brand-icon">
             <svg viewBox="0 0 32 32" fill="none">
-              <rect x="2" y="14" width="6" height="16" rx="1" fill="var(--amber)"/>
-              <rect x="10" y="8" width="6" height="22" rx="1" fill="var(--teal)"/>
-              <rect x="18" y="4" width="6" height="26" rx="1" fill="var(--amber)" opacity="0.7"/>
-              <rect x="26" y="10" width="4" height="20" rx="1" fill="var(--teal)" opacity="0.6"/>
+              <rect x="2"  y="14" width="6" height="16" rx="1" fill="var(--amber)"/>
+              <rect x="10" y="8"  width="6" height="22" rx="1" fill="var(--teal)"/>
+              <rect x="18" y="4"  width="6" height="26" rx="1" fill="var(--amber)" opacity="0.7"/>
+              <rect x="26" y="10" width="4" height="20" rx="1" fill="var(--teal)"  opacity="0.6"/>
               <line x1="0" y1="30" x2="32" y2="30" stroke="var(--slate-400)" stroke-width="1"/>
             </svg>
           </div>
@@ -33,54 +46,116 @@
         </router-link>
       </div>
 
-      <nav class="nav-center" aria-label="Primary navigation">
-        <router-link to="/agriculture/dashboard" class="nav-link" :class="{ active: $route.path === '/agriculture/dashboard' }">Dashboard</router-link>
-        <router-link to="/agriculture/citizens" class="nav-link" :class="{ active: $route.path === '/agriculture/citizens' }">Citizens</router-link>
-        <router-link to="/agriculture/map" class="nav-link" :class="{ active: $route.path === '/agriculture/map' }">2D Map</router-link>
-        <router-link to="/agriculture/twin" class="nav-link" :class="{ active: $route.path === '/agriculture/twin' }">3D Twin</router-link>
-      </nav>
-
-      <div class="nav-right">
-        <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
-          <div class="theme-track" :class="{ light: theme === 'light' }">
-            <div class="theme-thumb">
-              <svg v-if="theme === 'light'" viewBox="0 0 20 20" fill="currentColor" class="theme-icon sun">
-                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
-              </svg>
-              <svg v-else viewBox="0 0 20 20" fill="currentColor" class="theme-icon moon">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
-              </svg>
-            </div>
-          </div>
-          <span class="theme-label">{{ theme === 'dark' ? 'Dark Mode' : 'Light Mode' }}</span>
-        </button>
-
-        <div class="api-pill" role="status" aria-live="polite">
-          <div class="system-dot" :class="apiStatus"></div>
-          <span>API {{ apiStatus === 'online' ? 'Connected' : 'Offline' }}</span>
-        </div>
-
-        <button class="logout-btn" @click="handleLogout" title="Sign out">
-          <!-- Power-off / logout icon -->
-          <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          <span>Logout</span>
-        </button>
-      </div>
+      <button class="logout-btn" @click="handleLogout" title="Sign out">
+        <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        <span>Logout</span>
+      </button>
     </header>
 
-    <main class="main-content">
-      <router-view v-slot="{ Component }">
-        <transition name="page" mode="out-in">
-          <keep-alive include="UnifiedRegistry">
-            <component :is="Component" />
-          </keep-alive>
-        </transition>
-      </router-view>
-    </main>
+    <!-- ── Body: sidebar + content ── -->
+    <div class="body-wrap">
+
+      <!-- ── Left sidebar ── -->
+      <nav id="app-sidebar" class="sidebar" :class="{ collapsed: !isSidebarOpen }" aria-label="Primary navigation">
+        <div class="sidebar-links">
+
+          <router-link to="/agriculture/dashboard" class="nav-item"
+            :class="{ active: $route.path === '/agriculture/dashboard' }"
+            title="Dashboard">
+            <!-- Dashboard: grid icon -->
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" rx="1"/>
+              <rect x="3"  y="14" width="7" height="7" rx="1"/>
+            </svg>
+            <span class="nav-label">Dashboard</span>
+          </router-link>
+
+          <router-link to="/agriculture/citizens" class="nav-item"
+            :class="{ active: $route.path.startsWith('/agriculture/citizens') || $route.path.startsWith('/agriculture/registry') }"
+            title="Citizens">
+            <!-- Citizens: users icon -->
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+              <path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            <span class="nav-label">Citizens</span>
+          </router-link>
+
+          <router-link to="/agriculture/map" class="nav-item"
+            :class="{ active: $route.path.startsWith('/agriculture/map') }"
+            title="2D Map">
+            <!-- 2D Map: map icon -->
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+              <line x1="8"  y1="2"  x2="8"  y2="18"/>
+              <line x1="16" y1="6"  x2="16" y2="22"/>
+            </svg>
+            <span class="nav-label">2D Map</span>
+          </router-link>
+
+          <router-link to="/agriculture/twin" class="nav-item"
+            :class="{ active: $route.path.startsWith('/agriculture/twin') }"
+            title="3D Twin">
+            <!-- 3D Twin: cube icon -->
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            <span class="nav-label">3D Twin</span>
+          </router-link>
+
+        </div>
+
+        <!-- Sidebar footer: theme toggle + API status -->
+        <div class="sidebar-footer">
+          <button class="theme-toggle" @click="toggleTheme"
+                  :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+            <div class="theme-track" :class="{ light: theme === 'light' }">
+              <div class="theme-thumb">
+                <svg v-if="theme === 'light'" viewBox="0 0 20 20" fill="currentColor" class="theme-icon sun">
+                  <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                </svg>
+                <svg v-else viewBox="0 0 20 20" fill="currentColor" class="theme-icon moon">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                </svg>
+              </div>
+            </div>
+            <span class="theme-label">{{ theme === 'dark' ? 'Dark' : 'Light' }}</span>
+          </button>
+
+          <div class="api-pill" role="status" aria-live="polite">
+            <div class="system-dot" :class="apiStatus"></div>
+            <span>{{ apiStatus === 'online' ? 'Online' : 'Offline' }}</span>
+          </div>
+        </div>
+      </nav>
+
+      <!-- ── Main content ── -->
+      <main class="main-content">
+        <router-view v-slot="{ Component }">
+          <transition name="page" mode="out-in">
+            <keep-alive include="UnifiedRegistry">
+              <component :is="Component" />
+            </keep-alive>
+          </transition>
+        </router-view>
+      </main>
+
+    </div>
   </div>
 </template>
 
@@ -88,11 +163,16 @@
 import { ref, onMounted, watch } from 'vue'
 import { logout } from '../../api/index.js'
 
-const apiStatus = ref('offline')
-const theme     = ref(localStorage.getItem('agritwin-theme') || 'dark')
+const apiStatus     = ref('offline')
+const theme         = ref(localStorage.getItem('agritwin-theme') || 'dark')
+const isSidebarOpen = ref(true)
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+function toggleSidebar() {
+  isSidebarOpen.value = !isSidebarOpen.value
 }
 
 async function handleLogout() {
@@ -116,7 +196,9 @@ onMounted(async () => {
 </script>
 
 <style>
-/* ── Dark theme (default) ── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — Dark (default) & Light
+   ══════════════════════════════════════════════════════════════════════════════ */
 :root,
 [data-theme="dark"] {
   --bg-deep:       #060b14;
@@ -141,7 +223,6 @@ onMounted(async () => {
   --green-dim:     rgba(74,222,128,0.15);
 }
 
-/* ── Light theme ── */
 [data-theme="light"] {
   --bg-deep:       #f0f4f8;
   --bg-primary:    #ffffff;
@@ -165,20 +246,25 @@ onMounted(async () => {
   --green-dim:     rgba(22,163,74,0.1);
 }
 
-/* Alias old var names to new semantic names */
 :root, [data-theme="dark"], [data-theme="light"] {
   --slate-300: var(--text-body);
   --slate-400: var(--text-muted);
   --slate-500: var(--text-dim);
   --font-display: 'Instrument Serif', Georgia, serif;
-  --font-body: 'Outfit', system-ui, sans-serif;
-  --top-nav-h: 78px;
+  --font-body:    'Outfit', system-ui, sans-serif;
+  /* Layout dimensions */
+  --topbar-h:   52px;
+  --sidebar-w: 220px;
+  /* Keep legacy var so child pages that reference it get 0 extra padding */
+  --top-nav-h: 0px;
 }
 
+/* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html, body {
+html, body, #app {
   height: 100%;
+  overflow: hidden; /* scroll is handled per-region */
   background: var(--bg-deep);
   color: var(--text-body);
   font-family: var(--font-body);
@@ -187,11 +273,14 @@ html, body {
   transition: background 0.3s ease, color 0.3s ease;
 }
 
-#app { height: 100%; }
-
+/* ══════════════════════════════════════════════════════════════════════════════
+   APP SHELL — full viewport, column layout
+   ══════════════════════════════════════════════════════════════════════════════ */
 .app-shell {
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   position: relative;
 }
 
@@ -202,210 +291,116 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 0;
-  opacity: 1;
 }
-
 [data-theme="light"] .topo-bg { opacity: 0.4; }
 
-/* ── Top Nav ── */
-.top-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--top-nav-h);
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOP BAR — thin strip: logo left, logout right
+   ══════════════════════════════════════════════════════════════════════════════ */
+.top-bar {
+  height: var(--topbar-h);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1.6rem;
-  z-index: 40;
-  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  padding: 0 1.2rem;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  z-index: 50;
+  position: relative;
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
-[data-theme="light"] .top-nav {
-  box-shadow: 0 2px 14px var(--shadow);
+[data-theme="light"] .top-bar {
+  box-shadow: 0 1px 8px var(--shadow);
 }
 
-.top-nav::after {
+/* Thin amber accent line at the bottom of the bar */
+.top-bar::after {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(90deg, transparent, var(--amber-dim) 30%, var(--teal-dim) 70%, transparent);
+  bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%, var(--amber-dim) 30%,
+    var(--teal-dim) 70%, transparent 100%);
 }
 
-.nav-left,
-.nav-right {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-
-.nav-right {
-  justify-content: flex-end;
-  gap: 0.6rem;
-}
-
+/* Brand logo */
 .brand-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   text-decoration: none;
 }
 
-.brand-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.brand-icon { width: 28px; height: 28px; flex-shrink: 0; }
 .brand-icon svg { width: 100%; height: 100%; }
 
 .brand-text { display: flex; flex-direction: column; }
 
 .brand-name {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   color: var(--text-primary);
-  line-height: 1.1;
+  line-height: 1;
 }
 
 .brand-sub {
-  font-size: 0.65rem;
+  font-size: 0.58rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 500;
 }
 
-.nav-center {
+/* Top-bar left group */
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* Hamburger button */
+.hamburger-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
-  flex: 1.5;
-}
-
-.nav-link {
-  padding: 0.65rem 0.9rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 500;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s ease, border-color 0.2s ease;
-  position: relative;
-}
-
-.nav-link:hover { color: var(--text-body); }
-
-.nav-link.active {
-  color: var(--amber);
-  border-bottom-color: var(--amber);
-}
-
-/* ── Theme Toggle ── */
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 8px;
-  background: none;
+  width: 32px;
+  height: 32px;
   border: none;
-  cursor: pointer;
-  font-family: var(--font-body);
-  font-size: 0.82rem;
+  border-radius: 7px;
+  background: transparent;
   color: var(--text-muted);
-  white-space: nowrap;
-  transition: background 0.2s, color 0.2s;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.18s, color 0.18s;
 }
-
-.theme-toggle:hover {
+.hamburger-btn:hover {
   background: var(--bg-surface);
   color: var(--text-body);
 }
-
-.theme-track {
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  background: var(--border-light);
-  position: relative;
-  flex-shrink: 0;
-  transition: background 0.3s ease;
+.hamburger-icon {
+  width: 18px;
+  height: 18px;
 }
 
-.theme-track.light {
-  background: var(--amber);
-}
-
-.theme-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-
-.theme-track.light .theme-thumb {
-  transform: translateX(16px);
-}
-
-.theme-icon { width: 10px; height: 10px; }
-.theme-icon.sun { color: var(--amber); }
-.theme-icon.moon { color: #6366f1; }
-
-.theme-label { font-size: 0.82rem; }
-
-/* ── System info ── */
-.api-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  background: var(--bg-card);
-}
-
-.system-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--red);
-  flex-shrink: 0;
-}
-.system-dot.online {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
-}
-
-/* ── Logout button ── */
+/* Logout button (top-right) */
 .logout-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.42rem;
   background: rgba(239, 68, 68, 0.10);
-  border: 1px solid rgba(239, 68, 68, 0.30);
-  border-radius: 8px;
-  padding: 0.42rem 0.85rem;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 7px;
+  padding: 0.36rem 0.78rem;
   color: #fca5a5;
-  font-size: 0.82rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.18s ease, border-color 0.18s ease,
-              color 0.18s ease, transform 0.1s ease;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.1s;
 }
 .logout-btn:hover {
   background: rgba(239, 68, 68, 0.22);
@@ -413,92 +408,266 @@ html, body {
   color: #ffffff;
   transform: translateY(-1px);
 }
-.logout-btn:active {
-  transform: translateY(0);
-}
-.logout-icon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
+.logout-btn:active { transform: translateY(0); }
+.logout-icon { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BODY WRAP — sidebar + main content side by side
+   ══════════════════════════════════════════════════════════════════════════════ */
+.body-wrap {
+  flex: 1;
+  display: flex;
+  overflow: hidden; /* prevents double scrollbar */
+  position: relative;
+  z-index: 1;
 }
 
-/* ── Main Content ── */
-.main-content {
-  width: 100%;
-  min-height: 100vh;
+/* ══════════════════════════════════════════════════════════════════════════════
+   SIDEBAR
+   ══════════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: var(--top-nav-h);
-  z-index: 1;
+  scrollbar-width: none;
+  /* ↓ Smooth open/close transition */
+  transition: width 0.3s ease-in-out,
+              background 0.3s ease,
+              border-color 0.3s ease;
+}
+.sidebar::-webkit-scrollbar { display: none; }
+
+/* ── Collapsed sidebar: 56px — icons only ── */
+.sidebar.collapsed { width: 56px; }
+
+.sidebar-links {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 1rem 0.6rem;
+}
+.sidebar.collapsed .sidebar-links {
+  padding: 1rem 0.35rem;
+  align-items: center;
+}
+
+/* Each nav item */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.62rem 0.75rem;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: background 0.18s, color 0.18s, border-color 0.18s,
+              padding 0.3s ease-in-out;
   position: relative;
-  background: var(--bg-deep);
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  background: var(--bg-surface);
+  color: var(--text-body);
+}
+
+.nav-item.active {
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-left-color: var(--amber);
+  font-weight: 600;
+}
+
+/* Collapsed nav-item: center icon, no left border visual clutter */
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 0.62rem;
+  gap: 0;
+  width: 40px;
+}
+
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity 0.18s;
+}
+
+.nav-item.active .nav-icon,
+.nav-item:hover  .nav-icon { opacity: 1; }
+
+/* Nav label — fades & collapses width smoothly */
+.nav-label {
+  line-height: 1;
+  opacity: 1;
+  max-width: 160px;
+  overflow: hidden;
+  transition: opacity 0.2s ease-in-out, max-width 0.3s ease-in-out;
+}
+.sidebar.collapsed .nav-label {
+  opacity: 0;
+  max-width: 0;
+}
+
+/* Sidebar footer */
+.sidebar-footer {
+  padding: 0.75rem 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: padding 0.3s ease-in-out;
+}
+.sidebar.collapsed .sidebar-footer {
+  padding: 0.75rem 0.35rem;
+  align-items: center;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.38rem 0.4rem;
+  border-radius: 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  width: 100%;
+  transition: background 0.2s, color 0.2s;
+}
+.theme-toggle:hover {
+  background: var(--bg-surface);
+  color: var(--text-body);
+}
+/* Collapsed: only the toggle switch, label hidden */
+.sidebar.collapsed .theme-toggle {
+  justify-content: center;
+  width: auto;
+  padding: 0.38rem;
+  gap: 0;
+}
+
+.theme-track {
+  width: 32px; height: 18px;
+  border-radius: 9px;
+  background: var(--border-light);
+  position: relative;
+  flex-shrink: 0;
   transition: background 0.3s ease;
 }
+.theme-track.light { background: var(--amber); }
 
-@media (max-width: 1100px) {
-  :root, [data-theme="dark"], [data-theme="light"] {
-    --top-nav-h: 118px;
-  }
+.theme-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.theme-track.light .theme-thumb { transform: translateX(14px); }
 
-  .top-nav {
-    flex-wrap: wrap;
-    align-items: flex-start;
-    padding-top: 0.7rem;
-    padding-bottom: 0.7rem;
-  }
-
-  .nav-left,
-  .nav-right {
-    flex: unset;
-  }
-
-  .nav-center {
-    order: 3;
-    width: 100%;
-    justify-content: flex-start;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .nav-center::-webkit-scrollbar {
-    display: none;
-  }
-
-  .theme-label {
-    display: none;
-  }
+.theme-icon { width: 9px; height: 9px; }
+.theme-icon.sun  { color: var(--amber); }
+.theme-icon.moon { color: #6366f1; }
+.theme-label {
+  font-size: 0.78rem;
+  opacity: 1;
+  max-width: 120px;
+  overflow: hidden;
+  transition: opacity 0.2s ease-in-out, max-width 0.3s ease-in-out;
+}
+.sidebar.collapsed .theme-label {
+  opacity: 0;
+  max-width: 0;
 }
 
-@media (max-width: 640px) {
-  .top-nav {
-    padding-left: 0.9rem;
-    padding-right: 0.9rem;
-    gap: 0.5rem;
-  }
+.api-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  width: fit-content;
+  transition: padding 0.3s ease-in-out, border-radius 0.3s ease-in-out;
+}
+/* Collapsed: pill becomes a small dot indicator */
+.sidebar.collapsed .api-pill {
+  padding: 0.28rem;
+  border-radius: 50%;
+  gap: 0;
+}
+.api-pill span {
+  opacity: 1;
+  max-width: 60px;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.2s ease-in-out, max-width 0.3s ease-in-out;
+}
+.sidebar.collapsed .api-pill span {
+  opacity: 0;
+  max-width: 0;
+}
 
-  .brand-sub {
-    display: none;
-  }
+.system-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+}
+.system-dot.online {
+  background: var(--green);
+  box-shadow: 0 0 5px var(--green);
+}
 
-  .api-pill {
-    padding: 0.35rem 0.55rem;
-    font-size: 0.72rem;
-  }
+/* ══════════════════════════════════════════════════════════════════════════════
+   MAIN CONTENT — fills remaining width, scrolls independently
+   ══════════════════════════════════════════════════════════════════════════════ */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-deep);
+  transition: background 0.3s ease;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Page transitions ── */
-.page-enter-active { transition: all 0.25s ease-out; }
-.page-leave-active { transition: all 0.15s ease-in; }
-.page-enter-from { opacity: 0; transform: translateY(8px); }
-.page-leave-to { opacity: 0; transform: translateY(-4px); }
+.page-enter-active { transition: all 0.22s ease-out; }
+.page-leave-active { transition: all 0.14s ease-in; }
+.page-enter-from   { opacity: 0; transform: translateY(6px); }
+.page-leave-to     { opacity: 0; transform: translateY(-3px); }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-/* ── Shared cards ── */
+/* ── Shared card component ── */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -510,7 +679,6 @@ html, body {
   border-color: var(--border-light);
   box-shadow: 0 4px 24px var(--shadow);
 }
-
 .card-title {
   font-family: var(--font-display);
   font-size: 1.1rem;
@@ -536,5 +704,51 @@ html, body {
   padding: 3rem;
   color: var(--text-dim);
   font-size: 0.85rem;
+}
+
+/* ── Mobile: sidebar goes to bottom ── */
+@media (max-width: 768px) {
+  :root, [data-theme="dark"], [data-theme="light"] {
+    --sidebar-w: 0px;
+  }
+
+  .body-wrap { flex-direction: column; }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    order: 2;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .sidebar-links {
+    flex-direction: row;
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    gap: 0;
+  }
+
+  .nav-item {
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.7rem;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 6px;
+    font-size: 0.72rem;
+  }
+
+  .nav-item.active {
+    border-bottom-color: var(--amber);
+    border-left-color: transparent;
+  }
+
+  .sidebar-footer { display: none; }
+
+  .main-content { order: 1; }
 }
 </style>
