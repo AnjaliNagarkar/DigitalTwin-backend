@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { verifySSOToken } from '../api/index.js'
 
 const routes = [
   // ── Public ─────────────────────────────────────────────────────────────────
@@ -98,10 +99,49 @@ const router = createRouter({
 })
 
 // ── Navigation guard ──────────────────────────────────────────────────────────
-// Every route that is not marked { meta: { public: true } } requires a valid
-// session token in localStorage.  If the token is missing or the session has
-// expired the user is redirected to /login.
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
+
+  // ── 1. SSO: handle ?token=<ivdp_token> present in the URL ─────────────────
+  // Works on any path — the IVDP portal can deep-link to any page and append
+  // its bearer token as a query param.  We verify it once, store our own
+  // session, then redirect to a clean URL.
+  const ssoToken = typeof to.query.token === 'string' ? to.query.token.trim() : ''
+
+  if (ssoToken) {
+    try {
+      // Forward to backend → backend validates with IVDP → returns our session
+      const data = await verifySSOToken(ssoToken)
+
+      // Store session using the same keys as the normal login flow
+      localStorage.setItem('auth_token',    data.token)
+      localStorage.setItem('auth_username', data.username)
+      localStorage.setItem('auth_expires',  data.expires_at)
+
+      // Build a clean destination: same path the user tried, but without the
+      // IVDP token in the query string (keeps the address bar tidy).
+      // eslint-disable-next-line no-unused-vars
+      const { token: _drop, ...cleanQuery } = to.query
+      const destination = {
+        path:    to.path === '/' ? '/agriculture/dashboard' : to.path,
+        query:   cleanQuery,
+        replace: true, // replace the history entry so Back doesn't re-trigger SSO
+      }
+
+      return next(destination)
+
+    } catch (err) {
+      // IVDP rejected the token (expired, tampered, etc.)
+      console.warn('[SSO] token verification failed:', err.message)
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_username')
+      localStorage.removeItem('auth_expires')
+
+      // Redirect to login and carry a flag so LoginView shows the right message
+      return next({ path: '/login', query: { error: 'sso_failed' }, replace: true })
+    }
+  }
+
+  // ── 2. Normal session check ────────────────────────────────────────────────
   const token     = localStorage.getItem('auth_token')
   const expiresAt = localStorage.getItem('auth_expires')
   const isExpired = expiresAt ? new Date() > new Date(expiresAt) : true
@@ -113,9 +153,8 @@ router.beforeEach((to, _from, next) => {
     return next()
   }
 
-  // Protected route
+  // Protected route — must have a valid session
   if (!isAuthenticated) {
-    // Clear stale tokens
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_username')
     localStorage.removeItem('auth_expires')

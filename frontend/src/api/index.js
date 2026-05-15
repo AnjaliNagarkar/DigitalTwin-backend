@@ -96,6 +96,27 @@ export async function logout() {
   window.location.replace('/login')
 }
 
+/**
+ * verifySSOToken — validates an IVDP bearer token via our backend proxy.
+ *
+ * Called by the router guard when the app URL contains ?token=<ivdp_token>.
+ * On success returns { token, username, expires_at } — same shape as login().
+ * Throws on any non-2xx response so the guard can redirect to /login?error=sso_failed.
+ *
+ * @param {string} ivdpToken  The raw IVDP bearer token from the query string.
+ */
+export async function verifySSOToken(ivdpToken) {
+  const res = await fetch(
+    `/auth/sso-verify?token=${encodeURIComponent(ivdpToken)}`,
+    { headers: { Accept: 'application/json' } },
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `SSO verification failed (${res.status})`)
+  }
+  return data // { token, username, expires_at }
+}
+
 function toQueryString(params = {}) {
   const cleaned = Object.entries(params).filter(([, value]) => {
     if (value === undefined || value === null) return false

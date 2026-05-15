@@ -175,7 +175,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { login } from '../api/index.js'
 
 // ── Captcha config (mirrors IVDP captcha.js exactly) ─────────────────────────
@@ -192,6 +192,7 @@ function generateCaptcha() {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const router           = useRouter()
+const route            = useRoute()
 const username         = ref('')
 const password         = ref('')
 const showPassword     = ref(false)
@@ -208,6 +209,12 @@ const fieldErrors = reactive({
 
 onMounted(() => {
   generatedCaptcha.value = generateCaptcha()
+
+  // Show a clear message when the user arrives here after a failed SSO attempt.
+  // The router guard appends ?error=sso_failed before redirecting to /login.
+  if (route.query.error === 'sso_failed') {
+    globalError.value = 'Invalid SSO session. Please log in with your IVDP credentials.'
+  }
 })
 
 // ── Input handlers ────────────────────────────────────────────────────────────

@@ -103,8 +103,9 @@ func main() {
 	})
 
 	// ── Auth endpoints (public — no login required) ───────────────────────────
-	r.POST("/auth/login", authHandler.Login)
-	r.POST("/auth/logout", authHandler.Logout)
+	r.POST("/auth/login",       authHandler.Login)
+	r.POST("/auth/logout",      authHandler.Logout)
+	r.GET("/auth/sso-verify",   authHandler.SSOVerify) // SSO: validates an IVDP bearer token
 
 	// ── All data routes require a valid session ───────────────────────────────
 	protected := r.Group("/")

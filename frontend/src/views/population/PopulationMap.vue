@@ -733,7 +733,9 @@ function renderMarkers(options = {}) {
 
     circle.bindTooltip(buildTooltipContent(marker), {
       sticky: true,
+      permanent: false,
       direction: 'top',
+      offset: [0, -10],
       opacity: 0.96,
       className: 'map-tooltip',
     })
@@ -843,7 +845,7 @@ function renderClusters() {
     circle.on('mouseout', () => {
       circle.setStyle({ fillOpacity: baseStyle.fillOpacity, weight: baseStyle.weight, opacity: baseStyle.opacity })
     })
-    circle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { sticky: true })
+    circle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { sticky: true, permanent: false, direction: 'top', offset: [0, -10], className: 'map-tooltip' })
   })
 
   const bounds = L.latLngBounds(clusters.map((cluster) => [cluster.latitude, cluster.longitude]))
@@ -2353,6 +2355,10 @@ onUnmounted(() => {
   font-size: 0.75rem !important;
   padding: 0.5rem 0.75rem !important;
   box-shadow: 0 4px 16px var(--shadow) !important;
+  pointer-events: none !important;
+}
+.map-tooltip.leaflet-tooltip-top::before {
+  border-top-color: var(--border) !important;
 }
 
 .leaflet-popup-content-wrapper.map-tooltip,

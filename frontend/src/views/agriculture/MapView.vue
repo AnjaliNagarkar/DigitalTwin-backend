@@ -1623,7 +1623,9 @@ function renderDistrictCentroids(centroidRows) {
 
     marker.bindTooltip(`District ID: ${d.district_id} | Count: ${d.count}`, {
       permanent: false,
+      sticky: true,
       direction: 'top',
+      offset: [0, -10],
     })
 
     marker.bindPopup(`District ID: ${d.district_id}<br/>Count: ${d.count}`)
@@ -2618,7 +2620,7 @@ function drawClusters(clusters) {
 
     areaCircle.on('click', onClick)
     dot.on('click', onClick)
-    areaCircle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { className: 'map-tooltip' })
+    areaCircle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { sticky: true, permanent: false, direction: 'top', offset: [0, -10], className: 'map-tooltip' })
   })
 }
 
@@ -3186,7 +3188,7 @@ function addHouseMarker(house) {
       ID ${id}<br/>
       ${location}
     `
-  }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -6) })
+  }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -14), sticky: true, permanent: false })
 }
 
 function plotMarkers(data, profileRequestToken = null) {
@@ -4307,6 +4309,10 @@ watch(analyticsPanelOpen, async () => {
   font-size: 0.75rem !important;
   padding: 0.5rem 0.75rem !important;
   box-shadow: 0 4px 16px var(--shadow) !important;
+  pointer-events: none !important;
+}
+.map-tooltip.leaflet-tooltip-top::before {
+  border-top-color: var(--border) !important;
 }
 /* Position zoom control below the "View Analytics / Fullscreen" buttons (top:20px + ~34px height + 8px gap) */
 .leaflet-top.leaflet-left {
