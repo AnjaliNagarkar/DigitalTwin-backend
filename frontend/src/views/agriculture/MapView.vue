@@ -1106,10 +1106,60 @@ function getWorkingMembers(house) {
 }
 
 function getWorkingOccupations(house) {
-  const direct = String(house?.working_occupations || house?.occupation_list || '').trim()
-  if (direct) return direct
+  // Values that must never appear as the "Occupation" label for an Employment Status
+  // panel. Matches the exclusion lists used by the /houses and /population/map-data
+  // SQL queries so the UI stays consistent with the backend working-member count.
+  const NON_WORKING = new Set([
+    'unemployed', 'not working', 'no work', 'housewife', 'homemaker',
+    'student', 'studying', 'not applicable', 'na', 'n/a', 'none', 'child', 'nil',
+  ])
+
+  const isWorking = (value) => {
+    const n = String(value ?? '').trim().toLowerCase()
+    return n !== '' && !NON_WORKING.has(n)
+  }
+
+  // Extract all working occupations from a pipe/comma-separated string, returning
+  // them joined with ', '.  Returns '' when no working value is found.
+  const workingFromList = (raw) => {
+    const s = String(raw ?? '').trim()
+    if (!s) return ''
+    const parts = s.split(/[|,]+/).map(v => v.trim()).filter(isWorking)
+    return parts.length ? parts.join(', ') : ''
+  }
+
+  // 1. house.occupation — from GET /houses (fm_agg.primary_occupation).
+  //    CTE-scoped per familyId so it always belongs to the clicked household.
+  //    Backend now returns a GROUP_CONCAT(DISTINCT ... OCCUPATION only ...) result,
+  //    e.g. "Self Employed - Farm based|Wage Work", already filtered to working
+  //    occupations only.  Use workingFromList so the pipe-separated value is split,
+  //    filtered, and joined into a readable comma-separated string.
+  const wOccDirect = workingFromList(house?.occupation)
+  if (wOccDirect) return wOccDirect
+
+  // 2. working_occupations — already SQL-filtered to working-only by /population/map-data.
+  //    Apply workingFromList anyway in case a contaminated fallback slipped in a mixed value.
+  const wOcc = workingFromList(house?.working_occupations)
+  if (wOcc) return wOcc
+
+  // 3. occupation_list — may be a pipe/comma-separated mix; filter to working entries.
+  const wList = workingFromList(house?.occupation_list)
+  if (wList) return wList
+
+  // 4. Population stats fallback (same source as working_occupations but via the
+  //    reactive lookup, in case enrichment missed the match for this household).
   const fallback = getPopulationFallbackForHouse(house)
-  return String(fallback?.working_occupations || fallback?.occupation_list || '').trim() || 'N/A'
+  if (fallback) {
+    const fbWOcc = workingFromList(fallback?.working_occupations)
+    if (fbWOcc) return fbWOcc
+    const fbList = workingFromList(fallback?.occupation_list)
+    if (fbList) return fbList
+    const fbOccDirect = workingFromList(fallback?.occupation)
+    if (fbOccDirect) return fbOccDirect
+  }
+
+  // 5. No working occupation found for this household.
+  return 'N/A'
 }
 
 function getBplStatus(house) {

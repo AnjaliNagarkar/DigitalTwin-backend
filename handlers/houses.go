@@ -242,12 +242,24 @@ func (h *HouseHandler) buildPopStatsSQL() string {
 		"SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)",
 		workExprBase)
 
-	var occExpr string
-	if h.memberColExists("NATURE_WAGE_WORK") {
-		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	} else {
-		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	}
+	// Occupation display uses only FAMILY_MEMBER.OCCUPATION — NATURE_WAGE_WORK is
+	// intentionally excluded so the Employment Status panel reflects recorded occupations
+	// and never a wage-work category from a separate column.
+	// GROUP_CONCAT(DISTINCT) returns every working occupation as a pipe-separated list
+	// (e.g. "Self Employed - Farm based|Wage Work"); the frontend splits and joins this.
+	occExpr := `COALESCE(GROUP_CONCAT(
+			DISTINCT CASE
+				WHEN fm.OCCUPATION IS NOT NULL
+					AND TRIM(fm.OCCUPATION) != ''
+					AND UPPER(TRIM(fm.OCCUPATION)) NOT IN (
+						'UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER',
+						'NOT APPLICABLE','STUDYING','STUDENT','NONE','NIL','CHILD','NA','N/A'
+					)
+				THEN TRIM(fm.OCCUPATION)
+			END
+			ORDER BY fm.OCCUPATION
+			SEPARATOR '|'
+		), '')`
 
 	return fmt.Sprintf(`
 		SELECT %s AS family_join_id,
@@ -682,10 +694,24 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	mfj := memberFamilyJoinExpr // alias for brevity in the format call below
 
 	// Build member aggregation expressions with optional-column safety.
-	memberOccExpr := "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	if h.memberColExists("NATURE_WAGE_WORK") {
-		memberOccExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	}
+	// Occupation display uses only FAMILY_MEMBER.OCCUPATION — NATURE_WAGE_WORK is
+	// intentionally excluded here. GROUP_CONCAT(DISTINCT) produces a pipe-separated
+	// list of working occupations (e.g. "Self Employed - Farm based|Wage Work") that
+	// the frontend splits and joins for display. Non-working values are excluded so
+	// they cannot appear in the Employment Status panel even when workingMembers > 0.
+	memberOccExpr := `COALESCE(GROUP_CONCAT(
+			DISTINCT CASE
+				WHEN fm.OCCUPATION IS NOT NULL
+					AND TRIM(fm.OCCUPATION) != ''
+					AND UPPER(TRIM(fm.OCCUPATION)) NOT IN (
+						'UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER',
+						'NOT APPLICABLE','STUDYING','STUDENT','NONE','NIL','CHILD','NA','N/A'
+					)
+				THEN TRIM(fm.OCCUPATION)
+			END
+			ORDER BY fm.OCCUPATION
+			SEPARATOR '|'
+		), '')`
 
 	memberWorkingExpr := "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER','NOT APPLICABLE','STUDYING') THEN 1 ELSE 0 END)"
 	memberUnemployedExpr := "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER','NOT APPLICABLE','STUDYING') THEN 1 ELSE 0 END)"
@@ -1351,12 +1377,20 @@ func (h *HouseHandler) buildSingleFamilyMemberQuery(familyID int, externalFamily
 	workingExpr := fmt.Sprintf("SUM(CASE WHEN UPPER(TRIM(%s)) NOT IN ('','UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER') THEN 1 ELSE 0 END)", workBase)
 	unemployedExpr := fmt.Sprintf("SUM(CASE WHEN UPPER(TRIM(%s)) IN ('','UNEMPLOYED','NOT WORKING','NO WORK') THEN 1 ELSE 0 END)", workBase)
 
-	var occExpr string
-	if h.memberColExists("NATURE_WAGE_WORK") {
-		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.NATURE_WAGE_WORK,'')),'')), MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	} else {
-		occExpr = "COALESCE(MAX(NULLIF(TRIM(COALESCE(fm.OCCUPATION,'')),'')), '')"
-	}
+	// Occupation display uses only FAMILY_MEMBER.OCCUPATION — see memberOccExpr above.
+	occExpr := `COALESCE(GROUP_CONCAT(
+			DISTINCT CASE
+				WHEN fm.OCCUPATION IS NOT NULL
+					AND TRIM(fm.OCCUPATION) != ''
+					AND UPPER(TRIM(fm.OCCUPATION)) NOT IN (
+						'UNEMPLOYED','NOT WORKING','NO WORK','HOUSEWIFE','HOMEMAKER',
+						'NOT APPLICABLE','STUDYING','STUDENT','NONE','NIL','CHILD','NA','N/A'
+					)
+				THEN TRIM(fm.OCCUPATION)
+			END
+			ORDER BY fm.OCCUPATION
+			SEPARATOR '|'
+		), '')`
 
 	var whereClause string
 	if hasExternal && externalFamilyID != "" {
