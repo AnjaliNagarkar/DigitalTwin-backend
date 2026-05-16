@@ -2,31 +2,31 @@
   <div class="map-page">
     <header class="map-header">
       <div class="map-title-area">
-        <h1 class="page-title">Geo-Intelligence Map</h1>
+        <h1 class="page-title">{{ t('mapView.geoIntelligence') }}</h1>
         <p class="page-subtitle">
-          {{ summary.total_households.toLocaleString() }} households plotted from survey database
+          {{ summary.total_households.toLocaleString() }} {{ t('popMap.householdsCovered') }}
         </p>
       </div>
 
       <div class="map-controls">
         <div class="view-toggle">
           <button class="toggle-btn" :class="{ active: viewMode === 'points' }" @click="setViewMode('points')">
-            Households
+            {{ t('popMap.households') }}
           </button>
           <button class="toggle-btn" :class="{ active: viewMode === 'villages' }" @click="setViewMode('villages')">
-            Villages
+            {{ t('popMap.villages') }}
           </button>
         </div>
 
         <div class="map-control-group">
-          <label class="control-label">District</label>
+          <label class="control-label">{{ t('map.district') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'district' }" @click.stop="toggleDropdown('district')">
             <button class="cs-trigger" type="button">
               <span class="cs-value">{{ selectedDistrictLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'district'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedDistrict }" @click="selectDistrict('')">All</div>
+              <div class="cs-option" :class="{ selected: !selectedDistrict }" @click="selectDistrict('')">{{ t('common.all') }}</div>
               <div
                 class="cs-option"
                 v-for="district in districtOptions"
@@ -41,7 +41,7 @@
         </div>
 
         <div class="map-control-group">
-          <label class="control-label">Taluka</label>
+          <label class="control-label">{{ t('map.taluka') }}</label>
           <div
             class="custom-select"
             :class="{ open: openDropdown === 'taluka', disabled: !talukaOptions.length }"
@@ -52,7 +52,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">All</div>
+              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka('')">{{ t('common.all') }}</div>
               <div
                 class="cs-option"
                 v-for="taluka in talukaOptions"
@@ -67,7 +67,7 @@
         </div>
 
         <div class="map-control-group">
-          <label class="control-label">Village</label>
+          <label class="control-label">{{ t('map.village') }}</label>
           <div
             class="custom-select"
             :class="{ open: openDropdown === 'village', disabled: !villageOptions.length }"
@@ -78,7 +78,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">All</div>
+              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage('')">{{ t('common.all') }}</div>
               <div
                 class="cs-option"
                 v-for="village in villageOptions"
@@ -93,36 +93,36 @@
         </div>
 
         <div class="map-control-group">
-          <button class="apply-btn" @click="applyFilters">Apply</button>
-          <button class="reset-btn" @click="resetFilters">Reset</button>
+          <button class="apply-btn" @click="applyFilters">{{ t('common.apply') }}</button>
+          <button class="reset-btn" @click="resetFilters">{{ t('common.reset') }}</button>
         </div>
 
         <div class="map-control-group" v-if="viewMode === 'points'">
-          <label class="control-label">Color by</label>
+          <label class="control-label">{{ t('popMap.colorBy') }}</label>
           <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }" @click.stop="toggleDropdown('colorMode')">
             <button class="cs-trigger" type="button">
               <span class="cs-value">{{ selectedColorModeLabel }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">Population Density</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }" @click="selectColorMode('bpl_status')">BPL Status</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }" @click="selectColorMode('divyang_presence')">Divyang Presence</div>
-              <div class="cs-option" :class="{ selected: colorMode === 'employment' }" @click="selectColorMode('employment')">Employment Status</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'population_density' }" @click="selectColorMode('population_density')">{{ t('popMap.populationDensity') }}</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'bpl_status' }" @click="selectColorMode('bpl_status')">{{ t('popMap.bplStatus') }}</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'divyang_presence' }" @click="selectColorMode('divyang_presence')">{{ t('popMap.divyangPresence') }}</div>
+              <div class="cs-option" :class="{ selected: colorMode === 'employment' }" @click="selectColorMode('employment')">{{ t('popMap.employmentStatus') }}</div>
             </div>
           </div>
         </div>
 
         <label class="gps-toggle" v-if="viewMode === 'points'">
           <input type="checkbox" v-model="showLocationIssues" />
-          <span>Show GPS Issues</span>
+          <span>{{ t('popMap.showGpsIssues') }}</span>
         </label>
 
         <div class="map-legend">
           <template v-if="viewMode === 'villages'">
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>High coverage</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span>Medium</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>Low coverage</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>{{ t('popMap.highCoverage') }}</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span>{{ t('popMap.medium') }}</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>{{ t('popMap.lowCoverage') }}</div>
           </template>
           <template v-else>
             <div class="legend-item" v-for="leg in headerLegend" :key="leg.label">
@@ -136,7 +136,7 @@
 
     <section class="map-shell">
       <div v-if="!loading && !markers.length" class="empty-state">
-        No live population map data returned from the database API.
+        {{ t('popMap.noData') }}
       </div>
 
       <div class="map-content" ref="mapContentRef">
@@ -150,7 +150,7 @@
               @click="analyticsPanelOpen = !analyticsPanelOpen"
               :aria-expanded="analyticsPanelOpen"
             >
-              {{ analyticsPanelOpen ? 'Hide Analytics' : 'View Analytics' }}
+              {{ analyticsPanelOpen ? t('popMap.hideAnalytics') : t('popMap.viewAnalytics') }}
             </button>
             <button
               class="fullscreen-toggle"
@@ -158,7 +158,7 @@
               @click="toggleFullscreen"
               :aria-pressed="isFullscreen"
             >
-              {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+              {{ isFullscreen ? t('popMap.exitFullscreen') : t('popMap.fullscreen') }}
             </button>
           </div>
 
@@ -180,14 +180,14 @@
                   {{ selectedColorModeLabel }}
                 </div>
                 <div class="detail-name">
-                  {{ selectedMarker.head_name || 'Unknown Head' }}
+                  {{ selectedMarker.head_name || t('popMap.unknownHead') }}
                 </div>
-                <div class="detail-sub">House {{ selectedMarker.house_no || 'N/A' }}</div>
+                <div class="detail-sub">{{ t('map.houseNo') }} {{ selectedMarker.house_no || t('common.na') }}</div>
               </div>
               <button class="detail-close" @click="closeSelectedMarker">×</button>
             </div>
 
-            <button class="focus-btn" @click="zoomToSelectedMarker">📍 Zoom to House</button>
+            <button class="focus-btn" @click="zoomToSelectedMarker">{{ t('popMap.zoomToHouse') }}</button>
 
             <div class="detail-section">{{ popupSection.title }}</div>
             <div class="kv-grid">
@@ -204,24 +204,24 @@
             <button class="panel-close" @click="clearClusterSelection">×</button>
             <div class="village-badge">{{ selectedCluster.level }}</div>
             <h3 class="panel-title">{{ selectedCluster.name }}</h3>
-            <div class="panel-id">{{ selectedCluster.households.toLocaleString() }} households covered</div>
+            <div class="panel-id">{{ selectedCluster.households.toLocaleString() }} {{ t('popMap.householdsCovered') }}</div>
 
             <div class="village-stats">
               <div class="vstat" :class="issueClass(selectedCluster.bpl_percent)">
                 <div class="vstat-val">{{ selectedCluster.bpl_percent }}%</div>
-                <div class="vstat-label">BPL Families</div>
+                <div class="vstat-label">{{ t('popMap.clusterBpl') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.literacy_percent, null, true)">
                 <div class="vstat-val">{{ selectedCluster.literacy_percent }}%</div>
-                <div class="vstat-label">Literacy</div>
+                <div class="vstat-label">{{ t('popMap.clusterLiteracy') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.working_percent, null, true)">
                 <div class="vstat-val">{{ selectedCluster.working_percent }}%</div>
-                <div class="vstat-label">Working Population</div>
+                <div class="vstat-label">{{ t('popMap.clusterWorking') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.divyang_percent)">
                 <div class="vstat-val">{{ selectedCluster.divyang_percent }}%</div>
-                <div class="vstat-label">Divyang Population</div>
+                <div class="vstat-label">{{ t('popMap.clusterDivyang') }}</div>
               </div>
             </div>
 
@@ -245,8 +245,8 @@
         <transition name="analytics-panel-slide">
           <aside v-if="analyticsPanelOpen" class="analytics-panel" aria-label="Map analytics">
             <div class="analytics-panel-head">
-              <h2 class="analytics-panel-title">Map Analytics</h2>
-              <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
+              <h2 class="analytics-panel-title">{{ t('popMap.mapAnalytics') }}</h2>
+              <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" :aria-label="t('mapView.closeAnalytics')">×</button>
             </div>
 
             <div class="analytics-scroll" v-if="analyticsChart">
@@ -284,9 +284,16 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import L from 'leaflet'
 import { getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData, getPopulationMapInsights, getPopulationMapSummary } from './api.js'
+import { translateDynamicValue, translateOccupationDisplay, translateIncome } from '../../utils/translateDynamicValue.js'
+
+const { t, locale } = useI18n()
+const td = (value) => translateDynamicValue(value, locale.value)
+const tdOcc = (value) => translateOccupationDisplay(value, locale.value)
+const tdInc = (value) => translateIncome(value, locale.value)
 
 const mapContainer = ref(null)
 const mapContentRef = ref(null)
@@ -321,30 +328,30 @@ let markerLayer = null
 let clusterLayer = null
 let requestToken = 0
 
-const COLOR_MODE_LABELS = {
-  population_density: 'Population Density',
-  bpl_status: 'BPL Status',
-  divyang_presence: 'Divyang Presence',
-  employment: 'Employment Status',
-}
+const COLOR_MODE_LABELS = computed(() => ({
+  population_density: t('viewBy.populationDensity'),
+  bpl_status:         t('viewBy.bplStatus'),
+  divyang_presence:   t('viewBy.divyangPresence'),
+  employment:         t('viewBy.employmentStatus'),
+}))
 
 const selectedDistrictLabel = computed(() => {
-  if (!selectedDistrict.value) return 'All'
-  return districtOptions.value.find((item) => String(item.id) === String(selectedDistrict.value))?.name || 'All'
+  if (!selectedDistrict.value) return t('common.all')
+  return districtOptions.value.find((item) => String(item.id) === String(selectedDistrict.value))?.name || t('common.all')
 })
 
 const selectedTalukaLabel = computed(() => {
-  if (!selectedTaluka.value) return 'All'
-  return talukaOptions.value.find((item) => String(item.id) === String(selectedTaluka.value))?.name || 'All'
+  if (!selectedTaluka.value) return t('common.all')
+  return talukaOptions.value.find((item) => String(item.id) === String(selectedTaluka.value))?.name || t('common.all')
 })
 
 const selectedVillageLabel = computed(() => {
-  if (!selectedVillage.value) return 'All'
-  return villageOptions.value.find((item) => String(item.id) === String(selectedVillage.value))?.name || 'All'
+  if (!selectedVillage.value) return t('common.all')
+  return villageOptions.value.find((item) => String(item.id) === String(selectedVillage.value))?.name || t('common.all')
 })
 
 const selectedColorMode = computed(() => colorMode.value)
-const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS[colorMode.value] || 'Population Density')
+const selectedColorModeLabel = computed(() => COLOR_MODE_LABELS.value[colorMode.value] || t('viewBy.populationDensity'))
 
 function toggleDropdown(name) {
   openDropdown.value = openDropdown.value === name ? null : name
@@ -691,10 +698,10 @@ const clusterIssues = computed(() => {
   const cluster = selectedCluster.value
   if (!cluster) return []
   return [
-    { label: 'BPL Families', pct: cluster.bpl_percent, color: '#60a5fa' },
-    { label: 'Literacy', pct: cluster.literacy_percent, color: '#10b981' },
-    { label: 'Working Population', pct: cluster.working_percent, color: '#f59e0b' },
-    { label: 'Divyang Population', pct: cluster.divyang_percent, color: '#a78bfa' },
+    { label: t('popMap.clusterBpl'),      pct: cluster.bpl_percent,     color: '#60a5fa' },
+    { label: t('popMap.clusterLiteracy'), pct: cluster.literacy_percent, color: '#10b981' },
+    { label: t('popMap.clusterWorking'),  pct: cluster.working_percent,  color: '#f59e0b' },
+    { label: t('popMap.clusterDivyang'),  pct: cluster.divyang_percent,  color: '#a78bfa' },
   ]
 })
 
@@ -909,68 +916,68 @@ const analyticsChart = computed(() => {
   if (!rows.length) return null
 
   if (colorMode.value === 'bpl_status') {
-    const bpl = rows.filter((house) => normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'yes').length
+    const bpl    = rows.filter((house) => normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'yes').length
     const nonBpl = rows.filter((house) => normalizeText(house.FAMILY_BELONG_BPL_CATEGORY) === 'no').length
-    const total = bpl + nonBpl
+    const total  = bpl + nonBpl
     return {
-      title: 'BPL Distribution',
-      subtitle: 'Household economic category',
-      totalLabel: `${total.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.bplDistribution'),
+      subtitle:    t('analytics.householdEconomicCategory'),
+      totalLabel:  `${total.toLocaleString()} ${t('analytics.households')}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: total.toLocaleString(),
       segments: [
-        { label: 'BPL', value: bpl, color: '#ef4444' },
-        { label: 'Non-BPL', value: nonBpl, color: '#0f766e' },
+        { label: t('analytics.bpl'),    value: bpl,    color: '#ef4444' },
+        { label: t('analytics.nonBpl'), value: nonBpl, color: '#0f766e' },
       ],
     }
   }
 
   if (colorMode.value === 'divyang_presence') {
-    const divyang = rows.filter((house) => Number(house.divyang_members || 0) > 0).length
+    const divyang    = rows.filter((house) => Number(house.divyang_members || 0) > 0).length
     const nonDivyang = rows.filter((house) => Number(house.divyang_members || 0) === 0).length
-    const total = divyang + nonDivyang
+    const total      = divyang + nonDivyang
     return {
-      title: 'Divyang Distribution',
-      subtitle: 'Household disability presence',
-      totalLabel: `${total.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.divyangDistribution'),
+      subtitle:    t('analytics.disabilityPresence'),
+      totalLabel:  `${total.toLocaleString()} ${t('analytics.households')}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: total.toLocaleString(),
       segments: [
-        { label: 'Divyang', value: divyang, color: '#7b1fa2' },
-        { label: 'Non-Divyang', value: nonDivyang, color: '#16a34a' },
+        { label: t('analytics.divyang'),    value: divyang,    color: '#7b1fa2' },
+        { label: t('analytics.nonDivyang'), value: nonDivyang, color: '#16a34a' },
       ],
     }
   }
 
   if (colorMode.value === 'employment' || colorMode.value === 'employment_status') {
-    const working = rows.filter((house) => Number(house.working_members || 0) > 0).length
+    const working    = rows.filter((house) => Number(house.working_members     || 0) > 0).length
     const nonWorking = rows.filter((house) => Number(house.non_working_members || 0) > 0).length
-    const total = working + nonWorking
+    const total      = working + nonWorking
     return {
-      title: 'Employment Distribution',
-      subtitle: 'Household employment status',
-      totalLabel: `${total.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.employmentDistribution'),
+      subtitle:    t('analytics.occupationStatus'),
+      totalLabel:  `${total.toLocaleString()} ${t('analytics.households')}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: total.toLocaleString(),
       segments: [
-        { label: 'Working', value: working, color: '#16a34a' },
-        { label: 'Non-working', value: nonWorking, color: '#f59e0b' },
+        { label: t('analytics.working'),    value: working,    color: '#16a34a' },
+        { label: t('analytics.nonWorking'), value: nonWorking, color: '#f59e0b' },
       ],
     }
   }
 
-  const male = rows.reduce((sum, house) => sum + Number(house.male_members || house.male_count || 0), 0)
+  const male   = rows.reduce((sum, house) => sum + Number(house.male_members   || house.male_count   || 0), 0)
   const female = rows.reduce((sum, house) => sum + Number(house.female_members || house.female_count || 0), 0)
-  const total = male + female
+  const total  = male + female
   return {
-    title: 'Gender Distribution',
-    subtitle: 'Population gender split',
-    totalLabel: `${total.toLocaleString()} members`,
-    centerLabel: 'Population',
+    title:       t('analytics.genderDistribution'),
+    subtitle:    t('analytics.populationGenderSplit'),
+    totalLabel:  `${total.toLocaleString()} ${t('analytics.members')}`,
+    centerLabel: t('analytics.population'),
     centerValue: total.toLocaleString(),
     segments: [
-      { label: 'Male', value: male, color: '#2563eb' },
-      { label: 'Female', value: female, color: '#ec4899' },
+      { label: t('analytics.male'),   value: male,   color: '#2563eb' },
+      { label: t('analytics.female'), value: female, color: '#ec4899' },
     ],
   }
 })
@@ -978,50 +985,50 @@ const analyticsChart = computed(() => {
 const popupSection = computed(() => {
   const marker = selectedMarker.value
   if (!marker) {
-    return { title: 'Population', fields: [] }
+    return { title: t('analytics.population'), fields: [] }
   }
 
   if (colorMode.value === 'bpl_status') {
     return {
-      title: 'Economic Status',
+      title: t('popMap.economicStatus'),
       fields: [
-        { label: 'BPL Category', value: marker.FAMILY_BELONG_BPL_CATEGORY || 'N/A' },
-        { label: 'Ration Card', value: marker.RATION_CARD_TYPE || 'N/A' },
-        { label: 'Annual Income', value: marker.ANNUAL_INCOME || 'N/A' },
+        { label: t('mapView.bplCategory'),   value: td(marker.FAMILY_BELONG_BPL_CATEGORY) || t('common.na') },
+        { label: t('mapView.rationCard'),     value: td(marker.RATION_CARD_TYPE)           || t('common.na') },
+        { label: t('mapView.annualIncome'),   value: translateIncome(marker.ANNUAL_INCOME, locale.value) || t('common.na') },
       ],
     }
   }
 
   if (colorMode.value === 'divyang_presence') {
     return {
-      title: 'Divyang Status',
+      title: t('popMap.divyangStatus'),
       fields: [
-        { label: 'Divyang Members', value: Number(marker.divyang_members || 0).toLocaleString() },
-        { label: 'Disability Present', value: Number(marker.has_disability || 0) === 1 ? 'Yes' : 'No' },
+        { label: t('popMap.divyangMembers'),     value: Number(marker.divyang_members || 0).toLocaleString() },
+        { label: t('popMap.disabilityPresent'),  value: Number(marker.has_disability || 0) === 1 ? t('common.yes') : t('common.no') },
       ],
     }
   }
 
   if (colorMode.value === 'employment' || colorMode.value === 'employment_status') {
-    const totalMembers = Number(marker.total_members || 0)
+    const totalMembers   = Number(marker.total_members   || 0)
     const workingMembers = Number(marker.working_members || 0)
-    const nonWorking = marker.non_working_members ?? Math.max(totalMembers - workingMembers, 0)
+    const nonWorking     = marker.non_working_members ?? Math.max(totalMembers - workingMembers, 0)
     return {
-      title: 'Employment',
+      title: t('popMap.employment'),
       fields: [
-        { label: 'Working Members', value: workingMembers.toLocaleString() },
-        { label: 'Non Working Members', value: Number(nonWorking || 0).toLocaleString() },
-        { label: 'Occupation', value: marker.working_occupations || marker.occupation_list || 'N/A', full: true },
+        { label: t('map.workingMembers'), value: workingMembers.toLocaleString() },
+        { label: t('popMap.nonWorking'),  value: Number(nonWorking || 0).toLocaleString() },
+        { label: t('map.occupation'),     value: tdOcc(marker.working_occupations || marker.occupation_list) || t('common.na'), full: true },
       ],
     }
   }
 
   return {
-    title: 'Population',
+    title: t('analytics.population'),
     fields: [
-      { label: 'Members', value: Number(marker.total_members || 0).toLocaleString() },
-      { label: 'Male', value: Number((marker.male_members ?? marker.male_count) || 0).toLocaleString() },
-      { label: 'Female', value: Number((marker.female_members ?? marker.female_count) || 0).toLocaleString() },
+      { label: t('map.totalMembers'), value: Number(marker.total_members || 0).toLocaleString() },
+      { label: t('analytics.male'),   value: Number((marker.male_members   ?? marker.male_count)   || 0).toLocaleString() },
+      { label: t('analytics.female'), value: Number((marker.female_members ?? marker.female_count) || 0).toLocaleString() },
     ],
   }
 })
@@ -1029,37 +1036,37 @@ const popupSection = computed(() => {
 const headerLegend = computed(() => {
   if (showLocationIssues.value) {
     return [
-      { color: '#22c55e', label: 'Valid location' },
-      { color: '#f59e0b', label: 'Approximate GPS' },
-      { color: '#ef4444', label: 'Suspicious location' },
-      { color: '#6b7280', label: 'Missing GPS' },
+      { color: '#22c55e', label: t('popMap.validLocation') },
+      { color: '#f59e0b', label: t('popMap.approxGps') },
+      { color: '#ef4444', label: t('popMap.suspiciousLocation') },
+      { color: '#6b7280', label: t('popMap.missingGps') },
     ]
   }
 
   if (colorMode.value === 'population_density') {
     return [
-      { color: '#2c7a7b', label: 'Population households' },
+      { color: '#2c7a7b', label: t('popMap.popHouseholds') },
     ]
   }
 
   if (colorMode.value === 'employment') {
     return [
-      { color: '#2e7d32', label: 'Working household' },
-      { color: '#f57c00', label: 'No earning member' },
+      { color: '#2e7d32', label: t('popMap.workingHousehold') },
+      { color: '#f57c00', label: t('popMap.noEarningMember') },
     ]
   }
 
   if (colorMode.value === 'divyang_presence') {
     return [
-      { color: '#7b1fa2', label: 'Divyang present' },
-      { color: '#2e7d32', label: 'No disability' },
+      { color: '#7b1fa2', label: t('legend.divyangPresent') },
+      { color: '#2e7d32', label: t('legend.noDivyang') },
     ]
   }
 
   if (colorMode.value === 'bpl_status') {
     return [
-      { color: '#e53935', label: 'BPL households' },
-      { color: '#2e7d32', label: 'Non-BPL households' },
+      { color: '#e53935', label: t('legend.bplHouseholds') },
+      { color: '#2e7d32', label: t('legend.nonBplHouseholds') },
     ]
   }
 

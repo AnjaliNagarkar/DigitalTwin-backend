@@ -2,15 +2,15 @@
   <div class="citizens-page">
     <header class="page-header">
       <div>
-        <h1 class="page-title">Citizen Registry</h1>
-        <p class="page-subtitle">Household-level records from survey data</p>
+        <h1 class="page-title">{{ t('registry.citizenTitle') }}</h1>
+        <p class="page-subtitle">{{ t('registry.citizenSubtitle') }}</p>
       </div>
       <div class="header-controls">
         <div class="search-box">
           <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
             <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
           </svg>
-          <input v-model="search" placeholder="Search by name..." class="search-input" />
+          <input v-model="search" :placeholder="t('common.searchByName')" class="search-input" />
         </div>
         <div class="filter-controls">
           <button v-for="f in filters" :key="f.value" class="chip"
@@ -24,27 +24,27 @@
             @click="irrigationFilter = irrigationFilter === w.value ? '' : w.value">
             {{ w.label }}
           </button>
-          <select v-model="occupationFilter" class="filter-select" aria-label="Filter by occupation">
-            <option value="">All Occupations</option>
+          <select v-model="occupationFilter" class="filter-select" :aria-label="t('registry.colOccupation')">
+            <option value="">{{ t('registry.filterAllOccupations') }}</option>
             <option v-for="o in occupationOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
-          <select v-model="incomeFilter" class="filter-select" aria-label="Filter by income range">
-            <option value="">All Income Ranges</option>
+          <select v-model="incomeFilter" class="filter-select" :aria-label="t('registry.colIncome')">
+            <option value="">{{ t('registry.filterAllIncomeRanges') }}</option>
             <option v-for="r in incomeOptions" :key="r.value" :value="r.value">{{ r.label }}</option>
           </select>
         </div>
-        <button class="reset-btn" @click="resetFilters">Reset Filters</button>
+        <button class="reset-btn" @click="resetFilters">{{ t('common.resetFilters') }}</button>
       </div>
     </header>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Fetching citizen records...</span>
+      <span>{{ t('registry.citizenLoading') }}</span>
     </div>
 
     <div v-else class="table-container">
       <div class="table-info">
-        Showing <strong>{{ filteredCitizens.length }}</strong> of {{ citizens.length }} records
+        {{ t('common.showing') }} <strong>{{ filteredCitizens.length }}</strong> {{ t('common.of') }} {{ citizens.length }} {{ t('common.records') }}
       </div>
       <div class="table-wrap">
         <table class="data-table">
@@ -52,31 +52,31 @@
             <tr>
               <th class="th-index">#</th>
               <th @click="toggleSort('fullName')" class="sortable th-name">
-                Full Name
+                {{ t('registry.colFullName') }}
                 <span v-if="sortKey === 'fullName'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('totalLand')" class="sortable">
-                Land (Acre)
+                {{ t('registry.colLand') }}
                 <span v-if="sortKey === 'totalLand'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('waterSource')" class="sortable">
-                Water Source
+                {{ t('registry.colWaterSource') }}
                 <span v-if="sortKey === 'waterSource'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('irrigationType')" class="sortable">
-                Irrigation
+                {{ t('registry.colIrrigation') }}
                 <span v-if="sortKey === 'irrigationType'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('workDetails')" class="sortable">
-                What They Do
+                {{ t('registry.colWorkDetails') }}
                 <span v-if="sortKey === 'workDetails'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('annualIncome')" class="sortable">
-                Income
+                {{ t('registry.colIncome') }}
                 <span v-if="sortKey === 'annualIncome'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
               <th @click="toggleSort('childrenCount')" class="sortable">
-                Children
+                {{ t('registry.colChildren') }}
                 <span v-if="sortKey === 'childrenCount'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
             </tr>
@@ -88,25 +88,25 @@
               <td class="td-num">{{ formatLand(citizen.totalLand) }}</td>
               <td class="td-water">
                 <span class="water-badge" :class="waterClass(citizen.waterSource)">
-                  {{ citizen.waterSource || '—' }}
+                  {{ translateDynamicValue(citizen.waterSource, locale) || '—' }}
                 </span>
               </td>
               <td>
                 <span class="ration-badge" :class="waterClass(citizen.waterSource)">
-                  {{ getIrrigationType(citizen.waterSource) }}
+                  {{ getIrrigationType(citizen.waterSource) === 'Irrigated' ? t('registry.irrigatedLabel') : t('registry.rainfedLabel') }}
                 </span>
               </td>
-              <td class="td-name">{{ formatWorkDetails(citizen.workDetails, citizen.occupation) }}</td>
-              <td class="td-num">{{ formatIncome(citizen.annualIncome) }}</td>
+              <td class="td-name">{{ translateOccupation(formatWorkDetails(citizen.workDetails, citizen.occupation), locale) || t('common.notWorking') }}</td>
+              <td class="td-num">{{ translateIncome(formatIncome(citizen.annualIncome), locale) || '—' }}</td>
               <td class="td-num">{{ citizen.childrenCount ?? 0 }}</td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="pagination">
-        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">← Prev</button>
-        <span class="pg-info">Page {{ currentPage }} of {{ totalPages }}</span>
-        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">Next →</button>
+        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">{{ t('common.prev') }}</button>
+        <span class="pg-info">{{ t('common.pageOf', { current: currentPage, total: totalPages }) }}</span>
+        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">{{ t('common.next') }}</button>
       </div>
     </div>
   </div>
@@ -114,7 +114,11 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getCitizens } from '../../api/index.js'
+import { translateDynamicValue, translateOccupation, translateIncome } from '../../utils/translateDynamicValue.js'
+
+const { t, locale } = useI18n()
 
 const loading = ref(true)
 const citizens = ref([])
@@ -125,33 +129,33 @@ const sortDir = ref('asc')
 const currentPage = ref(1)
 const pageSize = 50
 
-const filters = [
-  { label: 'Land Owners', value: 'with_land' },
-  { label: 'No Land',     value: 'no_land'   },
-]
+const filters = computed(() => [
+  { label: t('registry.filterLandOwners'), value: 'with_land' },
+  { label: t('registry.filterNoLand'),     value: 'no_land'   },
+])
 
-const waterFilters = [
-  { label: 'Irrigated',  value: 'Irrigated' },
-  { label: 'Rain-fed',   value: 'Rain-fed'  },
-]
+const waterFilters = computed(() => [
+  { label: t('registry.filterIrrigated'), value: 'Irrigated' },
+  { label: t('registry.filterRainfed'),   value: 'Rain-fed'  },
+])
 
-const occupationOptions = [
-  { label: 'Farm Based', value: 'farm_based' },
-  { label: 'Non-farm Based', value: 'non_farm_based' },
-  { label: 'Wage Work', value: 'wage_work' },
-  { label: 'Studying', value: 'studying' },
-  { label: 'Housewife', value: 'housewife' },
-]
+const occupationOptions = computed(() => [
+  { label: t('registry.occFarmBased'),    value: 'farm_based' },
+  { label: t('registry.occNonFarmBased'), value: 'non_farm_based' },
+  { label: t('registry.occWageWork'),     value: 'wage_work' },
+  { label: t('registry.occStudying'),     value: 'studying' },
+  { label: t('registry.occHousewife'),    value: 'housewife' },
+])
 
 const irrigationFilter = ref('')
 const occupationFilter = ref('')
 const incomeFilter = ref('')
 
-const incomeOptions = [
-  { label: 'Less than 21,000', value: 'lt_21000' },
-  { label: '21,001 to 50,000', value: '21001_50000' },
-  { label: '50,001+', value: 'gt_50000' },
-]
+const incomeOptions = computed(() => [
+  { label: t('registry.incLt21000'), value: 'lt_21000' },
+  { label: t('registry.inc21to50'), value: '21001_50000' },
+  { label: t('registry.incGt50000'), value: 'gt_50000' },
+])
 
 onMounted(async () => {
   try { citizens.value = await getCitizens() }

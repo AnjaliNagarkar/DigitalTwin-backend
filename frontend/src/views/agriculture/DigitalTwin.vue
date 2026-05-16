@@ -6,7 +6,7 @@
         class="map-fs-btn"
         :class="{ shifted: selectedHouse || selectedCluster }"
         @click="toggleTwinFullscreen"
-        :title="isTwinFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+        :title="isTwinFullscreen ? t('twin.exitFullscreen') : t('twin.fullscreen')"
         aria-label="Toggle fullscreen"
       >
         {{ isTwinFullscreen ? '⤡' : '⤢' }}
@@ -22,7 +22,7 @@
           </span>
           <span class="legend-text">{{ leg.label }}</span>
         </div>
-        <div class="legend-note">Roof color = {{ legendTitle.toLowerCase() }} status</div>
+        <div class="legend-note">{{ t('twin.roofColorNote', { title: legendTitle.toLowerCase() }) }}</div>
       </div>
 
       <!-- DETAIL PANEL (must live inside fullscreen container) -->
@@ -42,7 +42,7 @@
                              color: getConditionColor(selectedHouse) }">
                 {{ getConditionLabel(selectedHouse) }}
               </div>
-              <div class="detail-name">{{ selectedHouse.headName || 'Household' }}</div>
+              <div class="detail-name">{{ selectedHouse.headName || t('map.households') }}</div>
               <div class="detail-sub">
                 <span class="detail-id-chip">ID {{ selectedHouse.familyId }}</span>
                 <span>{{ selectedHouse.villageName }}</span>
@@ -52,7 +52,7 @@
             <button class="detail-close" @click.stop="selectedHouse = null" title="Close">×</button>
           </div>
 
-          <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 Zoom to Location</button>
+          <button class="focus-btn" @click="flyToHouse(selectedHouse)">📍 {{ t('twin.zoomToLocation') }}</button>
 
           <div class="drawer-content">
             <div v-if="!isHouseDetailsLoading">
@@ -67,7 +67,7 @@
                   <div class="focus-header">
                     <span class="focus-header-icon">{{ focusData.icon }}</span>
                     <span class="focus-header-title">{{ focusData.title }}</span>
-                    <span class="focus-header-pill">Active Filter</span>
+                    <span class="focus-header-pill">{{ t('twin.activeFilter') }}</span>
                   </div>
 
                   <!-- Metrics row -->
@@ -305,7 +305,7 @@
 
                 <!-- Loading -->
                 <div v-if="advisoryCache[selectedHouse.familyId]?.loading" class="advisory-loading">
-                  <span class="advisory-spinner"></span> Loading advisory…
+                  <span class="advisory-spinner"></span> {{ t('twin.loadingAdvisory') }}
                 </div>
 
                 <!-- Issues -->
@@ -382,7 +382,7 @@
 
         <!-- District -->
         <div class="filter-group">
-          <label class="filter-label">District</label>
+          <label class="filter-label">{{ t('map.district') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'district' }"
                @click.stop="toggleDropdown('district')">
             <button class="cs-trigger" type="button">
@@ -391,7 +391,7 @@
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'district'" :key="districtOptions.length" @click.stop>
               <div class="cs-option" :class="{ selected: !pendingDistrict }"
-                   @click="selectDistrict('')">All Districts</div>
+                   @click="selectDistrict('')">{{ t('map.allDistricts') }}</div>
                   <div class="cs-option" v-for="d in districtOptions" :key="d.id"
                     :class="{ selected: String(pendingDistrict) === String(d.id) }"
                     @click="selectDistrict(d.id)">{{ d.name }}</div>
@@ -403,7 +403,7 @@
 
         <!-- Taluka -->
         <div class="filter-group">
-          <label class="filter-label">Taluka</label>
+          <label class="filter-label">{{ t('map.taluka') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'taluka', disabled: !pendingDistrict }"
                @click.stop="pendingDistrict && toggleDropdown('taluka')">
             <button class="cs-trigger" type="button" :disabled="!pendingDistrict">
@@ -412,7 +412,7 @@
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'taluka'" :key="talukaOptions.length" @click.stop>
               <div class="cs-option" :class="{ selected: !pendingTaluka }"
-                   @click="selectTaluka('')">All Talukas</div>
+                   @click="selectTaluka('')">{{ t('map.allTalukas') }}</div>
               <div class="cs-option" v-for="t in talukaOptions" :key="t.id"
                    :class="{ selected: String(pendingTaluka) === String(t.id) }"
                    @click="selectTaluka(t.id)">{{ t.name }}</div>
@@ -424,7 +424,7 @@
 
         <!-- Village -->
         <div class="filter-group">
-          <label class="filter-label">Village</label>
+          <label class="filter-label">{{ t('map.village') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'village', disabled: !pendingTaluka }"
                @click.stop="pendingTaluka && toggleDropdown('village')">
             <button class="cs-trigger" type="button" :disabled="!pendingTaluka">
@@ -440,21 +440,21 @@
         </div>
 
         <button class="apply-btn" @click="applyFilters" :disabled="!filtersDirty">
-          Apply
+          {{ t('common.apply') }}
         </button>
         <button class="reset-btn" @click="resetFilters" v-if="pendingDistrict || pendingTaluka || pendingVillage || filterDistrict || filterTaluka || filterVillage">
-          ✕ Reset
+          ✕ {{ t('common.reset') }}
         </button>
       </div>
 
       <!-- RIGHT CONTROLS -->
       <div class="topbar-right">
         <div class="ctrl-group">
-          <label class="filter-label">VIEW BY</label>
+          <label class="filter-label">{{ t('map.viewBy') }}</label>
           <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
                @click.stop="toggleDropdown('colorMode')">
             <button class="cs-trigger view-by-btn" type="button" :class="{ 'cs-trigger-placeholder': !selectedView }">
-              <span class="cs-value">{{ selectedViewLabel || 'Select a view...' }}</span>
+              <span class="cs-value">{{ selectedViewLabel || t('mapView.selectView') }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
@@ -483,9 +483,9 @@
             <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style="flex-shrink:0">
               <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
             </svg>
-            {{ pdfLoading ? 'Generating…' : 'PDF Report' }}
+            {{ pdfLoading ? t('twin.generating') : t('twin.pdfReport') }}
           </button>
-          <div class="dl-count">{{ (agricultureInsights?.totalHouseholds || houses.length || 0).toLocaleString() }} rows</div>
+          <div class="dl-count">{{ (agricultureInsights?.totalHouseholds || houses.length || 0).toLocaleString() }} {{ t('twin.rows') }}</div>
         </div>
       </div>
     </div>
@@ -493,24 +493,24 @@
     <!-- LOADING STATE -->
     <div class="loading-overlay" v-if="loadingLiveData">
       <div class="loading-spinner"></div>
-      <div class="loading-text">Loading village data…</div>
+      <div class="loading-text">{{ t('twin.loadingVillage') }}</div>
     </div>
 
     <!-- VIEWPORT LOADING — shown while a viewport fetch is in-flight -->
     <div class="loading-overlay map-bg-loading-overlay" v-if="!loadingLiveData && viewportLoading">
       <div class="loading-spinner"></div>
-      <div class="loading-text">Loading map data…</div>
+      <div class="loading-text">{{ t('twin.loadingMapData') }}</div>
     </div>
 
     <!-- CENTERING MAP — shown while the initial fit-bounds fly animation runs -->
     <div class="loading-overlay centering-overlay" v-if="centeringMap">
       <div class="loading-spinner"></div>
-      <div class="loading-text">Centering map…</div>
+      <div class="loading-text">{{ t('twin.centeringMap') }}</div>
     </div>
 
     <!-- EMPTY VIEWPORT HINT (non-blocking; preserves Cesium interactions) -->
     <div class="map-empty-toast" v-if="showEmptyViewportHint && !loadingLiveData && !viewportLoading">
-      No households in this view. Pan or zoom to a populated area.
+      {{ t('twin.noHouseholdsInView') }}
     </div>
 
     <!-- STATS BAR -->
@@ -527,9 +527,9 @@
         </span>
       </span>
       <span class="stat-sep">·</span>
-      <span class="stat-item"><strong>{{ totalPopulation.toLocaleString() }}</strong> population</span>
+      <span class="stat-item"><strong>{{ totalPopulation.toLocaleString() }}</strong> {{ t('common.population') }}</span>
       <span class="stat-sep">·</span>
-      <span class="stat-item"><strong>{{ farmersOwnLandCount.toLocaleString() }}</strong> farmer households</span>
+      <span class="stat-item"><strong>{{ farmersOwnLandCount.toLocaleString() }}</strong> {{ t('twin.farmerHouseholds') }}</span>
       <span class="stat-sep">·</span>
       <span class="stat-item">Maharashtra</span>
       <span class="stat-sep" v-if="zoomLabel">·</span>
@@ -539,7 +539,7 @@
     <!-- ── LEFT SIDEBAR ── -->
     <div class="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <button class="sidebar-toggle" @click="sidebarCollapsed = !sidebarCollapsed"
-              :title="sidebarCollapsed ? 'Open panel' : 'Close panel'">
+              :title="sidebarCollapsed ? t('twin.openPanel') : t('twin.closePanel')">
         {{ sidebarCollapsed ? '›' : '‹' }}
       </button>
 
@@ -547,7 +547,7 @@
 
         <!-- LEGEND — always visible; default state when no mode is selected -->
         <div class="panel-card">
-          <div class="card-title">{{ colorMode ? legendTitle : 'Map Legend' }}</div>
+          <div class="card-title">{{ colorMode ? legendTitle : t('twin.mapLegend') }}</div>
           <template v-if="colorMode">
             <div class="legend-item" v-for="leg in currentLegend" :key="leg.label">
               <span class="mini-house" :style="{ '--mh-roof': leg.color }">
@@ -556,7 +556,7 @@
               </span>
               <span class="legend-text">{{ leg.label }}</span>
             </div>
-            <div class="legend-note">Roof color = {{ legendTitle.toLowerCase() }} status</div>
+            <div class="legend-note">{{ t('twin.roofColorNote', { title: legendTitle.toLowerCase() }) }}</div>
           </template>
           <template v-else>
             <div class="legend-item">
@@ -564,17 +564,17 @@
                 <span class="mh-roof"></span>
                 <span class="mh-wall"></span>
               </span>
-              <span class="legend-text">All Households
+              <span class="legend-text">{{ t('twin.allHouseholds') }}
                 <span class="legend-count-pill">{{ householdsOnMapCount.toLocaleString() }}</span>
               </span>
             </div>
-            <div class="legend-note">Select a category from <strong>View By</strong> to colour the map</div>
+            <div class="legend-note">{{ t('twin.selectViewByNote') }}</div>
           </template>
         </div>
 
         <!-- VILLAGE SUMMARY — always visible; shows household + problem-stat breakdown -->
         <div class="panel-card vs-card">
-          <div class="card-title">Village Summary</div>
+          <div class="card-title">{{ t('twin.villageSummary') }}</div>
 
           <!-- Top stat row: households + population -->
           <div class="vs-top-row">
@@ -584,15 +584,15 @@
                   ? householdsOnMapCount.toLocaleString()
                   : (agricultureInsights?.totalHouseholds || houses.length).toLocaleString()
               }}</div>
-              <div class="vs-stat-lbl">Households</div>
+              <div class="vs-stat-lbl">{{ t('twin.totalHouseholds') }}</div>
             </div>
             <div class="vs-stat">
               <div class="vs-stat-val">{{ totalPopulation.toLocaleString() }}</div>
-              <div class="vs-stat-lbl">Population</div>
+              <div class="vs-stat-lbl">{{ t('common.population') }}</div>
             </div>
             <div class="vs-stat">
               <div class="vs-stat-val">{{ (stats?.farmers || farmersOwnLandCount).toLocaleString() }}</div>
-              <div class="vs-stat-lbl">Farmers</div>
+              <div class="vs-stat-lbl">{{ t('twin.farmers') }}</div>
             </div>
           </div>
 
@@ -602,49 +602,49 @@
             <div class="vs-gender-fill vs-gender-female" :style="{ width: femalePct + '%' }" :title="`Female ${femalePct}%`"></div>
           </div>
           <div class="vs-gender-labels" v-if="totalPopulation > 0">
-            <span><span class="vs-gender-dot" style="background:#3b82f6"></span>Male {{ malePct }}% ({{ maleTotal.toLocaleString() }})</span>
-            <span><span class="vs-gender-dot" style="background:#ec4899"></span>Female {{ femalePct }}% ({{ femaleTotal.toLocaleString() }})</span>
+            <span><span class="vs-gender-dot" style="background:#3b82f6"></span>{{ t('analytics.male') }} {{ malePct }}% ({{ maleTotal.toLocaleString() }})</span>
+            <span><span class="vs-gender-dot" style="background:#ec4899"></span>{{ t('analytics.female') }} {{ femalePct }}% ({{ femaleTotal.toLocaleString() }})</span>
           </div>
 
           <!-- Problem stats from reference project -->
           <div class="vs-problems" v-if="stats">
             <div class="vs-prob-row">
               <span class="vs-prob-dot" style="background:#ef4444"></span>
-              <span class="vs-prob-lbl">No Sanitation</span>
+              <span class="vs-prob-lbl">{{ t('mapView.noSanitation') }}</span>
               <span class="vs-prob-val">{{ stats.noToilet.toLocaleString() }}</span>
               <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noToilet/stats.total*100) : 0 }}%</span>
             </div>
             <div class="vs-prob-row">
               <span class="vs-prob-dot" style="background:#f59e0b"></span>
-              <span class="vs-prob-lbl">No Electricity</span>
+              <span class="vs-prob-lbl">{{ t('mapView.noElectricity') }}</span>
               <span class="vs-prob-val">{{ stats.noElec.toLocaleString() }}</span>
               <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noElec/stats.total*100) : 0 }}%</span>
             </div>
             <div class="vs-prob-row">
               <span class="vs-prob-dot" style="background:#a78bfa"></span>
-              <span class="vs-prob-lbl">No Irrigation</span>
+              <span class="vs-prob-lbl">{{ t('mapView.noIrrigation') }}</span>
               <span class="vs-prob-val">{{ stats.noIrrig.toLocaleString() }}</span>
               <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.noIrrig/stats.total*100) : 0 }}%</span>
             </div>
             <div class="vs-prob-row">
               <span class="vs-prob-dot" style="background:#60a5fa"></span>
-              <span class="vs-prob-lbl">BPL Families</span>
+              <span class="vs-prob-lbl">{{ t('mapView.bplFamilies') }}</span>
               <span class="vs-prob-val">{{ stats.bpl.toLocaleString() }}</span>
               <span class="vs-prob-pct">{{ stats.total ? Math.round(stats.bpl/stats.total*100) : 0 }}%</span>
             </div>
           </div>
 
           <div class="pf-hint" style="margin-top:8px" v-if="!colorMode">
-            Select a category from <strong>View By</strong> to colour the map.
+            {{ t('twin.selectViewByNote') }}
           </div>
         </div>
 
         <!-- PROBLEM FILTER — only shown when a mode is active -->
         <div class="panel-card" v-if="colorMode && availableProblemFilters.length">
-          <div class="card-title">Problem Filter
-            <span class="card-title-sub">highlight on map</span>
+          <div class="card-title">{{ t('twin.problemFilter') }}
+            <span class="card-title-sub">{{ t('twin.highlightOnMap') }}</span>
           </div>
-          <div class="pf-context-label">Filters for {{ selectedViewLabel || 'Select a view...' }}</div>
+          <div class="pf-context-label">{{ t('twin.filtersFor') }} {{ selectedViewLabel || t('mapView.selectView') }}</div>
           <transition-group name="pf-fade" tag="div" class="pf-list">
             <label class="pf-item" v-for="pf in availableProblemFilters" :key="pf.key">
               <input class="pf-check" type="checkbox" :value="pf.key" v-model="activeProblemFilters" />
@@ -656,20 +656,20 @@
               <span class="pf-count">{{ formatProblemCount(problemFilterStats[pf.key]) }}</span>
             </label>
           </transition-group>
-          <div class="pf-hint" v-if="!hasDetailedHouseData">Loading detailed household counts for current view…</div>
+          <div class="pf-hint" v-if="!hasDetailedHouseData">{{ t('twin.loadingHouseholdCounts') }}</div>
           <div class="pf-summary" v-if="activeProblemFilters.length">
-            <span><strong>{{ problemMatchCount }}</strong> flagged</span>
-            <button class="pf-clear-btn" @click="activeProblemFilters = []">✕ Clear</button>
+            <span><strong>{{ problemMatchCount }}</strong> {{ t('twin.flagged') }}</span>
+            <button class="pf-clear-btn" @click="activeProblemFilters = []">✕ {{ t('common.reset') }}</button>
           </div>
           <div class="pf-hint" v-else>
-            Select filters to highlight at-risk households on the map
+            {{ t('twin.problemFilterHint') }}
           </div>
         </div>
 
         <!-- FIELD ISSUES — only shown when a mode is active -->
         <div class="panel-card" v-if="colorMode && issueList.length">
-          <div class="card-title">{{ selectedViewLabel || 'Select a view...' }} Analysis
-            <span class="card-title-sub">tap to expand schemes</span>
+          <div class="card-title">{{ selectedViewLabel || t('mapView.selectView') }} {{ t('twin.analysis') }}
+            <span class="card-title-sub">{{ t('twin.tapToExpand') }}</span>
           </div>
           <transition-group name="fi-fade" tag="div" class="fi-list">
           <div v-for="issue in issueList" :key="issue.key">
@@ -694,18 +694,18 @@
             <transition name="drawer">
               <div v-if="schemeDrawer === issue.key && schemeCache[issue.key] && (schemeCache[issue.key].loading || schemeCache[issue.key].schemes.length > 0)" class="issue-drawer scheme-drawer" :style="{ borderLeftColor: issue.color }">
                 <div v-if="schemeCache[issue.key].cause && String(schemeCache[issue.key].cause).trim()" class="drawer-cause">
-                  <strong>Cause:</strong>
+                  <strong>{{ t('twin.cause') }}:</strong>
                   {{ schemeCache[issue.key].cause }}
                 </div>
 
                 <div v-if="schemeCache[issue.key].loading" class="scheme-loading">
-                  <span class="scheme-spinner"></span> Loading schemes…
+                  <span class="scheme-spinner"></span> {{ t('twin.loadingSchemes') }}
                 </div>
 
                 <template v-else>
                   <div class="scheme-header">
                     <span class="scheme-header-icon">🏛</span>
-                    <span class="scheme-header-text">Recommended Schemes based on eligibility</span>
+                    <span class="scheme-header-text">{{ t('twin.recommendedSchemes') }}</span>
                     <span class="scheme-source-tag" :class="schemeCache[issue.key].source === 'db' ? 'tag-db' : 'tag-empty'">
                       {{ schemeCache[issue.key].source === 'db' ? '● Live DB' : '● No DB Data' }}
                     </span>
@@ -858,13 +858,13 @@
 
         <!-- ── Loading state ── -->
         <div v-if="!clusterAdvisory || clusterAdvisory.loading" class="cluster-loading">
-          <span class="advisory-spinner"></span> Loading group advisory…
+          <span class="advisory-spinner"></span> {{ t('twin.loadingGroupAdvisory') }}
         </div>
 
         <template v-else>
           <!-- ── Group Action Cards ── -->
           <div class="cluster-section-title" v-if="clusterAdvisory.actions.length">
-            🔍 Group Issues &amp; Community Actions
+            🔍 {{ t('twin.groupIssuesCommunityActions') }}
           </div>
 
           <div class="cp-group-card"
@@ -890,13 +890,13 @@
 
             <!-- Cause -->
             <div v-if="action.cause && String(action.cause).trim() && action.source === 'scheme_criteria'" class="cp-cause-row">
-              <span class="cp-tag cp-tag-cause">Cause</span>
+              <span class="cp-tag cp-tag-cause">{{ t('twin.cause') }}</span>
               <span class="cp-cause-text">{{ action.cause }}</span>
             </div>
 
             <!-- Group Action (Recommended) -->
             <div class="cp-action-row">
-              <span class="cp-tag cp-tag-action">Recommended Action</span>
+              <span class="cp-tag cp-tag-action">{{ t('twin.recommendedAction') }}</span>
               <span class="cp-action-text">{{ action.groupAction }}</span>
             </div>
 
@@ -910,13 +910,13 @@
               <span v-if="action.schemeBenefit" class="cp-benefit-pill">💰 {{ action.schemeBenefit }}</span>
               <span class="cp-source-tag"
                     :class="action.source === 'scheme_criteria' ? 'src-db' : 'src-curated'">
-                {{ action.source === 'scheme_criteria' ? '● Scheme Database' : '● Agriculture Dept' }}
+                {{ action.source === 'scheme_criteria' ? `● ${t('twin.schemeDatabase')}` : `● ${t('twin.agriculturalDept')}` }}
               </span>
             </div>
           </div>
 
           <div v-if="!clusterAdvisory.actions.length" class="cluster-ok">
-            ✅ No major issues detected in this cluster based on current filters.
+            ✅ {{ t('twin.noIssuesDetected') }}
           </div>
 
           <!-- ── Drill-down button ── -->
@@ -934,6 +934,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getHouses, getHousesByViewport, getHousesMapPoints, getHouseById, getBatchMemberStats, getLocationOptions, getHousesSummary, getAgricultureInsights, getPopulationDashboard, getSchemesForProblem, getAdvisory, getClusterAdvisory, getViewOptions } from '../../api/index.js'
 import { analyzeGaps, gapSeverityForHouse, SEVERITY_META } from '../../utils/gapAnalysis.js'
 import { buildFocusData, STATUS_META, METRIC_STATUS_COLOR } from '../../utils/filterFocusConfig.js'
@@ -942,6 +943,8 @@ import Supercluster from 'supercluster'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 
 Cesium.Ion.defaultAccessToken = ''
+
+const { t } = useI18n()
 
 // ── Core state ────────────────────────────────────────────────────────────────
 const houses              = ref([])

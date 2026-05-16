@@ -2,14 +2,14 @@
   <div class="dashboard">
     <header class="page-header">
       <div>
-        <h1 class="page-title">Village Population Center</h1>
-        <p class="page-subtitle">Population intelligence from household and family-member records</p>
+        <h1 class="page-title">{{ t('popDashboard.title') }}</h1>
+        <p class="page-subtitle">{{ t('popDashboard.subtitle') }}</p>
       </div>
     </header>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Loading population dashboard...</span>
+      <span>{{ t('popDashboard.loading') }}</span>
     </div>
 
     <template v-else>
@@ -27,23 +27,23 @@
 
       <section class="demographic-section">
         <div class="section-head">
-          <h2 class="card-title">Demographic Insights</h2>
+          <h2 class="card-title">{{ t('popDashboard.demographicInsights') }}</h2>
         </div>
 
         <div class="insights-grid">
           <article class="card insight-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Gender Distribution</h3>
-              <span class="total-note">Total: {{ genderTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">{{ t('popDashboard.genderDistribution') }}</h3>
+              <span class="total-note">{{ t('common.total') }}: {{ genderTotal.toLocaleString() }}</span>
             </div>
 
             <div v-if="genderTotal === 0" class="empty-state">
-              No demographic records available.
+              {{ t('popDashboard.noDemo') }}
             </div>
             <div v-else class="chart-layout">
               <div class="donut" :style="genderPieStyle">
                 <div class="donut-hole">
-                  <div class="donut-label">Gender</div>
+                  <div class="donut-label">{{ t('popDashboard.gender') }}</div>
                   <div class="donut-value">{{ genderTotal.toLocaleString() }}</div>
                 </div>
               </div>
@@ -59,12 +59,12 @@
 
           <article class="card insight-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Age Distribution</h3>
-              <span class="total-note">Total: {{ ageTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">{{ t('popDashboard.ageDistribution') }}</h3>
+              <span class="total-note">{{ t('common.total') }}: {{ ageTotal.toLocaleString() }}</span>
             </div>
 
             <div v-if="ageTotal === 0" class="empty-state">
-              No age records available.
+              {{ t('popDashboard.noAge') }}
             </div>
             <div v-else class="distribution-bars">
               <div class="distribution-row" v-for="item in ageSegments" :key="item.label">
@@ -83,7 +83,7 @@
         <div class="insights-grid">
           <article class="card insight-panel">
             <div class="panel-header">
-              <h2 class="card-title">Education Intelligence</h2>
+              <h2 class="card-title">{{ t('popDashboard.educationIntelligence') }}</h2>
             </div>
 
             <div class="mini-stats mini-stats-5">
@@ -94,8 +94,8 @@
             </div>
 
             <div class="distribution-section">
-              <h3 class="dist-title">Qualification Distribution</h3>
-              <div v-if="qualificationTotal === 0" class="empty-state">No qualification records available.</div>
+              <h3 class="dist-title">{{ t('popDashboard.qualificationDistribution') }}</h3>
+              <div v-if="qualificationTotal === 0" class="empty-state">{{ t('popDashboard.noQual') }}</div>
               <div v-else class="distribution-bars">
                 <div class="distribution-row" v-for="item in qualificationSegments" :key="item.label">
                   <div class="distribution-label">{{ item.label }}</div>
@@ -108,14 +108,14 @@
             </div>
 
             <div class="compact-note">
-              <div><strong>Literacy Rate:</strong> {{ literacyRateLabel }}</div>
-              <div>{{ Number(education.literate_population || 0).toLocaleString() }} literate out of {{ Number(stats.total_population || 0).toLocaleString() }} population</div>
+              <div><strong>{{ t('popDashboard.literacyRate') }}:</strong> {{ literacyRateLabel }}</div>
+              <div>{{ Number(education.literate_population || 0).toLocaleString() }} {{ t('popDashboard.literacyLine') }} {{ Number(stats.total_population || 0).toLocaleString() }} {{ t('common.population') }}</div>
             </div>
           </article>
 
           <article class="card insight-panel">
             <div class="panel-header">
-              <h2 class="card-title">Employment Insights</h2>
+              <h2 class="card-title">{{ t('popDashboard.employmentInsights') }}</h2>
             </div>
 
             <div class="mini-stats mini-stats-4">
@@ -126,8 +126,8 @@
             </div>
 
             <div class="distribution-section">
-              <h3 class="dist-title">Occupation Distribution</h3>
-              <div v-if="occupationTotal === 0" class="empty-state">No occupation records available.</div>
+              <h3 class="dist-title">{{ t('popDashboard.occupationDistribution') }}</h3>
+              <div v-if="occupationTotal === 0" class="empty-state">{{ t('popDashboard.noOcc') }}</div>
               <div v-else class="distribution-bars">
                 <div class="distribution-row" v-for="item in occupationSegments" :key="item.label">
                   <div class="distribution-label">{{ item.label }}</div>
@@ -147,7 +147,10 @@
 
 <script setup>
 import { computed, h, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getPopulationDashboard, getPopulationDemographics, getPopulationEducation, getPopulationEmployment } from './api.js'
+
+const { t } = useI18n()
 
 const loading = ref(true)
 const stats = ref({
@@ -233,19 +236,19 @@ const ChildIcon = {
 const metrics = computed(() => {
   const s = stats.value
   return [
-    { label: 'Total Population', value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
-    { label: 'Total Households', value: Number(s.total_households || 0).toLocaleString(), color: 'var(--teal)', iconBg: 'var(--teal-dim)', iconSvg: HomeIcon },
-    { label: 'Working Population', value: Number(s.working_population || 0).toLocaleString(), color: 'var(--green)', iconBg: 'var(--green-dim)', iconSvg: BriefcaseIcon },
-    { label: 'Dependent Population', value: Number(s.dependent_population || 0).toLocaleString(), color: 'var(--red)', iconBg: 'var(--red-dim)', iconSvg: ChildIcon },
+    { label: t('popDashboard.totalPopulation'), value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
+    { label: t('popDashboard.totalHouseholds'), value: Number(s.total_households || 0).toLocaleString(), color: 'var(--teal)', iconBg: 'var(--teal-dim)', iconSvg: HomeIcon },
+    { label: t('popDashboard.workingPopulation'), value: Number(s.working_population || 0).toLocaleString(), color: 'var(--green)', iconBg: 'var(--green-dim)', iconSvg: BriefcaseIcon },
+    { label: t('popDashboard.dependentPopulation'), value: Number(s.dependent_population || 0).toLocaleString(), color: 'var(--red)', iconBg: 'var(--red-dim)', iconSvg: ChildIcon },
   ]
 })
 
 const genderSegments = computed(() => {
   const g = demographics.value.gender_distribution || {}
   return [
-    { label: 'Male', value: Number(g.male || 0), color: 'var(--teal)' },
-    { label: 'Female', value: Number(g.female || 0), color: 'var(--amber)' },
-    { label: 'Other', value: Number(g.other || 0), color: 'var(--text-dim)' },
+    { label: t('popDashboard.male'),   value: Number(g.male   || 0), color: 'var(--teal)' },
+    { label: t('popDashboard.female'), value: Number(g.female || 0), color: 'var(--amber)' },
+    { label: t('popDashboard.other'),  value: Number(g.other  || 0), color: 'var(--text-dim)' },
   ]
 })
 const genderTotal = computed(() => genderSegments.value.reduce((sum, item) => sum + item.value, 0))
@@ -280,21 +283,21 @@ const ageBarWidth = (value) => `${(Number(value || 0) / ageMax.value) * 100}%`
 const educationMetrics = computed(() => {
   const e = education.value
   return [
-    { label: 'Literate Population', value: Number(e.literate_population || 0).toLocaleString(), color: 'var(--teal)' },
-    { label: 'Illiterate Population', value: Number(e.illiterate_population || 0).toLocaleString(), color: 'var(--red)' },
-    { label: 'Students', value: Number(e.students_count || 0).toLocaleString(), color: 'var(--amber)' },
-    { label: 'School Dropouts', value: Number(e.dropout_count || 0).toLocaleString(), color: 'var(--text-primary)' },
-    { label: 'Graduates', value: Number(e.graduate_population || 0).toLocaleString(), color: 'var(--green)' },
+    { label: t('popDashboard.litPop'),   value: Number(e.literate_population   || 0).toLocaleString(), color: 'var(--teal)' },
+    { label: t('popDashboard.illitPop'), value: Number(e.illiterate_population || 0).toLocaleString(), color: 'var(--red)' },
+    { label: t('popDashboard.students'), value: Number(e.students_count        || 0).toLocaleString(), color: 'var(--amber)' },
+    { label: t('popDashboard.dropouts'), value: Number(e.dropout_count         || 0).toLocaleString(), color: 'var(--text-primary)' },
+    { label: t('popDashboard.graduates'), value: Number(e.graduate_population  || 0).toLocaleString(), color: 'var(--green)' },
   ]
 })
 
 const qualificationSegments = computed(() => {
   const q = education.value.qualification_distribution || {}
   return [
-    { label: 'Below 10th', value: Number(q.below_10th || 0), color: 'var(--text-dim)' },
-    { label: '10th', value: Number(q.tenth || 0), color: 'var(--teal)' },
-    { label: '12th', value: Number(q.twelfth || 0), color: 'var(--amber)' },
-    { label: 'Graduation & Above', value: Number(q.graduate_above || 0), color: 'var(--green)' },
+    { label: t('popDashboard.below10th'),        value: Number(q.below_10th    || 0), color: 'var(--text-dim)' },
+    { label: t('popDashboard.tenth'),             value: Number(q.tenth         || 0), color: 'var(--teal)' },
+    { label: t('popDashboard.twelfth'),           value: Number(q.twelfth       || 0), color: 'var(--amber)' },
+    { label: t('popDashboard.graduationAbove'),   value: Number(q.graduate_above || 0), color: 'var(--green)' },
   ].sort((a, b) => b.value - a.value)
 })
 const qualificationTotal = computed(() => qualificationSegments.value.reduce((sum, item) => sum + item.value, 0))
@@ -305,25 +308,25 @@ const literacyRateLabel = computed(() => `${Math.round(Number(education.value.li
 const employmentMetrics = computed(() => {
   const e = employment.value
   return [
-    { label: 'Employed Members', value: Number(e.employed_members || 0).toLocaleString(), color: 'var(--green)' },
-    { label: 'Unemployed Members', value: Number(e.unemployed_members || 0).toLocaleString(), color: 'var(--red)' },
-    { label: 'Daily Wage Workers', value: Number(e.daily_wage_workers || 0).toLocaleString(), color: 'var(--amber)' },
-    { label: 'Skilled Workers', value: Number(e.skilled_workers || 0).toLocaleString(), color: 'var(--teal)' },
+    { label: t('popDashboard.employed'),   value: Number(e.employed_members    || 0).toLocaleString(), color: 'var(--green)' },
+    { label: t('popDashboard.unemployed'), value: Number(e.unemployed_members  || 0).toLocaleString(), color: 'var(--red)' },
+    { label: t('popDashboard.dailyWage'),  value: Number(e.daily_wage_workers  || 0).toLocaleString(), color: 'var(--amber)' },
+    { label: t('popDashboard.skilled'),    value: Number(e.skilled_workers     || 0).toLocaleString(), color: 'var(--teal)' },
   ]
 })
 
 const occupationSegments = computed(() => {
   const o = employment.value.occupation_distribution || {}
   return [
-    { label: 'Farm Based', value: Number(o.farm_based || 0), color: 'var(--green)' },
-    { label: 'Agri Allied', value: Number(o.agri_allied || 0), color: 'var(--teal)' },
-    { label: 'Non Farm Self Employed', value: Number(o.non_farm || 0), color: 'var(--amber)' },
-    { label: 'Salaried', value: Number(o.salaried || 0), color: 'var(--teal)' },
-    { label: 'Wage Workers', value: Number(o.wage_workers || 0), color: 'var(--red)' },
-    { label: 'Housewife', value: Number(o.housewife || 0), color: 'var(--text-muted)' },
-    { label: 'Students', value: Number(o.students || 0), color: 'var(--amber)' },
-    { label: 'Unemployed', value: Number(o.unemployed || 0), color: 'var(--red)' },
-    { label: 'Other', value: Number(o.other || 0), color: 'var(--text-dim)' },
+    { label: t('popDashboard.farmBased'),   value: Number(o.farm_based    || 0), color: 'var(--green)' },
+    { label: t('popDashboard.agriAllied'),  value: Number(o.agri_allied   || 0), color: 'var(--teal)' },
+    { label: t('popDashboard.nonFarm'),     value: Number(o.non_farm      || 0), color: 'var(--amber)' },
+    { label: t('popDashboard.salaried'),    value: Number(o.salaried      || 0), color: 'var(--teal)' },
+    { label: t('popDashboard.wageWorkers'), value: Number(o.wage_workers  || 0), color: 'var(--red)' },
+    { label: t('popDashboard.housewife'),   value: Number(o.housewife     || 0), color: 'var(--text-muted)' },
+    { label: t('popDashboard.studentsOcc'), value: Number(o.students      || 0), color: 'var(--amber)' },
+    { label: t('popDashboard.unemployed'),  value: Number(o.unemployed    || 0), color: 'var(--red)' },
+    { label: t('analytics.unknown'),        value: Number(o.other         || 0), color: 'var(--text-dim)' },
   ].sort((a, b) => b.value - a.value)
 })
 const occupationTotal = computed(() => occupationSegments.value.reduce((sum, item) => sum + item.value, 0))

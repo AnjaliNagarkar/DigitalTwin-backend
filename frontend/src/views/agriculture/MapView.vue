@@ -2,13 +2,13 @@
   <div class="map-page">
     <header class="map-header">
       <div class="map-title-area">
-        <h1 class="page-title">Geo-Intelligence Map</h1>
+        <h1 class="page-title">{{ t('mapView.geoIntelligence') }}</h1>
         <p class="page-subtitle">
           <template v-if="loading && houses.length === 0">
-            Loading household data from the live database…
+            {{ t('map.loading') }}
           </template>
           <template v-else>
-            {{ houses.length.toLocaleString() }} households plotted from the live database
+            {{ houses.length.toLocaleString() }} {{ t('map.households') }}
           </template>
         </p>
       </div>
@@ -16,16 +16,16 @@
         <!-- View mode toggle -->
         <div class="view-toggle">
           <button class="toggle-btn" :class="{ active: viewMode === 'points' }" @click="setViewMode('points')">
-            Households
+            {{ t('map.households') }}
           </button>
           <button class="toggle-btn" :class="{ active: viewMode === 'villages' }" @click="setViewMode('villages')">
-            Villages
+            {{ t('nav.village') }}
           </button>
         </div>
 
         <!-- District -->
         <div class="map-control-group">
-          <label class="control-label">District</label>
+          <label class="control-label">{{ t('map.district') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'district', disabled: isDistrictLoading }"
                @click.stop="!isDistrictLoading && toggleDropdown('district')">
             <button class="cs-trigger" type="button" :disabled="isDistrictLoading">
@@ -42,7 +42,7 @@
 
         <!-- Taluka -->
         <div class="map-control-group">
-          <label class="control-label">Taluka</label>
+          <label class="control-label">{{ t('map.taluka') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'taluka', disabled: !talukaOptions.length }"
                @click.stop="talukaOptions.length && toggleDropdown('taluka')">
             <button class="cs-trigger" type="button" :disabled="!talukaOptions.length">
@@ -50,7 +50,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'taluka'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka(null)">All</div>
+              <div class="cs-option" :class="{ selected: !selectedTaluka }" @click="selectTaluka(null)">{{ t('map.allTalukas') }}</div>
               <div class="cs-option" v-for="t in talukaOptions" :key="t.value"
                    :class="{ selected: isGeoOptionSelected(selectedTaluka, t) }"
                    @click="selectTaluka(t)">{{ t.label }}</div>
@@ -60,7 +60,7 @@
 
         <!-- Village -->
         <div class="map-control-group">
-          <label class="control-label">Village</label>
+          <label class="control-label">{{ t('map.village') }}</label>
           <div class="custom-select" :class="{ open: openDropdown === 'village', disabled: !villageOptions.length }"
                @click.stop="villageOptions.length && toggleDropdown('village')">
             <button class="cs-trigger" type="button" :disabled="!villageOptions.length">
@@ -68,7 +68,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown" v-show="openDropdown === 'village'" @click.stop>
-              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage(null)">All</div>
+              <div class="cs-option" :class="{ selected: !selectedVillage }" @click="selectVillage(null)">{{ t('map.allVillages') }}</div>
               <div class="cs-option" v-for="v in villageOptions" :key="v.value"
                    :class="{ selected: isGeoOptionSelected(selectedVillage, v) }"
                    @click="selectVillage(v)">{{ v.label }}</div>
@@ -77,8 +77,8 @@
         </div>
 
         <div class="map-control-group">
-          <button class="apply-btn" @click="() => applyFilters(true)">Apply</button>
-          <button class="reset-btn" @click="resetFilters">Reset</button>
+          <button class="apply-btn" @click="() => applyFilters(true)">{{ t('map.apply') }}</button>
+          <button class="reset-btn" @click="resetFilters">{{ t('map.reset') }}</button>
         </div>
 
         <!-- Anomaly toggle button -->
@@ -93,18 +93,18 @@
             <svg class="anomaly-btn-icon" viewBox="0 0 20 20" fill="currentColor" width="13" height="13">
               <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
             </svg>
-            <span>{{ anomalies.length }} GPS Mismatches</span>
+            <span>{{ anomalies.length }} {{ t('mapView.gpsMismatches') }}</span>
             <span v-if="showAnomalies" class="anomaly-active-dot"></span>
           </button>
         </div>
 
         <!-- View by (only in points mode) -->
         <div class="map-control-group" v-if="viewMode === 'points'">
-          <label class="control-label">VIEW BY</label>
+          <label class="control-label">{{ t('map.viewBy') }}</label>
           <div class="custom-select cs-align-right" :class="{ open: openDropdown === 'colorMode' }"
                @click.stop="toggleDropdown('colorMode')">
             <button class="cs-trigger view-by-btn" type="button" :class="{ 'cs-trigger-placeholder': !colorMode }">
-              <span class="cs-value">{{ selectedColorModeLabel || 'Select a view...' }}</span>
+              <span class="cs-value">{{ selectedColorModeLabel || t('mapView.selectView') }}</span>
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
@@ -126,8 +126,8 @@
 
         <div class="map-legend">
           <template v-if="viewMode === 'villages'">
-            <div class="legend-item"><span class="legend-dot" style="background:#16a34a;"></span>Irrigation available</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>No irrigation</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#16a34a;"></span>{{ t('legend.irrigationAvailable') }}</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>{{ t('legend.noIrrigation') }}</div>
           </template>
           <template v-else>
             <div class="legend-item" v-for="leg in headerLegend" :key="leg.label">
@@ -140,7 +140,7 @@
 
     <section class="map-shell">
       <div v-if="hasAppliedFilters && !loading && houses.length === 0" class="empty-state">
-        No live household data returned from the database API.
+        {{ t('mapView.noData') }}
       </div>
 
       <div class="map-content" ref="mapContentRef">
@@ -154,7 +154,7 @@
               @click="analyticsPanelOpen = !analyticsPanelOpen"
               :aria-expanded="analyticsPanelOpen"
             >
-              {{ analyticsPanelOpen ? 'Hide Analytics' : 'View Analytics' }}
+              {{ analyticsPanelOpen ? t('map.close') : t('map.viewAnalytics') }}
             </button>
             <button
               class="fullscreen-toggle"
@@ -162,7 +162,7 @@
               @click="toggleFullscreen"
               :aria-pressed="isFullscreen"
             >
-              {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+              {{ isFullscreen ? t('map.exitFullscreen') : t('map.fullscreen') }}
             </button>
           </div>
 
@@ -186,250 +186,249 @@
                   <span v-if="selectedHouse.talukaName"> · {{ selectedHouse.talukaName }}</span>
                 </div>
               </div>
-              <button class="detail-close" @click="selectedHouse = null" title="Close">×</button>
+              <button class="detail-close" @click="selectedHouse = null" :title="t('map.close')">×</button>
             </div>
 
             <template v-if="isPopulationMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">👪</span> Population
+                <span class="dp-section-icon">👪</span> {{ t('nav.population') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">👤</span>
-                <span class="dp-field-key">Household Head</span>
+                <span class="dp-field-key">{{ t('mapView.householdHead') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.headName || getHouseHeadName(selectedHouse) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Number</span>
+                <span class="dp-field-key">{{ t('map.houseNo') }}</span>
                 <span class="dp-field-val">{{ getHouseNumber(selectedHouse) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">👥</span>
-                <span class="dp-field-key">Total Members</span>
+                <span class="dp-field-key">{{ t('map.totalMembers') }}</span>
                 <span class="dp-field-val">{{ getTotalMembers(selectedHouse).toLocaleString() }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">♂</span>
-                <span class="dp-field-key">Male Count</span>
+                <span class="dp-field-key">{{ t('mapView.maleCount') }}</span>
                 <span class="dp-field-val">{{ getMaleMembers(selectedHouse).toLocaleString() }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">♀</span>
-                <span class="dp-field-key">Female Count</span>
+                <span class="dp-field-key">{{ t('mapView.femaleCount') }}</span>
                 <span class="dp-field-val">{{ getFemaleMembers(selectedHouse).toLocaleString() }}</span>
               </div>
 
               <template v-if="colorMode === 'employment_status' || colorMode === 'employment'">
                 <div class="dp-field-row">
                   <span class="dp-field-icon">🧰</span>
-                  <span class="dp-field-key">Working Members</span>
+                  <span class="dp-field-key">{{ t('map.workingMembers') }}</span>
                   <span class="dp-field-val">{{ getWorkingMembers(selectedHouse).toLocaleString() }}</span>
                 </div>
 
                 <div class="dp-field-row">
                   <span class="dp-field-icon">📋</span>
-                  <span class="dp-field-key">Occupation</span>
-                  <span class="dp-field-val">{{ getWorkingOccupations(selectedHouse) }}</span>
+                  <span class="dp-field-key">{{ t('map.occupation') }}</span>
+                  <span class="dp-field-val">{{ tdOcc(getWorkingOccupations(selectedHouse)) }}</span>
                 </div>
               </template>
             </template>
 
             <template v-else-if="isToiletAccessMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">🚽</span> Toilet Access
+                <span class="dp-section-icon">🚽</span> {{ t('viewBy.toiletAccess') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
-                <span class="dp-field-key">Toilet Available</span>
-                <span class="dp-field-val">{{ selectedHouse.SANITATION_TOILET_FACILITY_HOME || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.toiletAvailable') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
-                <span class="dp-field-key">Electricity</span>
-                <span class="dp-field-val">{{ selectedHouse.lighting || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.lighting) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">BPL</span>
-                <span class="dp-field-val">{{ selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
             <template v-else-if="isElectricityMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">⚡</span> Electricity Access
+                <span class="dp-section-icon">⚡</span> {{ t('viewBy.electricity') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
-                <span class="dp-field-key">Electricity Connection</span>
-                <span class="dp-field-val">{{ selectedHouse.lighting || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.lighting) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">BPL</span>
-                <span class="dp-field-val">{{ selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
             <template v-else-if="isHousingQualityMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">🏠</span> Housing Quality
+                <span class="dp-section-icon">🏠</span> {{ t('viewBy.housingQuality') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏚️</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
-
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🧾</span>
-                <span class="dp-field-key">Ownership</span>
-                <span class="dp-field-val">{{ selectedHouse.OWNERSHIP_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.ownership') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.OWNERSHIP_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏛️</span>
-                <span class="dp-field-key">PM Awas Scheme</span>
-                <span class="dp-field-val">{{ selectedHouse.PRADHAN_MANTRI_AWAS || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.pmAwas') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.PRADHAN_MANTRI_AWAS) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
-                <span class="dp-field-key">Electricity</span>
-                <span class="dp-field-val">{{ normalizedSelectedHouse.ELECTRICITY_CONNECTION || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
+                <span class="dp-field-val">{{ td(normalizedSelectedHouse.ELECTRICITY_CONNECTION) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
-                <span class="dp-field-key">Water Source</span>
-                <span class="dp-field-val">{{ normalizedSelectedHouse.DRINKING_WATER_SOURCE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.waterSource') }}</span>
+                <span class="dp-field-val">{{ td(normalizedSelectedHouse.DRINKING_WATER_SOURCE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
-                <span class="dp-field-key">Toilet</span>
-                <span class="dp-field-val">{{ normalizedSelectedHouse.SANITATION_TOILET_FACILITY_HOME || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.toilet') }}</span>
+                <span class="dp-field-val">{{ td(normalizedSelectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🪪</span>
-                <span class="dp-field-key">Ration Card</span>
-                <span class="dp-field-val">{{ normalizedSelectedHouse.RATION_CARD_COLOR || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.rationCard') }}</span>
+                <span class="dp-field-val">{{ td(normalizedSelectedHouse.RATION_CARD_COLOR) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">BPL Category</span>
-                <span class="dp-field-val">{{ normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
+                <span class="dp-field-val">{{ td(normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
             <template v-else-if="isAadhaarCoverageMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">🪪</span> AADHAAR COVERAGE
+                <span class="dp-section-icon">🪪</span> {{ t('viewBy.aadhaarCoverage') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">👥</span>
-                <span class="dp-field-key">Total Members</span>
+                <span class="dp-field-key">{{ t('map.totalMembers') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.totalFamilyMembers || 0 }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🪪</span>
-                <span class="dp-field-key">Members With Aadhaar</span>
+                <span class="dp-field-key">{{ t('mapView.membersAadhaar') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.membersWithAadhaar || 0 }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">Coverage Status</span>
-                <span class="dp-field-val">{{ selectedHouse.aadhaarCoverageStatus || 'unknown' }}</span>
+                <span class="dp-field-key">{{ t('mapView.coverageStatus') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.aadhaarCoverageStatus) || t('analytics.unknown') }}</span>
               </div>
             </template>
 
             <template v-else-if="isCasteCertificateCoverageMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">📜</span> CASTE CERTIFICATE COVERAGE
+                <span class="dp-section-icon">📜</span> {{ t('viewBy.casteCertificate') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">👥</span>
-                <span class="dp-field-key">Total Members</span>
+                <span class="dp-field-key">{{ t('map.totalMembers') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.totalFamilyMembers || 0 }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📜</span>
-                <span class="dp-field-key">Members With Caste Certificate</span>
+                <span class="dp-field-key">{{ t('mapView.membersCaste') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.membersWithCasteCertificate || 0 }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">Coverage Status</span>
-                <span class="dp-field-val">{{ selectedHouse.casteCertificateCoverageStatus || 'unknown' }}</span>
+                <span class="dp-field-key">{{ t('mapView.coverageStatus') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.casteCertificateCoverageStatus) || t('analytics.unknown') }}</span>
               </div>
             </template>
 
             <template v-else-if="isWastewaterManagementMode">
               <div class="dp-section-label">
-                <span class="dp-section-icon">💧</span> WASTEWATER MANAGEMENT
+                <span class="dp-section-icon">💧</span> {{ t('viewBy.wastewaterManagement') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
-                <span class="dp-field-key">Wastewater System</span>
-                <span class="dp-field-val">{{ selectedHouse.A_SOAKPIT_MANAGING_WASTEWATER || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.wastewaterSystem') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.A_SOAKPIT_MANAGING_WASTEWATER) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
-                <span class="dp-field-key">Toilet Access</span>
-                <span class="dp-field-val">{{ selectedHouse.SANITATION_TOILET_FACILITY_HOME || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.toiletAccess') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
-                <span class="dp-field-key">Electricity</span>
-                <span class="dp-field-val">{{ selectedHouse.ELECTRICITY_CONNECTION || selectedHouse.lighting || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.ELECTRICITY_CONNECTION || selectedHouse.lighting) || '—' }}</span>
               </div>
             </template>
 
             <template v-else-if="colorMode === 'crops'">
               <!-- ── Land & Crops (Crops/Season mode only) ── -->
               <div class="dp-section-label">
-                <span class="dp-section-icon">🌾</span> Agriculture
+                <span class="dp-section-icon">🌾</span> {{ t('nav.agriculture') }}
               </div>
 
               <div class="dp-stat-row">
@@ -445,21 +444,21 @@
 
               <div class="dp-chip-row">
                 <div class="dp-chip-block">
-                  <div class="dp-chip-label">Kharif Crop</div>
-                  <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+                  <div class="dp-chip-label">{{ t('analytics.kharif') }} Crop</div>
+                  <div class="dp-chip dp-chip-kharif">{{ td(selectedHouse.kharif) || '—' }}</div>
                 </div>
                 <div class="dp-chip-block">
-                  <div class="dp-chip-label">Rabi Crop</div>
-                  <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+                  <div class="dp-chip-label">{{ t('analytics.rabi') }} Crop</div>
+                  <div class="dp-chip dp-chip-rabi">{{ td(selectedHouse.rabi) || '—' }}</div>
                 </div>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
-                <span class="dp-field-key">Irrigation Source</span>
+                <span class="dp-field-key">{{ t('mapView.irrigationSource') }}</span>
                 <span class="dp-field-val"
                       :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
-                  {{ selectedHouse.waterSource || '—' }}
+                  {{ td(selectedHouse.waterSource) || '—' }}
                 </span>
               </div>
             </template>
@@ -467,22 +466,22 @@
             <template v-else-if="colorMode === 'irrigation'">
               <!-- ── Irrigation Details ── -->
               <div class="dp-section-label">
-                <span class="dp-section-icon">💧</span> Irrigation Details
+                <span class="dp-section-icon">💧</span> {{ t('viewBy.irrigation') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
-                <span class="dp-field-key">Water Source</span>
+                <span class="dp-field-key">{{ t('mapView.waterSource') }}</span>
                 <span class="dp-field-val"
                       :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#16a34a' }">
-                  {{ selectedHouse.waterSource || selectedHouse.SOURCE_WATER_IRRIGATION || '—' }}
+                  {{ td(selectedHouse.waterSource || selectedHouse.SOURCE_WATER_IRRIGATION) || '—' }}
                 </span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🌾</span>
-                <span class="dp-field-key">Own Agriculture Land</span>
-                <span class="dp-field-val">{{ selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.ownAgriLand') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
               </div>
 
               <div class="dp-stat-row">
@@ -500,13 +499,13 @@
             <template v-else-if="colorMode === 'land'">
               <!-- ── Land Holdings ── -->
               <div class="dp-section-label">
-                <span class="dp-section-icon">🌾</span> Land Holdings
+                <span class="dp-section-icon">🌾</span> {{ t('viewBy.land') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🌾</span>
-                <span class="dp-field-key">Own Agriculture Land</span>
-                <span class="dp-field-val">{{ selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.ownAgriLand') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
               </div>
 
               <div class="dp-stat-row">
@@ -522,12 +521,12 @@
 
               <div class="dp-chip-row">
                 <div class="dp-chip-block">
-                  <div class="dp-chip-label">Kharif Crop</div>
-                  <div class="dp-chip dp-chip-kharif">{{ selectedHouse.kharif || '—' }}</div>
+                  <div class="dp-chip-label">{{ t('analytics.kharif') }} Crop</div>
+                  <div class="dp-chip dp-chip-kharif">{{ td(selectedHouse.kharif) || '—' }}</div>
                 </div>
                 <div class="dp-chip-block">
-                  <div class="dp-chip-label">Rabi Crop</div>
-                  <div class="dp-chip dp-chip-rabi">{{ selectedHouse.rabi || '—' }}</div>
+                  <div class="dp-chip-label">{{ t('analytics.rabi') }} Crop</div>
+                  <div class="dp-chip dp-chip-rabi">{{ td(selectedHouse.rabi) || '—' }}</div>
                 </div>
               </div>
             </template>
@@ -542,55 +541,55 @@
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏘️</span>
-                <span class="dp-field-key">House No.</span>
+                <span class="dp-field-key">{{ t('mapView.houseNo') }}</span>
                 <span class="dp-field-val">{{ getHouseNumber(selectedHouse) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏙️</span>
-                <span class="dp-field-key">Village</span>
+                <span class="dp-field-key">{{ t('map.village') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.villageName || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🗺️</span>
-                <span class="dp-field-key">Taluka</span>
+                <span class="dp-field-key">{{ t('map.taluka') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.talukaName || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏛️</span>
-                <span class="dp-field-key">District</span>
+                <span class="dp-field-key">{{ t('map.district') }}</span>
                 <span class="dp-field-val">{{ selectedHouse.districtName || '—' }}</span>
               </div>
 
               <!-- Family -->
               <div class="dp-section-label">
-                <span class="dp-section-icon">👥</span> Family
+                <span class="dp-section-icon">👥</span> {{ t('mapView.family') }}
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
-                <span class="dp-field-key">House Type</span>
-                <span class="dp-field-val">{{ selectedHouse.TYPE_HOUSE || '—' }}</span>
+                <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">👤</span>
-                <span class="dp-field-key">Family Members</span>
+                <span class="dp-field-key">{{ t('mapView.familyMembers') }}</span>
                 <span class="dp-field-val">{{ (selectedHouse.totalMembers || selectedHouse.totalFamilyMembers || 0).toLocaleString() }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
-                <span class="dp-field-key">BPL Status</span>
-                <span class="dp-field-val">{{ selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY || '—' }}</span>
+                <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
+                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
 
               <template v-if="selectedHouse.annualIncome && selectedHouse.annualIncome !== '0'">
                 <div class="dp-field-row">
                   <span class="dp-field-icon">💰</span>
-                  <span class="dp-field-key">Annual Income</span>
+                  <span class="dp-field-key">{{ t('mapView.annualIncome') }}</span>
                   <span class="dp-field-val">{{ selectedHouse.annualIncome }}</span>
                 </div>
               </template>
@@ -599,43 +598,42 @@
             <!-- ── Village Mismatch (shown for GPS anomaly markers) ── -->
             <template v-if="selectedHouse._distanceKm != null">
               <div class="dp-section-label gps-section-label">
-                <span class="dp-section-icon">⚠️</span> Village Mismatch
+                <span class="dp-section-icon">⚠️</span> {{ t('mapView.mismatch') }}
               </div>
               <div class="gps-mismatch-card">
 
                 <!-- Mismatch description -->
                 <div class="gps-mismatch-headline">
-                  Mismatch Detected: This household belongs to
-                  <strong class="gps-village-db">{{ selectedHouse.villageName || 'Unknown' }}</strong>,
-                  but the survey was recorded in
-                  <strong class="gps-village-plotted">{{ selectedHouse._plottedVillage || 'another village' }}</strong> area.
+                  {{ t('mapView.mismatchHeadline') }}
+                  <strong class="gps-village-db">{{ selectedHouse.villageName || t('common.unknown') }}</strong>,
+                  {{ t('mapView.mismatchSurvey') }}
+                  <strong class="gps-village-plotted">{{ selectedHouse._plottedVillage || t('mapView.anotherVillage') }}</strong> {{ t('mapView.mismatchArea') }}
                 </div>
 
                 <!-- Distance offset — bold red -->
                 <div class="gps-offset-row">
-                  <span class="gps-offset-label">Distance offset</span>
-                  <span class="gps-offset-value">{{ selectedHouse._distanceKm }} km away</span>
+                  <span class="gps-offset-label">{{ t('mapView.distanceOffset') }}</span>
+                  <span class="gps-offset-value">{{ selectedHouse._distanceKm }} {{ t('mapView.kmAway') }}</span>
                 </div>
 
                 <!-- Village comparison table -->
                 <div class="gps-village-compare">
                   <div class="gps-vc-col gps-vc-db">
-                    <div class="gps-vc-badge">Database</div>
+                    <div class="gps-vc-badge">{{ t('mapView.database') }}</div>
                     <div class="gps-vc-name">{{ selectedHouse.villageName || '—' }}</div>
                     <div class="gps-vc-sub">{{ selectedHouse.talukaName || '' }}</div>
                   </div>
                   <div class="gps-vc-arrow">→</div>
                   <div class="gps-vc-col gps-vc-plotted">
-                    <div class="gps-vc-badge">Plotted At</div>
-                    <div class="gps-vc-name">{{ selectedHouse._plottedVillage || 'Unknown area' }}</div>
-                    <div class="gps-vc-sub">GPS location</div>
+                    <div class="gps-vc-badge">{{ t('mapView.plottedAt') }}</div>
+                    <div class="gps-vc-name">{{ selectedHouse._plottedVillage || t('mapView.unknownArea') }}</div>
+                    <div class="gps-vc-sub">{{ t('mapView.gpsLocation') }}</div>
                   </div>
                 </div>
 
                 <!-- Helpful tip — no jargon -->
                 <div class="gps-mismatch-tip">
-                  💡 <strong>Tip:</strong> This usually happens if the GPS was captured at the wrong location
-                  during the survey. Please re-verify on-ground.
+                  💡 <strong>{{ t('mapView.tipLabel') }}:</strong> {{ t('mapView.gpsTip') }}
                 </div>
               </div>
             </template>
@@ -653,24 +651,24 @@
             <button class="panel-close" @click="clearClusterSelection">×</button>
             <div class="village-badge">{{ selectedCluster.level }}</div>
             <h3 class="panel-title">{{ selectedCluster.name }}</h3>
-            <div class="panel-id">{{ selectedCluster.count.toLocaleString() }} households covered</div>
+            <div class="panel-id">{{ selectedCluster.count.toLocaleString() }} {{ t('mapView.householdsCount') }}</div>
 
             <div class="village-stats">
               <div class="vstat" :class="issueClass(selectedCluster.noToilet, selectedCluster.count)">
                 <div class="vstat-val">{{ pct(selectedCluster.noToilet, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Sanitation</div>
+                <div class="vstat-label">{{ t('mapView.noSanitation') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.noElec, selectedCluster.count)">
                 <div class="vstat-val">{{ pct(selectedCluster.noElec, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Electricity</div>
+                <div class="vstat-label">{{ t('mapView.noElectricity') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.noIrrig, selectedCluster.count)">
                 <div class="vstat-val">{{ pct(selectedCluster.noIrrig, selectedCluster.count) }}%</div>
-                <div class="vstat-label">No Irrigation</div>
+                <div class="vstat-label">{{ t('mapView.noIrrigation') }}</div>
               </div>
               <div class="vstat" :class="issueClass(selectedCluster.bpl, selectedCluster.count)">
                 <div class="vstat-val">{{ pct(selectedCluster.bpl, selectedCluster.count) }}%</div>
-                <div class="vstat-label">BPL Families</div>
+                <div class="vstat-label">{{ t('mapView.bplFamilies') }}</div>
               </div>
             </div>
 
@@ -696,7 +694,7 @@
         <transition name="analytics-panel-slide">
           <aside v-if="analyticsPanelOpen" class="analytics-panel" aria-label="Map analytics">
             <div class="analytics-panel-head">
-              <h2 class="analytics-panel-title">Map Analytics</h2>
+              <h2 class="analytics-panel-title">{{ t('mapView.mapAnalytics') }}</h2>
               <button class="analytics-close" type="button" @click="analyticsPanelOpen = false" aria-label="Close analytics">×</button>
             </div>
 
@@ -739,7 +737,7 @@
           <button
             class="asb-toggle-btn"
             @click="toggleAlpCollapse"
-            :title="alpCollapsed ? 'Expand GPS Mismatches' : 'Collapse panel'"
+            :title="alpCollapsed ? t('mapView.expandGps') : t('mapView.collapsePanel')"
           >
             <span class="asb-badge" v-if="alpCollapsed">{{ anomalies.length }}</span>
             {{ alpCollapsed ? '‹' : '›' }}
@@ -756,8 +754,8 @@
                 </svg>
               </div>
               <div class="asb-head-text">
-                <div class="asb-title">GPS Mismatches</div>
-                <div class="asb-subtitle">{{ anomalies.length }} incorrect locations found</div>
+                <div class="asb-title">{{ t('mapView.gpsMismatches') }}</div>
+                <div class="asb-subtitle">{{ anomalies.length }} {{ t('mapView.gpsIncorrect') }}</div>
               </div>
               <button class="asb-close" @click="closeAnomalySidebar()" title="Close">×</button>
             </div>
@@ -765,7 +763,7 @@
             <!-- Hint -->
             <div class="asb-hint">
               <span class="asb-hint-dot"></span>
-              Red dots = village mismatch · click a name to zoom in
+              {{ t('mapView.gpsHint') }}
             </div>
 
             <!-- Scrollable list -->
@@ -780,10 +778,10 @@
               >
                 <div class="asb-item-num">{{ i + 1 }}</div>
                 <div class="asb-item-body">
-                  <div class="asb-item-name">{{ house.headName || 'Unknown' }}</div>
+                  <div class="asb-item-name">{{ house.headName || t('common.unknown') }}</div>
                   <div class="asb-item-meta">
                     <span class="asb-item-village">{{ house.villageName || '—' }}</span>
-                    <span class="asb-item-dist">{{ house._distanceKm }} km off</span>
+                    <span class="asb-item-dist">{{ house._distanceKm }} {{ t('mapView.kmOff') }}</span>
                   </div>
                 </div>
                 <svg class="asb-item-arrow" viewBox="0 0 16 16" fill="currentColor" width="11" height="11">
@@ -800,9 +798,30 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
+import {
+  translateDynamicValue,
+  translateOccupationDisplay,
+  translateCategory,
+} from '../../utils/translateDynamicValue.js'
+
+const { t, locale } = useI18n()
+
+/**
+ * td(value) — translate a dynamic DB category/type value using the current locale.
+ * Use in templates wherever a DB enum/category string is displayed directly.
+ * Never mutates the original data; purely display-layer.
+ */
+const td = (value) => translateDynamicValue(value, locale.value)
+
+/**
+ * tdOcc(value) — translate a comma/pipe-separated occupation display string.
+ * Use for getWorkingOccupations() output.
+ */
+const tdOcc = (value) => translateOccupationDisplay(value, locale.value)
 
 const loading       = ref(true)
 const hasAppliedFilters = ref(false)
@@ -838,27 +857,27 @@ const openDropdown = ref(null)
 
 const populationFilters = ['population_density', 'bpl_status', 'divyang_presence', 'employment_status']
 
-const colorOptions = [
-  { label: 'Irrigation', value: 'irrigation' },
-  { label: 'Crops / Season', value: 'crops' },
-  { label: 'Land Holdings', value: 'land' },
-  { label: 'Population Density', value: 'population_density' },
-  { label: 'BPL Status', value: 'bpl_status' },
-  { label: 'Divyang Presence', value: 'divyang_presence' },
-  { label: 'Employment Status', value: 'employment_status' },
-  { label: 'Housing Quality', value: 'housing_quality' },
-  { label: 'Electricity', value: 'electricity' },
-  { label: 'Toilet Access', value: 'toilet_access' },
-  { label: 'Wastewater Management', value: 'wastewater_management' },
-  { label: 'Aadhaar Coverage', value: 'aadhaar_coverage' },
-  { label: 'Caste Certificate Coverage', value: 'caste_certificate_coverage' },
-]
+const colorOptions = computed(() => [
+  { label: t('viewBy.irrigation'),             value: 'irrigation' },
+  { label: t('viewBy.crops'),                  value: 'crops' },
+  { label: t('viewBy.land'),                   value: 'land' },
+  { label: t('viewBy.populationDensity'),      value: 'population_density' },
+  { label: t('viewBy.bplStatus'),              value: 'bpl_status' },
+  { label: t('viewBy.divyangPresence'),        value: 'divyang_presence' },
+  { label: t('viewBy.employmentStatus'),       value: 'employment_status' },
+  { label: t('viewBy.housingQuality'),         value: 'housing_quality' },
+  { label: t('viewBy.electricity'),            value: 'electricity' },
+  { label: t('viewBy.toiletAccess'),           value: 'toilet_access' },
+  { label: t('viewBy.wastewaterManagement'),   value: 'wastewater_management' },
+  { label: t('viewBy.aadhaarCoverage'),        value: 'aadhaar_coverage' },
+  { label: t('viewBy.casteCertificate'),       value: 'caste_certificate_coverage' },
+])
 
 const groupedColorOptions = computed(() => {
-  const optionByValue = new Map(colorOptions.map(option => [option.value, option]))
+  const optionByValue = new Map(colorOptions.value.map(option => [option.value, option]))
   return [
     {
-      label: 'Population',
+      label: t('nav.population'),
       options: [
         optionByValue.get('population_density'),
         optionByValue.get('bpl_status'),
@@ -867,7 +886,7 @@ const groupedColorOptions = computed(() => {
       ].filter(Boolean),
     },
     {
-      label: 'Agriculture',
+      label: t('nav.agriculture'),
       options: [
         optionByValue.get('crops'),
         optionByValue.get('irrigation'),
@@ -875,7 +894,7 @@ const groupedColorOptions = computed(() => {
       ].filter(Boolean),
     },
     {
-      label: 'Infrastructure',
+      label: t('nav.infrastructure'),
       options: [
         optionByValue.get('housing_quality'),
         optionByValue.get('electricity'),
@@ -884,7 +903,7 @@ const groupedColorOptions = computed(() => {
       ].filter(Boolean),
     },
     {
-      label: 'Document Gap Analysis',
+      label: t('viewBy.documentGapAnalysis'),
       options: [
         optionByValue.get('aadhaar_coverage'),
         optionByValue.get('caste_certificate_coverage'),
@@ -948,40 +967,36 @@ function selectVillage(option) {
   closeDropdowns()
 }
 
-const COLOR_MODE_LABELS_MAP = {
-  irrigation: 'Irrigation',
-  crops: 'Crops / Season',
-  land: 'Land Holdings',
-  population_density: 'Population Density',
-  bpl_status: 'BPL Status',
-  divyang_presence: 'Divyang Presence',
-  employment_status: 'Employment Status',
-  housing_quality: 'Housing Quality',
-  electricity: 'Electricity',
-  toilet_access: 'Toilet Access',
-  wastewater_management: 'Wastewater Management',
-  aadhaar_coverage: 'Aadhaar Coverage',
-  caste_certificate_coverage: 'Caste Certificate Coverage',
-}
+const COLOR_MODE_LABELS_MAP = computed(() => ({
+  irrigation:                  t('viewBy.irrigation'),
+  crops:                       t('viewBy.crops'),
+  land:                        t('viewBy.land'),
+  population_density:          t('viewBy.populationDensity'),
+  bpl_status:                  t('viewBy.bplStatus'),
+  divyang_presence:            t('viewBy.divyangPresence'),
+  employment_status:           t('viewBy.employmentStatus'),
+  housing_quality:             t('viewBy.housingQuality'),
+  electricity:                 t('viewBy.electricity'),
+  toilet_access:               t('viewBy.toiletAccess'),
+  wastewater_management:       t('viewBy.wastewaterManagement'),
+  aadhaar_coverage:            t('viewBy.aadhaarCoverage'),
+  caste_certificate_coverage:  t('viewBy.casteCertificate'),
+}))
 
 function selectColorMode(mode) {
   console.log('selectColorMode called:', mode)
   colorMode.value = mode
   // update label immediately so trigger text reflects selection
   // (computed may lag in edge cases where other code mutates state)
-  try { selectedColorModeLabelRef.value = COLOR_MODE_LABELS_MAP[mode] || '' } catch (e) {}
   closeDropdowns()
 }
 
 // Human-readable labels shown in the trigger button
-const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || 'All')
-const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || 'All')
-const selectedVillageLabel = computed(() => selectedVillage.value?.label || 'All')
-// Reactive label shown in the trigger button — updated from colorMode below
-const selectedColorModeLabelRef = ref('')
-watch(colorMode, (m) => { selectedColorModeLabelRef.value = COLOR_MODE_LABELS_MAP[m] || '' })
-// Backwards-compatible alias used in templates
-const selectedColorModeLabel = computed(() => selectedColorModeLabelRef.value)
+const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || t('map.allDistricts'))
+const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || t('map.allTalukas'))
+const selectedVillageLabel = computed(() => selectedVillage.value?.label || t('map.allVillages'))
+// Always derive label from the reactive computed map — auto-updates on locale change
+const selectedColorModeLabel = computed(() => colorMode.value ? (COLOR_MODE_LABELS_MAP.value[colorMode.value] || '') : '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
 const isHousingQualityMode = computed(() => colorMode.value === 'housing_quality')
 const isElectricityMode = computed(() => colorMode.value === 'electricity')
@@ -2026,14 +2041,14 @@ const detailStats = computed(() => {
   const h = selectedHouse.value
   if (!h) return []
   return [
-    { label: 'Total Land',  value: `${h.totalLand || '0'} acres` },
-    { label: 'Cultivated',  value: `${h.cultivatedLand || '0'} acres` },
-    { label: 'Irrigation',  value: h.waterSource || 'None' },
-    { label: 'Latrine',     value: h.latrine || 'None', style: { color: getConditionColor(h) } },
-    { label: 'Lighting',    value: h.lighting || 'None' },
-    { label: 'Ration Card', value: h.rationCard || 'Unknown' },
-    { label: 'Kharif Crop', value: h.kharif || 'No' },
-    { label: 'Rabi Crop',   value: h.rabi || 'No' },
+    { label: t('mapView.totalLand'),  value: `${h.totalLand || '0'} acres` },
+    { label: t('mapView.cultivated'), value: `${h.cultivatedLand || '0'} acres` },
+    { label: t('mapView.irrigation'), value: td(h.waterSource) || t('common.none') },
+    { label: t('mapView.latrine'),    value: td(h.latrine) || t('common.none'), style: { color: getConditionColor(h) } },
+    { label: t('mapView.lighting'),   value: td(h.lighting) || t('common.none') },
+    { label: t('mapView.rationCard'), value: td(h.rationCard) || t('common.unknown') },
+    { label: t('mapView.kharifCrop'), value: td(h.kharif) || t('common.no') },
+    { label: t('mapView.rabiCrop'),   value: td(h.rabi) || t('common.no') },
   ]
 })
 
@@ -2053,19 +2068,21 @@ const analyticsChart = computed(() => {
   if (!rows.length || !stats.value) return null
 
   const mode = colorMode.value
+  const hh = t('analytics.households')
+
   if (mode === 'population_density') {
     const male = rows.reduce((sum, house) => sum + getMaleMembers(house), 0)
     const female = rows.reduce((sum, house) => sum + getFemaleMembers(house), 0)
     const total = male + female
     return {
-      title: 'Gender Distribution',
-      subtitle: 'Population gender split',
-      totalLabel: `${total.toLocaleString()} members`,
-      centerLabel: 'Population',
+      title:       t('analytics.genderDistribution'),
+      subtitle:    t('analytics.populationGenderSplit'),
+      totalLabel:  `${total.toLocaleString()} ${t('analytics.members')}`,
+      centerLabel: t('analytics.population'),
       centerValue: total.toLocaleString(),
       segments: [
-        { label: 'Male', value: male, color: '#2563eb' },
-        { label: 'Female', value: female, color: '#ec4899' },
+        { label: t('analytics.male'),   value: male,   color: '#2563eb' },
+        { label: t('analytics.female'), value: female, color: '#ec4899' },
       ],
     }
   }
@@ -2074,14 +2091,14 @@ const analyticsChart = computed(() => {
     const bpl = rows.filter(house => getBplStatus(house) === 'yes').length
     const nonBpl = Math.max(rows.length - bpl, 0)
     return {
-      title: 'BPL Distribution',
-      subtitle: 'Household economic category',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.bplDistribution'),
+      subtitle:    t('analytics.householdEconomicCategory'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'BPL', value: bpl, color: '#ef4444' },
-        { label: 'Non-BPL', value: nonBpl, color: '#16a34a' },
+        { label: t('analytics.bpl'),    value: bpl,    color: '#ef4444' },
+        { label: t('analytics.nonBpl'), value: nonBpl, color: '#16a34a' },
       ],
     }
   }
@@ -2090,120 +2107,120 @@ const analyticsChart = computed(() => {
     const yes = rows.filter(house => hasElectricity(house)).length
     const no = Math.max(rows.length - yes, 0)
     return {
-      title: 'Electricity Distribution',
-      subtitle: 'Household electricity access',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.electricityDistribution'),
+      subtitle:    t('analytics.electricityAccess'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Electricity Access', value: yes, color: '#3b82f6' },
-        { label: 'No Electricity', value: no, color: '#9ca3af' },
+        { label: t('analytics.electricityAvailable'), value: yes, color: '#3b82f6' },
+        { label: t('analytics.noElectricity'),        value: no,  color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'aadhaar_coverage') {
     const complete = rows.filter(house => getAadhaarCoverageStatus(house) === 'complete').length
-    const partial = rows.filter(house => getAadhaarCoverageStatus(house) === 'partial').length
-    const missing = rows.filter(house => getAadhaarCoverageStatus(house) === 'missing').length
-    const unknown = rows.filter(house => getAadhaarCoverageStatus(house) === 'unknown' || !getAadhaarCoverageStatus(house)).length
+    const partial  = rows.filter(house => getAadhaarCoverageStatus(house) === 'partial').length
+    const missing  = rows.filter(house => getAadhaarCoverageStatus(house) === 'missing').length
+    const unknown  = rows.filter(house => getAadhaarCoverageStatus(house) === 'unknown' || !getAadhaarCoverageStatus(house)).length
     return {
-      title: 'Aadhaar Coverage Distribution',
-      subtitle: 'Household document coverage status',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.aadhaarDistribution'),
+      subtitle:    t('analytics.documentCoverageStatus'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Complete', value: complete, color: '#2563eb' },
-        { label: 'Partial', value: partial, color: '#f59e0b' },
-        { label: 'Missing', value: missing, color: '#dc2626' },
-        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+        { label: t('analytics.complete'), value: complete, color: '#2563eb' },
+        { label: t('analytics.partial'),  value: partial,  color: '#f59e0b' },
+        { label: t('analytics.missing'),  value: missing,  color: '#dc2626' },
+        { label: t('analytics.unknown'),  value: unknown,  color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'caste_certificate_coverage') {
     const complete = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'complete').length
-    const partial = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'partial').length
-    const missing = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'missing').length
-    const unknown = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'unknown' || !getCasteCertificateCoverageStatus(house)).length
+    const partial  = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'partial').length
+    const missing  = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'missing').length
+    const unknown  = rows.filter(house => getCasteCertificateCoverageStatus(house) === 'unknown' || !getCasteCertificateCoverageStatus(house)).length
     return {
-      title: 'Caste Certificate Distribution',
-      subtitle: 'Household caste certificate coverage status',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.casteCertDistribution'),
+      subtitle:    t('analytics.casteCoverageStatus'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Complete', value: complete, color: '#2563eb' },
-        { label: 'Partial', value: partial, color: '#f59e0b' },
-        { label: 'Missing', value: missing, color: '#dc2626' },
-        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+        { label: t('analytics.complete'), value: complete, color: '#2563eb' },
+        { label: t('analytics.partial'),  value: partial,  color: '#f59e0b' },
+        { label: t('analytics.missing'),  value: missing,  color: '#dc2626' },
+        { label: t('analytics.unknown'),  value: unknown,  color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'divyang_presence') {
-    const divyang = rows.filter(house => hasDivyangPresence(house)).length
+    const divyang    = rows.filter(house => hasDivyangPresence(house)).length
     const nonDivyang = Math.max(rows.length - divyang, 0)
     return {
-      title: 'Divyang Distribution',
-      subtitle: 'Household disability presence',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.divyangDistribution'),
+      subtitle:    t('analytics.disabilityPresence'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Divyang', value: divyang, color: '#a855f7' },
-        { label: 'Non-divyang', value: nonDivyang, color: '#9ca3af' },
+        { label: t('analytics.divyang'),    value: divyang,    color: '#a855f7' },
+        { label: t('analytics.nonDivyang'), value: nonDivyang, color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'toilet_access') {
     const yes = rows.filter(house => hasToilet(house)).length
-    const no = Math.max(rows.length - yes, 0)
+    const no  = Math.max(rows.length - yes, 0)
     return {
-      title: 'Toilet Distribution',
-      subtitle: 'Household toilet access',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.toiletDistribution'),
+      subtitle:    t('analytics.toiletAccess'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Toilet Available', value: yes, color: '#22c55e' },
-        { label: 'No Toilet', value: no, color: '#9ca3af' },
+        { label: t('analytics.toiletAvailable'), value: yes, color: '#22c55e' },
+        { label: t('analytics.noToilet'),        value: no,  color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'wastewater_management') {
-    const available = rows.filter(house => hasWastewaterManagement(house)).length
-    const unknown = rows.filter((house) => String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').trim() === '').length
+    const available    = rows.filter(house => hasWastewaterManagement(house)).length
+    const unknown      = rows.filter((house) => String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').trim() === '').length
     const notAvailable = Math.max(rows.length - available - unknown, 0)
     return {
-      title: 'Wastewater Management Distribution',
-      subtitle: 'Household wastewater system availability',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.wastewaterDistribution'),
+      subtitle:    t('analytics.wastewaterAvailability'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Available', value: available, color: '#22c55e' },
-        { label: 'Not Available', value: notAvailable, color: '#ef4444' },
-        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+        { label: t('analytics.available'),    value: available,    color: '#22c55e' },
+        { label: t('analytics.notAvailable'), value: notAvailable, color: '#ef4444' },
+        { label: t('analytics.unknown'),      value: unknown,      color: '#9ca3af' },
       ],
     }
   }
 
   if (mode === 'employment_status' || mode === 'employment') {
-    const working = rows.filter(house => hasEmployment(house)).length
+    const working    = rows.filter(house => hasEmployment(house)).length
     const nonWorking = Math.max(rows.length - working, 0)
     return {
-      title: 'Employment Distribution',
-      subtitle: 'Household occupation status',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.employmentDistribution'),
+      subtitle:    t('analytics.occupationStatus'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Working', value: working, color: '#f59e0b' },
-        { label: 'Non-working', value: nonWorking, color: '#9ca3af' },
+        { label: t('analytics.working'),    value: working,    color: '#f59e0b' },
+        { label: t('analytics.nonWorking'), value: nonWorking, color: '#9ca3af' },
       ],
     }
   }
@@ -2218,14 +2235,14 @@ const analyticsChart = computed(() => {
 
   if (mode === 'crop_type' || mode === 'crops') {
     return {
-      title: 'Crop Distribution',
-      subtitle: 'Kharif and rabi participation',
-      totalLabel: `${stats.value.farmers.toLocaleString()} farmers`,
-      centerLabel: 'Active',
+      title:       t('analytics.cropDistribution'),
+      subtitle:    t('analytics.kharifRabiParticipation'),
+      totalLabel:  `${stats.value.farmers.toLocaleString()} ${t('analytics.farmers')}`,
+      centerLabel: t('analytics.active'),
       centerValue: `${(stats.value.kharif + stats.value.rabi).toLocaleString()}`,
       segments: [
-        { label: 'Kharif', value: stats.value.kharif, color: '#f59e0b' },
-        { label: 'Rabi', value: stats.value.rabi, color: '#38bdf8' },
+        { label: t('analytics.kharif'), value: stats.value.kharif, color: '#f59e0b' },
+        { label: t('analytics.rabi'),   value: stats.value.rabi,   color: '#38bdf8' },
       ],
     }
   }
@@ -2233,29 +2250,29 @@ const analyticsChart = computed(() => {
   if (mode === 'irrigation') {
     const irrigated = Math.max(total - stats.value.noIrrigation, 0)
     return {
-      title: 'Irrigation Distribution',
-      subtitle: 'Household irrigation coverage',
-      totalLabel: `${stats.value.total.toLocaleString()} HH`,
-      centerLabel: 'Irrigated',
+      title:       t('analytics.irrigationDistribution'),
+      subtitle:    t('analytics.irrigationCoverage'),
+      totalLabel:  `${stats.value.total.toLocaleString()} HH`,
+      centerLabel: t('analytics.irrigated'),
       centerValue: `${irrigated.toLocaleString()}`,
       segments: [
-        { label: 'Irrigated', value: irrigated, color: '#22c55e' },
-        { label: 'No Irrigation', value: stats.value.noIrrigation, color: '#ef4444' },
+        { label: t('analytics.irrigated'),    value: irrigated,                color: '#22c55e' },
+        { label: t('analytics.noIrrigation'), value: stats.value.noIrrigation, color: '#ef4444' },
       ],
     }
   }
 
   if (mode === 'land_holding' || mode === 'land') {
     return {
-      title: 'Land Holding Distribution',
-      subtitle: 'Agriculture footprint by holding size',
-      totalLabel: `${stats.value.farmers.toLocaleString()} farmers`,
-      centerLabel: 'Holding',
+      title:       t('analytics.landHoldingDistribution'),
+      subtitle:    t('analytics.holdingSize'),
+      totalLabel:  `${stats.value.farmers.toLocaleString()} ${t('analytics.farmers')}`,
+      centerLabel: t('analytics.holding'),
       centerValue: `${stats.value.farmers.toLocaleString()}`,
       segments: [
-        { label: 'Marginal', value: landless, color: '#fb7185' },
-        { label: 'Small', value: small, color: '#eab308' },
-        { label: 'Medium/Large', value: mediumLarge, color: '#14b8a6' },
+        { label: t('analytics.marginal'),    value: landless,    color: '#fb7185' },
+        { label: t('analytics.small'),       value: small,       color: '#eab308' },
+        { label: t('analytics.mediumLarge'), value: mediumLarge, color: '#14b8a6' },
       ],
     }
   }
@@ -2265,15 +2282,15 @@ const analyticsChart = computed(() => {
     const kucha   = rows.filter(h => String(h?.TYPE_HOUSE || h?.type_house || '').toUpperCase().trim() === 'KUCHA').length
     const unknown = Math.max(rows.length - pucca - kucha, 0)
     return {
-      title: 'Housing Quality Distribution',
-      subtitle: 'Household structure type',
-      totalLabel: `${rows.length.toLocaleString()} households`,
-      centerLabel: 'Households',
+      title:       t('analytics.housingQualityDistribution'),
+      subtitle:    t('analytics.structureType'),
+      totalLabel:  `${rows.length.toLocaleString()} ${hh}`,
+      centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: 'Pucca',   value: pucca,   color: '#22c55e' },
-        { label: 'Kucha',   value: kucha,   color: '#ef4444' },
-        { label: 'Unknown', value: unknown, color: '#9ca3af' },
+        { label: td('Pucca'),   value: pucca,   color: '#22c55e' },
+        { label: td('Kucha'),   value: kucha,   color: '#ef4444' },
+        { label: t('analytics.unknown'), value: unknown, color: '#9ca3af' },
       ],
     }
   }
@@ -2423,87 +2440,87 @@ const headerLegend = computed(() => {
   let entries
   if (colorMode.value === 'population_density') {
     entries = [
-      { color: '#a7f3d0', label: '1-2 members' },
-      { color: '#34d399', label: '3-5 members' },
-      { color: '#047857', label: '6+ members' },
+      { color: '#a7f3d0', label: t('legend.members12') },
+      { color: '#34d399', label: t('legend.members35') },
+      { color: '#047857', label: t('legend.members6plus') },
     ]
   } else if (colorMode.value === 'bpl_status') {
     entries = [
-      { color: '#ef4444', label: 'BPL households' },
-      { color: '#16a34a', label: 'Non-BPL households' },
+      { color: '#ef4444', label: t('legend.bplHouseholds') },
+      { color: '#16a34a', label: t('legend.nonBplHouseholds') },
     ]
   } else if (colorMode.value === 'divyang_presence') {
     entries = [
-      { color: '#a855f7', label: 'Divyang present' },
-      { color: '#9ca3af', label: 'No divyang' },
+      { color: '#a855f7', label: t('legend.divyangPresent') },
+      { color: '#9ca3af', label: t('legend.noDivyang') },
     ]
   } else if (colorMode.value === 'employment_status' || colorMode.value === 'employment') {
     entries = [
-      { color: '#f59e0b', label: 'Working households' },
-      { color: '#9ca3af', label: 'Non-working households' },
+      { color: '#f59e0b', label: t('legend.workingHouseholds') },
+      { color: '#9ca3af', label: t('legend.nonWorkingHouseholds') },
     ]
   } else if (colorMode.value === 'crops') {
     entries = [
-      { color: '#10b981', label: 'Both Seasons' },
-      { color: '#f59e0b', label: 'Kharif Only' },
-      { color: '#38bdf8', label: 'Rabi Only' },
-      { color: '#64748b', label: 'No Crops' },
+      { color: '#10b981', label: t('legend.bothSeasons') },
+      { color: '#f59e0b', label: t('legend.kharifOnly') },
+      { color: '#38bdf8', label: t('legend.rabiOnly') },
+      { color: '#64748b', label: t('legend.noCrops') },
     ]
   } else if (colorMode.value === 'land') {
     entries = [
-      { color: '#9ca3af', label: 'Data not available' },
-      { color: '#10b981', label: 'Large >5ac' },
-      { color: '#22c55e', label: 'Medium 2.5-5ac' },
-      { color: '#f59e0b', label: 'Small 1-2.5ac' },
-      { color: '#ef4444', label: 'Marginal ≤1ac' },
+      { color: '#9ca3af', label: t('legend.dataNotAvailable') },
+      { color: '#10b981', label: t('legend.landLarge') },
+      { color: '#22c55e', label: t('legend.landMedium') },
+      { color: '#f59e0b', label: t('legend.landSmall') },
+      { color: '#ef4444', label: t('legend.landMarginal') },
     ]
   } else if (colorMode.value === 'irrigation') {
     entries = [
-      { color: '#16a34a', label: 'Irrigation available' },
-      { color: '#ef4444', label: 'No irrigation' },
+      { color: '#16a34a', label: t('legend.irrigationAvailable') },
+      { color: '#ef4444', label: t('legend.noIrrigation') },
     ]
   } else if (colorMode.value === 'electricity') {
     entries = [
-      { color: '#3b82f6', label: 'Electricity Available' },
-      { color: '#9ca3af', label: 'No Electricity' },
+      { color: '#3b82f6', label: t('legend.electricityAvailable') },
+      { color: '#9ca3af', label: t('legend.noElectricity') },
     ]
   } else if (colorMode.value === 'toilet_access') {
     entries = [
-      { color: '#16a34a', label: 'Toilet Available' },
-      { color: '#dc2626', label: 'No Toilet' },
+      { color: '#16a34a', label: t('legend.toiletAvailable') },
+      { color: '#dc2626', label: t('legend.noToilet') },
     ]
   } else if (colorMode.value === 'aadhaar_coverage') {
     entries = [
-      { color: '#2563eb', label: 'Complete Coverage' },
-      { color: '#f59e0b', label: 'Partial Coverage' },
-      { color: '#dc2626', label: 'No Aadhaar' },
-      { color: '#9ca3af', label: 'Unknown' },
+      { color: '#2563eb', label: t('legend.completeCoverage') },
+      { color: '#f59e0b', label: t('legend.partialCoverage') },
+      { color: '#dc2626', label: t('legend.noAadhaar') },
+      { color: '#9ca3af', label: t('analytics.unknown') },
     ]
   } else if (colorMode.value === 'caste_certificate_coverage') {
     entries = [
-      { color: '#2563eb', label: 'Complete Coverage' },
-      { color: '#f59e0b', label: 'Partial Coverage' },
-      { color: '#dc2626', label: 'No Caste Certificate' },
-      { color: '#9ca3af', label: 'Unknown' },
+      { color: '#2563eb', label: t('legend.completeCoverage') },
+      { color: '#f59e0b', label: t('legend.partialCoverage') },
+      { color: '#dc2626', label: t('legend.noCasteCert') },
+      { color: '#9ca3af', label: t('analytics.unknown') },
     ]
   } else if (colorMode.value === 'wastewater_management') {
     entries = [
-      { color: '#3b82f6', label: 'Wastewater System Available' },
-      { color: '#f59e0b', label: 'No Wastewater System' },
-      { color: '#9ca3af', label: 'Unknown' },
+      { color: '#3b82f6', label: t('legend.wastewaterAvailable') },
+      { color: '#f59e0b', label: t('legend.noWastewater') },
+      { color: '#9ca3af', label: t('analytics.unknown') },
     ]
   } else if (colorMode.value === 'housing_quality') {
     entries = [
-      { color: '#22c55e', label: 'Pucca (Good)' },
-      { color: '#ef4444', label: 'Kucha (Poor)' },
-      { color: '#9ca3af', label: 'Unknown' },
+      { color: '#22c55e', label: `${td('Pucca')} (${t('legend.good')})` },
+      { color: '#ef4444', label: `${td('Kucha')} (${t('legend.poor')})` },
+      { color: '#9ca3af', label: t('analytics.unknown') },
     ]
   } else {
     entries = []
   }
   // Append GPS Mismatch entry whenever anomaly detection is active
   if (showAnomalies.value && anomalies.value.length) {
-    entries = [...entries, { color: '#ef4444', label: 'GPS Mismatch' }]
+    entries = [...entries, { color: '#ef4444', label: t('legend.gpsMismatch') }]
   }
   return entries
 })
@@ -2591,10 +2608,10 @@ const clusterIssues = computed(() => {
   const cl = selectedCluster.value
   if (!cl) return []
   return [
-    { label: 'No Sanitation', pct: pct(cl.noToilet, cl.count), color: '#a855f7' },
-    { label: 'No Electricity', pct: pct(cl.noElec, cl.count),  color: '#f59e0b' },
-    { label: 'No Irrigation',  pct: pct(cl.noIrrig, cl.count), color: '#a78bfa' },
-    { label: 'BPL Households', pct: pct(cl.bpl, cl.count),     color: '#60a5fa' },
+    { label: t('mapView.noSanitation'),  pct: pct(cl.noToilet, cl.count), color: '#a855f7' },
+    { label: t('mapView.noElectricity'), pct: pct(cl.noElec, cl.count),  color: '#f59e0b' },
+    { label: t('mapView.noIrrigation'),  pct: pct(cl.noIrrig, cl.count), color: '#a78bfa' },
+    { label: t('mapView.bplHouseholds'), pct: pct(cl.bpl, cl.count),     color: '#60a5fa' },
   ]
 })
 
@@ -3116,25 +3133,25 @@ function addHouseMarker(house) {
     // 3a. BPL Status mode — show BPL category and ration card
     if (mode === 'bpl_status') {
       const houseNo = getHouseNumber(house) || '—'
-      const bpl     = house.bplCategory || house.FAMILY_BELONG_BPL_CATEGORY || 'Unknown'
-      const ration  = house.rationCard  || house.RATION_CARD_COLOR || house.RATION_CARD_TYPE || '—'
+      const bpl     = td(house.bplCategory || house.FAMILY_BELONG_BPL_CATEGORY) || t('common.unknown')
+      const ration  = td(house.rationCard  || house.RATION_CARD_COLOR || house.RATION_CARD_TYPE) || '—'
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        BPL Status: ${bpl}<br/>
-        Ration Card: ${ration}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('viewBy.bplStatus')}: ${bpl}<br/>
+        ${t('mapView.rationCard')}: ${ration}
       `
     }
 
     // 3b. Divyang Presence mode — show divyang status and member count
     if (mode === 'divyang_presence') {
       const houseNo      = getHouseNumber(house) || '—'
-      const present      = hasDivyangPresence(house) ? 'Yes' : 'No'
+      const present      = hasDivyangPresence(house) ? t('common.yes') : t('common.no')
       const divyangCount = Number(house?.divyang_members || house?.divyangMembers || house?.DIVYANG_MEMBERS || 0)
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        Divyang Present: ${present}${divyangCount > 0 ? `<br/>Divyang Members: ${divyangCount}` : ''}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('mapView.divyangPresent')}: ${present}${divyangCount > 0 ? `<br/>${t('mapView.divyangMembers')}: ${divyangCount}` : ''}
       `
     }
 
@@ -3142,12 +3159,12 @@ function addHouseMarker(house) {
     if (mode === 'employment_status' || mode === 'employment') {
       const houseNo      = getHouseNumber(house) || '—'
       const isWorking    = hasEmployment(house)
-      const status       = isWorking ? 'Working' : 'Non-working'
+      const status       = isWorking ? t('mapView.working') : t('mapView.nonWorking')
       const workingCount = getWorkingMembers(house)
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        Employment Status: ${status}${workingCount > 0 ? `<br/>Working Members: ${workingCount}` : ''}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('mapView.employmentStatus')}: ${status}${workingCount > 0 ? `<br/>${t('map.workingMembers')}: ${workingCount}` : ''}
       `
     }
 
@@ -3155,8 +3172,8 @@ function addHouseMarker(house) {
     if (populationFilters.includes(mode)) {
       return `
         <strong>${name}</strong><br/>
-        House No: ${getHouseNumber(house) || 'N/A'}<br/>
-        Members: ${getTotalMembers(house)} · Male: ${getMaleMembers(house)} · Female: ${getFemaleMembers(house)}
+        ${t('mapView.houseNo')}: ${getHouseNumber(house) || 'N/A'}<br/>
+        ${t('map.totalMembers')}: ${getTotalMembers(house)} · ${t('mapView.maleCount')}: ${getMaleMembers(house)} · ${t('mapView.femaleCount')}: ${getFemaleMembers(house)}
       `
     }
 
@@ -3165,11 +3182,11 @@ function addHouseMarker(house) {
       const houseNo = getHouseNumber(house) || '—'
       const k = hasCropValue(house.kharif)
       const r = hasCropValue(house.rabi)
-      const seasonType = k && r ? 'Both Seasons' : k ? 'Kharif Only' : r ? 'Rabi Only' : 'No Crops'
+      const seasonType = k && r ? t('mapView.bothSeasons') : k ? t('mapView.kharifOnly') : r ? t('mapView.rabiOnly') : t('mapView.noCrops')
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        Season Type: ${seasonType}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('mapView.seasonType')}: ${seasonType}
       `
     }
 
@@ -3178,12 +3195,12 @@ function addHouseMarker(house) {
       const houseNo    = getHouseNumber(house) || '—'
       const rawSource  = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource ?? ''
       const noIrrig    = isNoIrrigationValue(rawSource)
-      const statusLine = noIrrig ? 'No Irrigation' : 'Available'
-      const sourceLine = (!noIrrig && String(rawSource).trim()) ? `<br/>Water Source: ${rawSource}` : ''
+      const statusLine = noIrrig ? t('mapView.noIrrigation') : t('common.available')
+      const sourceLine = (!noIrrig && String(rawSource).trim()) ? `<br/>${t('mapView.waterSource')}: ${td(rawSource)}` : ''
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        Irrigation: ${statusLine}${sourceLine}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('mapView.irrigation')}: ${statusLine}${sourceLine}
       `
     }
 
@@ -3197,38 +3214,38 @@ function addHouseMarker(house) {
         toFiniteNumber(house?.land_under_cultivation_acres) ??
         toFiniteNumber(house?.totalLand)
       const hasData  = acres !== null && acres !== undefined && !Number.isNaN(acres) && acres > 0
-      const category = !hasData         ? 'Data not available'
-                     : acres <= 1       ? 'Marginal (<1 ac)'
-                     : acres <= 2.5     ? 'Small (1–2.5 ac)'
-                     : acres <= 5       ? 'Medium (2.5–5 ac)'
-                     :                    'Large (>5 ac)'
-      const landLine = hasData ? `<br/>Total Land: ${acres} acres` : ''
+      const category = !hasData         ? t('common.dataNotAvailable')
+                     : acres <= 1       ? t('mapView.landMarginal')
+                     : acres <= 2.5     ? t('mapView.landSmall')
+                     : acres <= 5       ? t('mapView.landMedium')
+                     :                    t('mapView.landLarge')
+      const landLine = hasData ? `<br/>${t('mapView.totalLand')}: ${acres} acres` : ''
       return `
         <strong>${name}</strong><br/>
-        House No: ${houseNo}<br/>
-        Land Holding: ${category}${landLine}
+        ${t('mapView.houseNo')}: ${houseNo}<br/>
+        ${t('mapView.landHolding')}: ${category}${landLine}
       `
     }
 
     // 5. Infrastructure modes: Housing Quality, Electricity, Toilet Access, Wastewater
     if (mode === 'housing_quality' || mode === 'electricity' || mode === 'toilet_access' || mode === 'wastewater_management') {
-      const elec   = house.lighting || house.ELECTRICITY_CONNECTION || '—'
-      const toilet = house.latrine  || house.SANITATION_TOILET_FACILITY_HOME || '—'
-      const water  = house.waterSource || house.DRINKING_WATER_SOURCE || '—'
+      const elec   = td(house.lighting || house.ELECTRICITY_CONNECTION) || '—'
+      const toilet = td(house.latrine  || house.SANITATION_TOILET_FACILITY_HOME) || '—'
+      const water  = td(house.waterSource || house.DRINKING_WATER_SOURCE) || '—'
       return `
         <strong>${name}</strong><br/>
-        Electricity: ${elec} · Toilet: ${toilet}<br/>
-        Water: ${water}
+        ${t('viewBy.electricity')}: ${elec} · ${t('mapView.toiletAccess')}: ${toilet}<br/>
+        ${t('mapView.waterSource')}: ${water}
       `
     }
 
     // 6. Welfare / Document Gap modes: Aadhaar Coverage, Caste Certificate Coverage
     if (mode === 'aadhaar_coverage' || mode === 'caste_certificate_coverage') {
-      const aadhaar = house.aadhaarCoverageStatus || house.AadhaarCoverageStatus || '—'
-      const caste   = house.casteCertificateCoverageStatus || house.CasteCertificateCoverageStatus || '—'
+      const aadhaar = td(house.aadhaarCoverageStatus || house.AadhaarCoverageStatus) || '—'
+      const caste   = td(house.casteCertificateCoverageStatus || house.CasteCertificateCoverageStatus) || '—'
       return `
         <strong>${name}</strong><br/>
-        Aadhaar: ${aadhaar} · Caste Cert: ${caste}
+        ${t('mapView.aadhaar')}: ${aadhaar} · ${t('mapView.casteCert')}: ${caste}
       `
     }
 

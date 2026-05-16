@@ -2,37 +2,37 @@
   <div class="main-shell">
     <aside class="sidebar">
       <div class="brand">
-        <h1>Digital Twin</h1>
-        <p>Module Gateway</p>
+        <h1>{{ $t('brand.digitalTwin') }}</h1>
+        <p>{{ $t('brand.moduleGateway') }}</p>
       </div>
 
-      <nav class="nav">
+      <nav class="nav" :aria-label="$t('nav.dashboard')">
         <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-          Dashboard
+          {{ $t('nav.dashboard') }}
         </router-link>
 
         <div class="group">
-          <div class="group-title">Digital Twin</div>
+          <div class="group-title">{{ $t('brand.digitalTwin') }}</div>
           <router-link
             to="/agriculture/dashboard"
             class="nav-item sub-item"
             :class="{ active: $route.path.startsWith('/agriculture') }"
           >
-            Agriculture
+            {{ $t('nav.agriculture') }}
           </router-link>
           <router-link
             to="/population/dashboard"
             class="nav-item sub-item"
             :class="{ active: $route.path.startsWith('/population') }"
           >
-            Population
+            {{ $t('nav.population') }}
           </router-link>
           <router-link
             to="/infrastructure/dashboard"
             class="nav-item sub-item"
             :class="{ active: $route.path.startsWith('/infrastructure') }"
           >
-            Infrastructure
+            {{ $t('nav.infrastructure') }}
           </router-link>
         </div>
       </nav>

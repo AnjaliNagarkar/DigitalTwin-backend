@@ -2,19 +2,19 @@
   <div class="dashboard">
     <header class="page-header">
       <div>
-        <h1 class="page-title">Village Command Center</h1>
-        <p class="page-subtitle">Unified population and agriculture intelligence</p>
+        <h1 class="page-title">{{ t('agriDashboard.title') }}</h1>
+        <p class="page-subtitle">{{ t('agriDashboard.subtitle') }}</p>
       </div>
     </header>
 
     <section class="card dashboard-filter">
-      <div class="dashboard-filter-head">Location Filter</div>
+      <div class="dashboard-filter-head">{{ t('agriDashboard.locationFilter') }}</div>
       <div class="dashboard-filter-grid">
         <!-- Districts Multi-Select -->
         <div class="filter-dropdown-wrapper">
           <div class="filter-dropdown-trigger" @click="toggleDropdown('district')">
             <span class="filter-trigger-text">
-              {{ selectedDistrictDisplay || 'Select District' }}
+              {{ selectedDistrictDisplay || t('agriDashboard.selectDistrict') }}
             </span>
             <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'district' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
@@ -25,7 +25,7 @@
               <input
                 v-model="districtSearchText"
                 type="text"
-                placeholder="Search District"
+                :placeholder="t('agriDashboard.searchDistrict')"
                 class="filter-search-input"
               />
             </div>
@@ -47,7 +47,7 @@
         <div class="filter-dropdown-wrapper">
           <div class="filter-dropdown-trigger" :class="{ disabled: selectedDistricts.length === 0 }" @click="selectedDistricts.length > 0 && toggleDropdown('taluka')">
             <span class="filter-trigger-text">
-              {{ selectedTalukaDisplay || 'Select Taluka' }}
+              {{ selectedTalukaDisplay || t('agriDashboard.selectTaluka') }}
             </span>
             <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'taluka' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
@@ -58,7 +58,7 @@
               <input
                 v-model="talukaSearchText"
                 type="text"
-                placeholder="Search Taluka"
+                :placeholder="t('agriDashboard.searchTaluka')"
                 class="filter-search-input"
               />
             </div>
@@ -80,7 +80,7 @@
         <div class="filter-dropdown-wrapper">
           <div class="filter-dropdown-trigger" :class="{ disabled: selectedTalukas.length === 0 }" @click="selectedTalukas.length > 0 && toggleDropdown('village')">
             <span class="filter-trigger-text">
-              {{ selectedVillageDisplay || 'Select Village' }}
+              {{ selectedVillageDisplay || t('agriDashboard.selectVillage') }}
             </span>
             <svg class="filter-trigger-icon" :class="{ open: openDropdown === 'village' }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
@@ -91,7 +91,7 @@
               <input
                 v-model="villageSearchText"
                 type="text"
-                placeholder="Search Village"
+                :placeholder="t('agriDashboard.searchVillage')"
                 class="filter-search-input"
               />
             </div>
@@ -110,15 +110,15 @@
         </div>
 
         <div class="dashboard-filter-actions">
-          <button type="button" class="dashboard-apply-btn" @click="applyFilters">Apply</button>
-          <button type="button" class="dashboard-reset-btn" @click="resetFilters">Reset</button>
+          <button type="button" class="dashboard-apply-btn" @click="applyFilters">{{ t('common.apply') }}</button>
+          <button type="button" class="dashboard-reset-btn" @click="resetFilters">{{ t('common.reset') }}</button>
         </div>
       </div>
     </section>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Loading intelligence data...</span>
+      <span>{{ t('agriDashboard.loading') }}</span>
     </div>
 
     <template v-else>
@@ -137,24 +137,24 @@
 
       <section class="demographic-section">
         <div class="section-head">
-          <h2 class="card-title">Demographic Insights</h2>
+          <h2 class="card-title">{{ t('agriDashboard.demographicInsights') }}</h2>
         </div>
 
         <div class="insights-grid demographic-grid">
           <article class="card insight-panel gender-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Gender Distribution</h3>
-              <span class="total-note">Total: {{ genderTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">{{ t('agriDashboard.genderDistribution') }}</h3>
+              <span class="total-note">{{ t('common.total') }}: {{ genderTotal.toLocaleString() }}</span>
             </div>
 
             <div v-if="genderTotal === 0" class="empty-state">
-              No demographic records available.
+              {{ t('agriDashboard.noDemoRecords') }}
             </div>
             <div v-else class="chart-layout gender-chart-layout">
               <div class="donut" :style="genderPieStyle">
                 <div class="donut-hole">
                   <div class="donut-value">{{ genderTotal.toLocaleString() }}</div>
-                  <div class="donut-label">Total Gender</div>
+                  <div class="donut-label">{{ t('agriDashboard.totalGender') }}</div>
                 </div>
               </div>
               <div class="dist-items">
@@ -169,18 +169,18 @@
 
           <article class="card insight-panel divyang-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Divyang Distribution</h3>
-              <span class="total-note">Total: {{ divyangTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">{{ t('agriDashboard.divyangDistribution') }}</h3>
+              <span class="total-note">{{ t('common.total') }}: {{ divyangTotal.toLocaleString() }}</span>
             </div>
 
             <div v-if="divyangTotal === 0" class="empty-state">
-              No divyang records available.
+              {{ t('agriDashboard.noDivyangRecords') }}
             </div>
             <div v-else class="chart-layout gender-chart-layout">
               <div class="donut" :style="divyangPieStyle">
                 <div class="donut-hole">
                   <div class="donut-value">{{ divyangTotal.toLocaleString() }}</div>
-                  <div class="donut-label">Total Divyang</div>
+                  <div class="donut-label">{{ t('agriDashboard.totalDivyang') }}</div>
                 </div>
               </div>
               <div class="dist-items">
@@ -195,18 +195,18 @@
 
           <article class="card insight-panel bpl-panel">
             <div class="panel-header">
-              <h3 class="chart-title">BPL Status</h3>
-              <span class="total-note">Total: {{ bplTotal.toLocaleString() }}</span>
+              <h3 class="chart-title">{{ t('agriDashboard.bplStatus') }}</h3>
+              <span class="total-note">{{ t('common.total') }}: {{ bplTotal.toLocaleString() }}</span>
             </div>
 
             <div v-if="bplTotal === 0" class="empty-state">
-              No BPL records available.
+              {{ t('agriDashboard.noBplRecords') }}
             </div>
             <div v-else class="chart-layout gender-chart-layout">
               <div class="donut" :style="bplPieStyle">
                 <div class="donut-hole">
                   <div class="donut-value">{{ bplTotal.toLocaleString() }}</div>
-                  <div class="donut-label">Total Families</div>
+                  <div class="donut-label">{{ t('agriDashboard.totalFamilies') }}</div>
                 </div>
               </div>
               <div class="dist-items">
@@ -221,7 +221,7 @@
 
           <article class="card insight-panel">
             <div class="panel-header">
-              <h3 class="chart-title">Age-wise Family Income Distribution</h3>
+              <h3 class="chart-title">{{ t('agriDashboard.ageIncomeFamily') }}</h3>
             </div>
 
             <div class="age-mixed-chart">
@@ -237,7 +237,7 @@
         <div class="insights-grid intelligence-row-1">
           <article class="card insight-panel">
             <div class="panel-header">
-              <h2 class="card-title">Education Intelligence</h2>
+              <h2 class="card-title">{{ t('agriDashboard.educationIntelligence') }}</h2>
             </div>
 
             <div class="mini-stats mini-stats-5">
@@ -248,8 +248,8 @@
             </div>
 
             <div class="distribution-section">
-              <h3 class="dist-title">Qualification Distribution</h3>
-              <div v-if="qualificationTotal === 0" class="empty-state">No qualification records available.</div>
+              <h3 class="dist-title">{{ t('agriDashboard.qualificationDistribution') }}</h3>
+              <div v-if="qualificationTotal === 0" class="empty-state">{{ t('agriDashboard.noQualRecords') }}</div>
               <div v-else class="distribution-bars">
                 <div class="distribution-row" v-for="item in qualificationSegments" :key="item.label">
                   <div class="distribution-label">{{ item.label }}</div>
@@ -262,14 +262,14 @@
             </div>
 
             <div class="compact-note">
-              <div class="literacy-rate-line"><strong>Literacy Rate:</strong> {{ literacyRateLabel }}</div>
-              <div class="literacy-sub-line">{{ Number(education.literate_population || 0).toLocaleString() }} literate out of {{ Number(populationStats.total_population || 0).toLocaleString() }} population</div>
+              <div class="literacy-rate-line"><strong>{{ t('agriDashboard.literacyRate') }}:</strong> {{ literacyRateLabel }}</div>
+              <div class="literacy-sub-line">{{ Number(education.literate_population || 0).toLocaleString() }} {{ t('agriDashboard.literacyDetail') }} {{ Number(populationStats.total_population || 0).toLocaleString() }} {{ t('common.population') }}</div>
             </div>
           </article>
 
           <article class="card insight-panel">
             <div class="panel-header">
-              <h2 class="card-title">Employment Insights</h2>
+              <h2 class="card-title">{{ t('agriDashboard.employmentInsights') }}</h2>
             </div>
 
             <div class="mini-stats mini-stats-4">
@@ -280,8 +280,8 @@
             </div>
 
             <div class="distribution-section">
-              <h3 class="dist-title">Occupation Distribution</h3>
-              <div v-if="occupationTotal === 0" class="empty-state">No occupation records available.</div>
+              <h3 class="dist-title">{{ t('agriDashboard.occupationDistribution') }}</h3>
+              <div v-if="occupationTotal === 0" class="empty-state">{{ t('agriDashboard.noOccRecords') }}</div>
               <div v-else class="distribution-bars">
                 <div class="distribution-row" v-for="item in occupationSegments" :key="item.label">
                   <div class="distribution-label">{{ item.label }}</div>
@@ -298,32 +298,32 @@
         <div class="insights-grid intelligence-row-2">
           <div class="card insight-panel agriculture-panel">
             <div class="panel-header">
-              <h2 class="card-title">Agriculture Intelligence</h2>
+              <h2 class="card-title">{{ t('agriDashboard.agricultureIntelligence') }}</h2>
             </div>
 
             <div class="agri-stats">
               <div class="agri-stat">
                 <div class="agri-stat-num" style="color: var(--amber)">{{ agriculture.totalFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Total Farmers</div>
+                <div class="agri-stat-label">{{ t('agriDashboard.totalFarmers') }}</div>
               </div>
               <div class="agri-stat">
                 <div class="agri-stat-num" style="color: var(--red)">{{ agriculture.farmersWithoutIrrigation?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">No Irrigation</div>
+                <div class="agri-stat-label">{{ t('agriDashboard.noIrrigation') }}</div>
               </div>
               <div class="agri-stat">
                 <div class="agri-stat-num" style="color: var(--teal)">{{ agriculture.kharifFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Kharif Active</div>
+                <div class="agri-stat-label">{{ t('agriDashboard.kharifActive') }}</div>
               </div>
               <div class="agri-stat">
                 <div class="agri-stat-num" style="color: var(--green)">{{ agriculture.rabiFarmers?.toLocaleString() || '—' }}</div>
-                <div class="agri-stat-label">Rabi Active</div>
+                <div class="agri-stat-label">{{ t('agriDashboard.rabiActive') }}</div>
               </div>
             </div>
 
             <div class="distribution-section">
               <div class="agri-chart-grid">
                 <article class="agri-chart-card">
-                  <h3 class="dist-title">Land Holdings Distribution</h3>
+                  <h3 class="dist-title">{{ t('agriDashboard.landHoldings') }}</h3>
                   <div v-if="landDistributionRows.length" class="agri-land-bars">
                     <div class="land-bar-item" v-for="(d, index) in landDistributionRows" :key="`${d.label}-${index}`">
                       <div class="land-bar-label">{{ d.displayLabel }}</div>
@@ -333,11 +333,11 @@
                       <div class="land-bar-count">{{ d.count.toLocaleString() }}</div>
                     </div>
                   </div>
-                  <div v-else class="empty-state">No land holdings records available.</div>
+                  <div v-else class="empty-state">{{ t('agriDashboard.noLandRecords') }}</div>
                 </article>
 
                 <article class="agri-chart-card">
-                  <h3 class="dist-title">Land Utilization</h3>
+                  <h3 class="dist-title">{{ t('agriDashboard.landUtilization') }}</h3>
                   <div v-if="landUtilizationHasData" class="agri-apex-wrap">
                     <apexchart
                       height="220"
@@ -346,15 +346,15 @@
                       :series="landUtilizationSeries"
                     />
                     <div class="land-utilization-footnote">
-                      <div>Based on {{ landUtilizationRows.validRecords.toLocaleString() }} valid survey records</div>
-                      <div><span class="land-utilization-footnote-warn">{{ landUtilizationRows.invalidRecords.toLocaleString() }}</span> records excluded due to invalid values</div>
+                      <div>{{ t('agriDashboard.validRecords', { n: landUtilizationRows.validRecords.toLocaleString() }) }}</div>
+                      <div><span class="land-utilization-footnote-warn">{{ landUtilizationRows.invalidRecords.toLocaleString() }}</span> {{ t('agriDashboard.invalidRecordsSuffix') }}</div>
                     </div>
                   </div>
-                  <div v-else class="empty-state">No land utilization records available.</div>
+                  <div v-else class="empty-state">{{ t('agriDashboard.noLandUtilRecords') }}</div>
                 </article>
 
                 <article class="agri-chart-card season-crops-card">
-                  <h3 class="dist-title chart-header">Season-wise Crops</h3>
+                  <h3 class="dist-title chart-header">{{ t('agriDashboard.seasonCrops') }}</h3>
                   <div v-if="seasonCropHasData" class="agri-apex-wrap agri-chart chart-container">
                     <apexchart
                       height="280"
@@ -363,7 +363,7 @@
                       :series="seasonCropSeries"
                     />
                   </div>
-                  <div v-else class="empty-state">No season-wise crop records available.</div>
+                  <div v-else class="empty-state">{{ t('agriDashboard.noSeasonCropRecords') }}</div>
                 </article>
               </div>
             </div>
@@ -376,9 +376,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Chart, registerables } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { getDashboardSummary, getLocationOptions } from '../../api/index.js'
+
+const { t } = useI18n()
 
 Chart.register(...registerables, ChartDataLabels)
 Chart.defaults.font.family = 'inherit'
@@ -931,17 +934,17 @@ const ChildIcon = {
 const populationMetrics = computed(() => {
   const s = populationStats.value
   return [
-    { label: 'Total Households', value: Number(s.total_households || 0).toLocaleString(), color: 'var(--teal)', iconBg: 'var(--teal-dim)', iconSvg: HomeIcon },
-    { label: 'Total Population', value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
+    { label: t('agriDashboard.totalHH'),  value: Number(s.total_households || 0).toLocaleString(), color: 'var(--teal)', iconBg: 'var(--teal-dim)', iconSvg: HomeIcon },
+    { label: t('agriDashboard.totalPop'), value: Number(s.total_population || 0).toLocaleString(), color: 'var(--text-primary)', iconBg: 'var(--amber-dim)', iconSvg: GroupIcon },
   ]
 })
 
 const genderSegments = computed(() => {
   const g = demographics.value.gender_distribution || {}
   return [
-    { label: 'Male', value: Number(g.male || 0), color: 'var(--teal)' },
-    { label: 'Female', value: Number(g.female || 0), color: 'var(--amber)' },
-    { label: 'Other', value: Number(g.other || 0), color: 'var(--text-dim)' },
+    { label: t('agriDashboard.male'),        value: Number(g.male   || 0), color: 'var(--teal)' },
+    { label: t('agriDashboard.female'),      value: Number(g.female || 0), color: 'var(--amber)' },
+    { label: t('agriDashboard.otherGender'), value: Number(g.other  || 0), color: 'var(--text-dim)' },
   ]
 })
 const genderTotal = computed(() => genderSegments.value.reduce((sum, item) => sum + item.value, 0))
@@ -964,8 +967,8 @@ const bplSegments = computed(() => {
   const nonBpl = Number(bplDistribution.value?.non_bpl || 0)
 
   return [
-    { label: 'BPL', value: bpl, color: '#ef4444' },
-    { label: 'Non-BPL', value: nonBpl, color: '#10b981' },
+    { label: t('agriDashboard.bpl'),    value: bpl,    color: '#ef4444' },
+    { label: t('agriDashboard.nonBpl'), value: nonBpl, color: '#10b981' },
   ]
 })
 
@@ -1078,21 +1081,21 @@ const divyangPieStyle = computed(() => {
 const educationMetrics = computed(() => {
   const e = education.value
   return [
-    { label: 'Literate Population', value: Number(e.literate_population || 0).toLocaleString(), color: 'var(--teal)' },
-    { label: 'Illiterate Population', value: Number(e.illiterate_population || 0).toLocaleString(), color: 'var(--red)' },
-    { label: 'Students', value: Number(e.students_count || 0).toLocaleString(), color: 'var(--amber)' },
-    { label: 'School Dropouts', value: Number(e.dropout_count || 0).toLocaleString(), color: 'var(--text-primary)' },
-    { label: 'Graduates', value: Number(e.graduate_population || 0).toLocaleString(), color: 'var(--green)' },
+    { label: t('agriDashboard.litPop'),   value: Number(e.literate_population   || 0).toLocaleString(), color: 'var(--teal)' },
+    { label: t('agriDashboard.illitPop'), value: Number(e.illiterate_population || 0).toLocaleString(), color: 'var(--red)' },
+    { label: t('agriDashboard.students'), value: Number(e.students_count        || 0).toLocaleString(), color: 'var(--amber)' },
+    { label: t('agriDashboard.dropouts'), value: Number(e.dropout_count         || 0).toLocaleString(), color: 'var(--text-primary)' },
+    { label: t('agriDashboard.graduatesPlus'), value: Number(e.graduate_population || 0).toLocaleString(), color: 'var(--green)' },
   ]
 })
 
 const qualificationSegments = computed(() => {
   const q = education.value.qualification_distribution || {}
   return [
-    { label: 'Below 10th', value: Number(q.below_10th || 0), color: 'var(--text-dim)' },
-    { label: '10th', value: Number(q.tenth || 0), color: 'var(--teal)' },
-    { label: '12th', value: Number(q.twelfth || 0), color: 'var(--amber)' },
-    { label: 'Graduation & Above', value: Number(q.graduate_above || 0), color: 'var(--green)' },
+    { label: t('agriDashboard.below10th'), value: Number(q.below_10th     || 0), color: 'var(--text-dim)' },
+    { label: t('agriDashboard.tenth'),     value: Number(q.tenth          || 0), color: 'var(--teal)' },
+    { label: t('agriDashboard.twelfth'),   value: Number(q.twelfth        || 0), color: 'var(--amber)' },
+    { label: t('agriDashboard.gradAbove'), value: Number(q.graduate_above || 0), color: 'var(--green)' },
   ].sort((a, b) => b.value - a.value)
 })
 const qualificationTotal = computed(() => qualificationSegments.value.reduce((sum, item) => sum + item.value, 0))
@@ -1103,25 +1106,25 @@ const literacyRateLabel = computed(() => `${Math.round(Number(education.value.li
 const employmentMetrics = computed(() => {
   const e = employment.value
   return [
-    { label: 'Employed Members', value: Number(e.employed_members || 0).toLocaleString(), color: 'var(--green)' },
-    { label: 'Unemployed Members', value: Number(e.unemployed_members || 0).toLocaleString(), color: 'var(--red)' },
-    { label: 'Daily Wage Workers', value: Number(e.daily_wage_workers || 0).toLocaleString(), color: 'var(--amber)' },
-    { label: 'Skilled Workers', value: Number(e.skilled_workers || 0).toLocaleString(), color: 'var(--teal)' },
+    { label: t('agriDashboard.employed'),         value: Number(e.employed_members    || 0).toLocaleString(), color: 'var(--green)' },
+    { label: t('agriDashboard.unemployedMembers'), value: Number(e.unemployed_members || 0).toLocaleString(), color: 'var(--red)' },
+    { label: t('agriDashboard.dailyWage'),         value: Number(e.daily_wage_workers || 0).toLocaleString(), color: 'var(--amber)' },
+    { label: t('agriDashboard.skilled'),           value: Number(e.skilled_workers    || 0).toLocaleString(), color: 'var(--teal)' },
   ]
 })
 
 const occupationSegments = computed(() => {
   const o = employment.value.occupation_distribution || {}
   return [
-    { label: 'Farm Based', value: Number(o.farm_based || 0), color: 'var(--green)' },
-    { label: 'Agri Allied', value: Number(o.agri_allied || 0), color: 'var(--teal)' },
-    { label: 'Non Farm Self Employed', value: Number(o.non_farm || 0), color: 'var(--amber)' },
-    { label: 'Salaried', value: Number(o.salaried || 0), color: 'var(--teal)' },
-    { label: 'Wage Workers', value: Number(o.wage_workers || 0), color: 'var(--red)' },
-    { label: 'Housewife', value: Number(o.housewife || 0), color: 'var(--text-muted)' },
-    { label: 'Students', value: Number(o.students || 0), color: 'var(--amber)' },
-    { label: 'Unemployed', value: Number(o.unemployed || 0), color: 'var(--red)' },
-    { label: 'Other', value: Number(o.other || 0), color: 'var(--text-dim)' },
+    { label: t('agriDashboard.farmBased'),    value: Number(o.farm_based    || 0), color: 'var(--green)' },
+    { label: t('agriDashboard.agriAllied'),   value: Number(o.agri_allied   || 0), color: 'var(--teal)' },
+    { label: t('agriDashboard.nonFarm'),      value: Number(o.non_farm      || 0), color: 'var(--amber)' },
+    { label: t('agriDashboard.salaried'),     value: Number(o.salaried      || 0), color: 'var(--teal)' },
+    { label: t('agriDashboard.wageWorkers'),  value: Number(o.wage_workers  || 0), color: 'var(--red)' },
+    { label: t('agriDashboard.housewife'),    value: Number(o.housewife     || 0), color: 'var(--text-muted)' },
+    { label: t('agriDashboard.studentsOcc'),  value: Number(o.students      || 0), color: 'var(--amber)' },
+    { label: t('agriDashboard.unemployedOcc'), value: Number(o.unemployed   || 0), color: 'var(--red)' },
+    { label: t('agriDashboard.other'),         value: Number(o.other        || 0), color: 'var(--text-dim)' },
   ].sort((a, b) => b.value - a.value)
 })
 const occupationTotal = computed(() => occupationSegments.value.reduce((sum, item) => sum + item.value, 0))

@@ -7,12 +7,12 @@
       <!-- Row 1: Title + CATEGORY custom dropdown -->
       <div class="header-row header-row-1">
         <div class="title-block">
-          <h1 class="page-title">Citizen Registry</h1>
+          <h1 class="page-title">{{ t('unifiedRegistry.title') }}</h1>
           <p class="page-subtitle">{{ activeCategoryConfig.subtitle }}</p>
         </div>
 
         <div class="reg-filter-group" @click.stop>
-          <span class="reg-filter-label">CATEGORY</span>
+          <span class="reg-filter-label">{{ t('unifiedRegistry.categoryLabel') }}</span>
           <div class="reg-custom-select" :class="{ open: categoryDropdownOpen }"
                @click="categoryDropdownOpen = !categoryDropdownOpen">
             <button class="reg-cs-trigger" type="button">
@@ -41,7 +41,7 @@
               d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
               clip-rule="evenodd"/>
           </svg>
-          <input v-model="search" placeholder="Search by name…" class="search-input"/>
+          <input v-model="search" :placeholder="t('unifiedRegistry.searchPlaceholder')" class="search-input"/>
         </div>
 
         <template v-if="dynamicSubFilters.length">
@@ -59,7 +59,7 @@
           </div>
         </template>
 
-        <button class="reset-btn" @click="resetFilters">↺ Reset</button>
+        <button class="reset-btn" @click="resetFilters">{{ t('unifiedRegistry.resetBtn') }}</button>
       </div>
 
     </header>
@@ -88,7 +88,7 @@
             d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
             clip-rule="evenodd"/>
         </svg>
-        <input v-model="search" placeholder="Search…" class="search-input"/>
+        <input v-model="search" :placeholder="t('unifiedRegistry.searchShort')" class="search-input"/>
       </div>
       <template v-for="sf in dynamicSubFilters" :key="sf.key">
         <button v-for="opt in sf.options" :key="opt.value"
@@ -98,13 +98,13 @@
           {{ opt.label }}
         </button>
       </template>
-      <button class="reset-btn" @click="resetFilters">↺ Reset</button>
+      <button class="reset-btn" @click="resetFilters">{{ t('unifiedRegistry.resetBtn') }}</button>
     </div>
 
     <!-- ── Loading ────────────────────────────────────────────────────── -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Loading citizen registry…</span>
+      <span>{{ t('unifiedRegistry.loading') }}</span>
     </div>
 
     <!-- ── Table ──────────────────────────────────────────────────────── -->
@@ -112,18 +112,18 @@
       <div class="table-info">
         <div class="table-info-main">
           <span>
-            Showing <strong>{{ filteredRecords.length }}</strong> of {{ categoryRecords.length }}
-            <em>{{ activeCategoryConfig.label.toLowerCase() }}</em> citizens
+            {{ t('common.showing') }} <strong>{{ filteredRecords.length }}</strong> {{ t('common.of') }} {{ categoryRecords.length }}
+            <em>{{ activeCategoryConfig.label.toLowerCase() }}</em> {{ t('unifiedRegistry.showingCitizens') }}
           </span>
           <div class="gender-legend" style="display: flex; gap: 1.2rem; align-items: center;">
-            <span class="legend-item"><span class="gender-dot male"></span> Male</span>
-            <span class="legend-item"><span class="gender-dot female"></span> Female</span>
-            <span class="legend-item"><span class="gender-dot other"></span> Other</span>
+            <span class="legend-item"><span class="gender-dot male"></span> {{ t('analytics.male') }}</span>
+            <span class="legend-item"><span class="gender-dot female"></span> {{ t('analytics.female') }}</span>
+            <span class="legend-item"><span class="gender-dot other"></span> {{ t('agriDashboard.other') }}</span>
           </div>
           <div class="income-legend" style="display:flex;gap:1rem;align-items:center;font-size:0.75rem;color:var(--text-dim);border-left:1px solid var(--border);padding-left:1rem">
-            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#20c997"></span> High</span>
-            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ffc107"></span> Mid</span>
-            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ff4d4f"></span> Low</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#20c997"></span> {{ t('unifiedRegistry.high') }}</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ffc107"></span> {{ t('unifiedRegistry.mid') }}</span>
+            <span class="legend-item"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#ff4d4f"></span> {{ t('unifiedRegistry.low') }}</span>
           </div>
         </div>
         <!-- Active category pill -->
@@ -161,7 +161,7 @@
             </tr>
             <tr v-if="paginatedRecords.length === 0">
               <td :colspan="activeCategoryConfig.columns.length + 1" class="td-empty">
-                No records match the selected filters.
+                {{ t('unifiedRegistry.noRecords') }}
               </td>
             </tr>
           </tbody>
@@ -169,9 +169,9 @@
       </div>
 
       <div class="pagination">
-        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">← Prev</button>
-        <span class="pg-info">Page {{ currentPage }} of {{ totalPages }}</span>
-        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">Next →</button>
+        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">{{ t('common.prev') }}</button>
+        <span class="pg-info">{{ t('common.pageOf', { current: currentPage, total: totalPages }) }}</span>
+        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">{{ t('common.next') }}</button>
       </div>
     </div>
   </div>
@@ -181,9 +181,13 @@
 defineOptions({ name: 'UnifiedRegistry' })
 
 import { ref, computed, onMounted, onActivated, onBeforeUnmount, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { getUnifiedRegistry, getCitizens } from '../api/index.js'
 import { getRegistryState } from '../state/registryStateCache.js'
+import { translateDynamicValue, translateOccupation, translateIncome } from '../utils/translateDynamicValue.js'
+
+const { t, locale } = useI18n()
 
 // ── Props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -199,149 +203,149 @@ const registryState = computed(() => getRegistryState(registryScope.value))
 // Each category declares: icon, label, subtitle, color, which columns to show,
 // which sub-filters to expose, and how to pre-filter the rows.
 
-const CATEGORIES = [
-  { value: '',          label: 'All',             fullLabel: 'All Citizens',    icon: '👥' },
-  { value: 'farmer',   label: 'Farmers',          fullLabel: 'Farmers',         icon: '🌾' },
-  { value: 'student',  label: 'Students',         fullLabel: 'Students',        icon: '🎓' },
-  { value: 'disabled', label: 'Divyang',          fullLabel: 'Divyang',         icon: '♿' },
-  { value: 'housewife',label: 'Homemakers',       fullLabel: 'Homemakers',      icon: '🏠' },
-  { value: 'senior',   label: 'Senior Citizens',  fullLabel: 'Senior Citizens', icon: '👴' },
-]
+const CATEGORIES = computed(() => [
+  { value: '',          label: t('unifiedRegistry.catAllLabel'), fullLabel: t('unifiedRegistry.catAll'),     icon: '👥' },
+  { value: 'farmer',   label: t('unifiedRegistry.catFarmer'),   fullLabel: t('unifiedRegistry.catFarmer'),  icon: '🌾' },
+  { value: 'student',  label: t('unifiedRegistry.catStudent'),  fullLabel: t('unifiedRegistry.catStudent'), icon: '🎓' },
+  { value: 'disabled', label: t('unifiedRegistry.catDivyang'),  fullLabel: t('unifiedRegistry.catDivyang'), icon: '♿' },
+  { value: 'housewife',label: t('unifiedRegistry.catHomemaker'),fullLabel: t('unifiedRegistry.catHomemaker'), icon: '🏠' },
+  { value: 'senior',   label: t('unifiedRegistry.catSenior'),   fullLabel: t('unifiedRegistry.catSenior'),  icon: '👴' },
+])
 
-const CATEGORY_CONFIG = {
+const CATEGORY_CONFIG = computed(() => ({
   '': {
-    label: 'All Citizens',
-    subtitle: 'Complete citizen records from population & agri survey',
+    label: t('unifiedRegistry.catAll'),
+    subtitle: t('unifiedRegistry.subtitleAll'),
     icon: '👥',
     color: '#6b7280',
     rowFilter: () => true,
     columns: [
-      { key: 'fullName',     label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
-      { key: 'age',          label: 'Age',            tdClass: 'td-num' }, // Re-add age column
-      { key: 'occupation',   label: 'Occupation' },
-      { key: 'maritalStatus', label: 'Marital Status' },
-      { key: 'annualIncome', label: 'Annual Income',  tdClass: 'td-num' },
+      { key: 'fullName',     label: t('unifiedRegistry.colFullName'),    minWidth: true, tdClass: 'td-name' },
+      { key: 'age',          label: t('unifiedRegistry.colAge'),          tdClass: 'td-num' },
+      { key: 'occupation',   label: t('unifiedRegistry.colOccupation') },
+      { key: 'maritalStatus', label: t('unifiedRegistry.colMaritalStatus') },
+      { key: 'annualIncome', label: t('unifiedRegistry.colAnnualIncome'), tdClass: 'td-num' },
     ],
     subFilters: [
-      { key: 'incomeRange', label: 'Income Range' },
-      { key: 'gender', label: 'Gender' },
-      { key: 'occupationType', label: 'Occupation' },
-      { key: 'isDivyang', label: 'Divyang' },
+      { key: 'incomeRange',    label: t('unifiedRegistry.sfIncomeRange') },
+      { key: 'gender',         label: t('unifiedRegistry.sfGender') },
+      { key: 'occupationType', label: t('unifiedRegistry.sfOccupation') },
+      { key: 'isDivyang',      label: t('unifiedRegistry.sfDivyang') },
     ],
   },
 
   farmer: {
-    label: 'Farmer',
-    subtitle: 'Citizens bucketed as Farmer by occupation',
+    label: t('unifiedRegistry.catFarmer'),
+    subtitle: t('unifiedRegistry.subtitleFarmer'),
     icon: '🌾',
     color: '#16a34a',
     rowFilter: r => getOccupationBucket(r.occupation) === 'Farmer',
     columns: [
-      { key: 'fullName',       label: 'Full Name',     minWidth: true, tdClass: 'td-name' },
-      { key: 'totalLand',      label: 'Land (Acre)',    tdClass: 'td-num' },
-      { key: 'crops',          label: 'Crops' },
-      { key: 'irrigationType', label: 'Irrigation' },
-      { key: 'waterSource',    label: 'Water Source' },
-      { key: 'annualIncome',   label: 'Annual Income',  tdClass: 'td-num' },
-      { key: 'occupation',     label: 'Occupation' },
+      { key: 'fullName',       label: t('unifiedRegistry.colFullName'),   minWidth: true, tdClass: 'td-name' },
+      { key: 'totalLand',      label: t('unifiedRegistry.colLand'),        tdClass: 'td-num' },
+      { key: 'crops',          label: t('unifiedRegistry.colCrops') },
+      { key: 'irrigationType', label: t('unifiedRegistry.colIrrigation') },
+      { key: 'waterSource',    label: t('unifiedRegistry.colWaterSource') },
+      { key: 'annualIncome',   label: t('unifiedRegistry.colAnnualIncome'), tdClass: 'td-num' },
+      { key: 'occupation',     label: t('unifiedRegistry.colOccupation') },
     ],
     subFilters: [
-      { key: 'landSize', label: 'Land Size' },
-      { key: 'irrigationType', label: 'Irrigation' },
-      { key: 'cropType', label: 'Crop' },
-      { key: 'gender', label: 'Gender' },
-      { key: 'incomeRange', label: 'Income Range' },
-      { key: 'maritalStatus', label: 'Marital Status' },
+      { key: 'landSize',      label: t('unifiedRegistry.sfLandSize') },
+      { key: 'irrigationType', label: t('unifiedRegistry.sfIrrigation') },
+      { key: 'cropType',       label: t('unifiedRegistry.sfCropType') },
+      { key: 'gender',         label: t('unifiedRegistry.sfGender') },
+      { key: 'incomeRange',    label: t('unifiedRegistry.sfIncomeRange') },
+      { key: 'maritalStatus',  label: t('unifiedRegistry.sfMaritalStatus') },
     ],
   },
 
   student: {
-    label: 'Student',
-    subtitle: 'Citizens currently pursuing education',
+    label: t('unifiedRegistry.catStudent'),
+    subtitle: t('unifiedRegistry.subtitleStudent'),
     icon: '📚',
     color: '#2563eb',
     rowFilter: r => r.isStudent,
     columns: [
-      { key: 'fullName',       label: 'Full Name',        minWidth: true, tdClass: 'td-name' },
-      { key: 'age',            label: 'Age',              tdClass: 'td-num' },
-      { key: 'educationLevel', label: 'Education Level' },
-      { key: 'schoolName',     label: 'School / College' },
-      { key: 'scholarship',    label: 'Scholarship' },
+      { key: 'fullName',       label: t('unifiedRegistry.colFullName'),      minWidth: true, tdClass: 'td-name' },
+      { key: 'age',            label: t('unifiedRegistry.colAge'),            tdClass: 'td-num' },
+      { key: 'educationLevel', label: t('unifiedRegistry.colEducationLevel') },
+      { key: 'schoolName',     label: t('unifiedRegistry.colSchool') },
+      { key: 'scholarship',    label: t('unifiedRegistry.colScholarship') },
     ],
     subFilters: [
-      { key: 'educationLevel', label: 'Level' },
-      { key: 'scholarship', label: 'Scholarship' },
-      { key: 'ageGroup', label: 'Age Group' },
-      { key: 'gender', label: 'Gender' },
+      { key: 'educationLevel', label: t('unifiedRegistry.sfLevel') },
+      { key: 'scholarship',    label: t('unifiedRegistry.sfScholarship') },
+      { key: 'ageGroup',       label: t('unifiedRegistry.sfAgeGroup') },
+      { key: 'gender',         label: t('unifiedRegistry.sfGender') },
     ],
   },
 
   disabled: {
-    label: 'Divyang',
-    subtitle: 'Citizens with reported disability (Divyang)',
+    label: t('unifiedRegistry.catDivyang'),
+    subtitle: t('unifiedRegistry.subtitleDivyang'),
     icon: '♿',
     color: '#d97706',
     rowFilter: r => r.isDivyang,
     columns: [
-      { key: 'fullName',          label: 'Full Name',         minWidth: true, tdClass: 'td-name' },
-      { key: 'disabilityType',    label: 'Disability Type' },
-      { key: 'disabilityPercent', label: 'Disability %',      tdClass: 'td-num' },
-      { key: 'annualIncome',      label: 'Annual Income',     tdClass: 'td-num' },
-      { key: 'pensionStatus',     label: 'Pension Status' },
-      { key: 'govtPensionAmount', label: 'Govt. Pension Amt', tdClass: 'td-num' },
-      { key: 'caretakerName',     label: 'Caretaker' },
-      { key: 'divyangCertificate', label: 'Divyang Certificate' },
+      { key: 'fullName',           label: t('unifiedRegistry.colFullName'),      minWidth: true, tdClass: 'td-name' },
+      { key: 'disabilityType',     label: t('unifiedRegistry.colDisabilityType') },
+      { key: 'disabilityPercent',  label: t('unifiedRegistry.colDisabilityPct'), tdClass: 'td-num' },
+      { key: 'annualIncome',       label: t('unifiedRegistry.colAnnualIncome'),  tdClass: 'td-num' },
+      { key: 'pensionStatus',      label: t('unifiedRegistry.colPensionStatus') },
+      { key: 'govtPensionAmount',  label: t('unifiedRegistry.colGovtPension'),   tdClass: 'td-num' },
+      { key: 'caretakerName',      label: t('unifiedRegistry.colCaretaker') },
+      { key: 'divyangCertificate', label: t('unifiedRegistry.colDivyangCert') },
     ],
     subFilters: [
-      { key: 'pensionStatus', label: 'Pension' },
-      { key: 'disabilitySeverity', label: 'Disability %' },
-      { key: 'divyangCertificate', label: 'Certificate' },
-      { key: 'gender', label: 'Gender' },
-      { key: 'incomeRange', label: 'Income Range' },
-      { key: 'maritalStatus', label: 'Marital Status' },
+      { key: 'pensionStatus',      label: t('unifiedRegistry.sfPension') },
+      { key: 'disabilitySeverity', label: t('unifiedRegistry.sfDisabilitySeverity') },
+      { key: 'divyangCertificate', label: t('unifiedRegistry.sfCertificate') },
+      { key: 'gender',             label: t('unifiedRegistry.sfGender') },
+      { key: 'incomeRange',        label: t('unifiedRegistry.sfIncomeRange') },
+      { key: 'maritalStatus',      label: t('unifiedRegistry.sfMaritalStatus') },
     ],
   },
 
   housewife: {
-    label: 'Homemaker',
-    subtitle: 'Citizens with occupation recorded as homemaker',
+    label: t('unifiedRegistry.catHomemaker'),
+    subtitle: t('unifiedRegistry.subtitleHomemaker'),
     icon: '🏠',
     color: '#db2777',
     rowFilter: r => r.isHousewife,
     columns: [
-      { key: 'fullName',       label: 'Full Name',       minWidth: true, tdClass: 'td-name' },
-      { key: 'age',            label: 'Age',              tdClass: 'td-num' }, // Re-add age column
-      { key: 'annualIncome',   label: 'Annual Income',    tdClass: 'td-num' },
-      { key: 'childrenCount',  label: 'Children',         tdClass: 'td-num' },
-      { key: 'maritalStatus',  label: 'Marital Status' },
+      { key: 'fullName',      label: t('unifiedRegistry.colFullName'),    minWidth: true, tdClass: 'td-name' },
+      { key: 'age',           label: t('unifiedRegistry.colAge'),          tdClass: 'td-num' },
+      { key: 'annualIncome',  label: t('unifiedRegistry.colAnnualIncome'), tdClass: 'td-num' },
+      { key: 'childrenCount', label: t('unifiedRegistry.colChildren'),     tdClass: 'td-num' },
+      { key: 'maritalStatus', label: t('unifiedRegistry.colMaritalStatus') },
     ],
     subFilters: [
-      { key: 'ageGroup', label: 'Age Group' },
-      { key: 'childrenGroup', label: 'Children' },
-      { key: 'gender', label: 'Gender' },
-      { key: 'incomeRange', label: 'Income Range' },
-      { key: 'maritalStatus', label: 'Marital Status' },
+      { key: 'ageGroup',      label: t('unifiedRegistry.sfAgeGroup') },
+      { key: 'childrenGroup', label: t('unifiedRegistry.sfChildrenGroup') },
+      { key: 'gender',        label: t('unifiedRegistry.sfGender') },
+      { key: 'incomeRange',   label: t('unifiedRegistry.sfIncomeRange') },
+      { key: 'maritalStatus', label: t('unifiedRegistry.sfMaritalStatus') },
     ],
   },
 
   senior: {
-    label: 'Senior Citizen',
-    subtitle: 'Citizens aged 60 and above',
+    label: t('unifiedRegistry.catSenior'),
+    subtitle: t('unifiedRegistry.subtitleSenior'),
     icon: '👴',
     color: '#7c3aed',
     rowFilter: r => r.isSenior,
     columns: [
-      { key: 'fullName',      label: 'Full Name',      minWidth: true, tdClass: 'td-name' },
-      { key: 'age',           label: 'Age',             tdClass: 'td-num' }, // Re-add age column
-      { key: 'pensionStatus', label: 'Pension Status' },
-      { key: 'annualIncome',  label: 'Annual Income',   tdClass: 'td-num' },
+      { key: 'fullName',      label: t('unifiedRegistry.colFullName'),    minWidth: true, tdClass: 'td-name' },
+      { key: 'age',           label: t('unifiedRegistry.colAge'),          tdClass: 'td-num' },
+      { key: 'pensionStatus', label: t('unifiedRegistry.colPensionStatus') },
+      { key: 'annualIncome',  label: t('unifiedRegistry.colAnnualIncome'), tdClass: 'td-num' },
     ],
     subFilters: [
-      { key: 'incomeRange', label: 'Income Range' },
-      { key: 'maritalStatus', label: 'Marital Status' },
+      { key: 'incomeRange',   label: t('unifiedRegistry.sfIncomeRange') },
+      { key: 'maritalStatus', label: t('unifiedRegistry.sfMaritalStatus') },
     ],
   },
-}
+}))
 
 // ── State ──────────────────────────────────────────────────────────────────
 const loading     = ref(true)
@@ -462,7 +466,7 @@ const hasPensionData = computed(() => records.value.some(r => {
 }))
 
 const activeCategoryConfig = computed(() => {
-  const base = CATEGORY_CONFIG[category.value] || CATEGORY_CONFIG['']
+  const base = CATEGORY_CONFIG.value[category.value] || CATEGORY_CONFIG.value['']
   if (category.value !== 'disabled' || hasPensionData.value) return base
 
   return {
@@ -824,7 +828,7 @@ function renderCell(r, col) {
 
     case 'totalLand': {
       const ac = parseLand(v)
-      if (ac === 0) return `<span class="badge badge-muted">No Land</span>`
+      if (ac === 0) return `<span class="badge badge-muted">${t('registry.filterNoLand')}</span>`
       return `<span class="badge badge-green">${esc(v)} ac</span>`
     }
 
@@ -833,37 +837,38 @@ function renderCell(r, col) {
       const rabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A' ? r.rabiCrop   : null
       if (!kharif && !rabi) return `<span class="text-dim-sm">—</span>`
       const parts = []
-      if (kharif) parts.push(`<span class="badge badge-kharif" title="Kharif">☀ ${esc(kharif)}</span>`)
-      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="Rabi">❄ ${esc(rabi)}</span>`)
+      if (kharif) parts.push(`<span class="badge badge-kharif" title="${t('analytics.kharif')}">☀ ${esc(translateDynamicValue(kharif, locale.value))}</span>`)
+      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="${t('analytics.rabi')}">❄ ${esc(translateDynamicValue(rabi, locale.value))}</span>`)
       return parts.join(' ')
     }
 
     case 'irrigationType': {
       const cls = v === 'Irrigated' ? 'badge-irrigated' : v === 'Rain-fed' ? 'badge-rainfed' : 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v || '—')}</span>`
+      const label = v === 'Irrigated' ? t('registry.irrigatedLabel') : v === 'Rain-fed' ? t('registry.rainfedLabel') : (v || '—')
+      return `<span class="badge ${cls}">${esc(label)}</span>`
     }
 
     case 'waterSource':
-      return `<span class="text-dim-sm">${esc(v || '—')}</span>`
+      return `<span class="text-dim-sm">${esc(translateDynamicValue(v, locale.value) || '—')}</span>`
 
     case 'educationLevel': {
       const map = { Graduate: 'badge-blue', Undergraduate: 'badge-teal', 'Anganwadi/Primary': 'badge-orange', 'Not Available': 'badge-muted' }
       const cls = map[v] || 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v || 'Not Available')}</span>`
+      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || t('common.notAvailable'))}</span>`
     }
 
     case 'scholarship': {
       const cls = v === 'Yes' ? 'badge-green' : 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v || '—')}</span>`
+      return `<span class="badge ${cls}">${esc(v ? (v === 'Yes' ? t('common.yes') : t('common.no')) : '—')}</span>`
     }
 
     case 'pensionStatus': {
       const cls = v === 'Eligible' ? 'badge-green' : 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v || '—')}</span>`
+      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || '—')}</span>`
     }
 
     case 'disabilityType':
-      return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">Not Recorded</span>`
+      return v ? `<span class="text-body-sm">${esc(translateDynamicValue(v, locale.value))}</span>` : `<span class="text-dim-sm">${t('common.notAvailable')}</span>`
 
     case 'disabilityPercent':
       return v && v !== '0' ? `<span class="badge badge-orange">${esc(v)}%</span>` : `<span class="text-dim-sm">—</span>`
@@ -871,12 +876,12 @@ function renderCell(r, col) {
     case 'divyangCertificate': {
       const hasDisabilityMarker = hasDivyangCertificate(r)
       const cls = hasDisabilityMarker ? 'badge-green' : 'badge-muted'
-      const label = hasDisabilityMarker ? 'Available' : 'Not Available'
+      const label = hasDisabilityMarker ? t('analytics.available') : t('analytics.notAvailable')
       return `<span class="badge ${cls}">${label}</span>`
     }
 
     case 'govtPensionAmount': {
-      if (!v || v === 'N/A' || v === '0') return `<span class="text-dim-sm">N/A</span>`
+      if (!v || v === 'N/A' || v === '0') return `<span class="text-dim-sm">${t('common.na')}</span>`
       return `<span class="badge badge-teal">₹ ${esc(v)}</span>`
     }
 
@@ -889,36 +894,38 @@ function renderCell(r, col) {
         'None':                   'badge-muted',
       }
       const cls = colorMap[v] || 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v || 'None')}</span>`
+      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || t('common.na'))}</span>`
     }
 
     case 'caretakerName':
-      return `<span class="text-dim-sm">${esc(v || 'Not Available')}</span>`
+      return `<span class="text-dim-sm">${esc(v || t('common.notAvailable'))}</span>`
 
     case 'schoolName':
-      return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">Not Recorded</span>`
+      return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">${t('common.notAvailable')}</span>`
 
-       case 'occupation':
-      if (String(v || '').trim() === 'Housewife') return esc('Homemaker')
-      return esc(v || 'Not Working')
+    case 'occupation': {
+      const occ = translateOccupation(String(v || '').trim(), locale.value)
+      if (String(v || '').trim() === 'Housewife') return esc(t('unifiedRegistry.catHomemaker'))
+      return esc(occ || t('common.notWorking'))
+    }
 
     case 'age':
       return v && v > 0 ? String(v) : '—'
 
     case 'annualIncome': {
       const inc = r.annualIncome;
-      if (!inc) return '<span class="text-muted">Not Recorded</span>';
+      if (!inc) return `<span class="text-muted">${t('common.notAvailable')}</span>`;
       
       const b = classifyIncome(inc);
-      let color = '#ff4d4f'; // Default to Low
+      let color = '#ff4d4f';
       if (b === 'High') color = '#20c997';
       else if (b === 'Mid') color = '#ffc107';
       
-      return `<span style="color: ${color}; font-weight: 500;">${esc(inc)}</span>`;
+      return `<span style="color: ${color}; font-weight: 500;">${esc(translateIncome(inc, locale.value) || inc)}</span>`;
     }
     
     case 'maritalStatus': {
-      return v ? `<span class="badge badge-blue">${esc(v)}</span>` : `<span class="text-dim-sm">—</span>`
+      return v ? `<span class="badge badge-blue">${esc(translateDynamicValue(v, locale.value) || v)}</span>` : `<span class="text-dim-sm">—</span>`
     }
 
     case 'childrenCount':

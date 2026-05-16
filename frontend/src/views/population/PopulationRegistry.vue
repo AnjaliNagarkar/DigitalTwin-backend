@@ -2,15 +2,15 @@
   <div class="farmers-page">
     <header class="page-header">
       <div>
-        <h1 class="page-title">Population Registry</h1>
-        <p class="page-subtitle">Individual member records from survey data</p>
+        <h1 class="page-title">{{ t('registry.title') }}</h1>
+        <p class="page-subtitle">{{ t('registry.subtitle') }}</p>
       </div>
       <div class="header-controls">
         <div class="search-box">
           <svg viewBox="0 0 20 20" fill="currentColor" class="search-icon">
             <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
           </svg>
-          <input v-model="search" placeholder="Search by name..." class="search-input" />
+          <input v-model="search" :placeholder="t('common.searchByName')" class="search-input" />
         </div>
         <div class="filter-chips">
           <button v-for="filter in filters" :key="filter.value" class="chip"
@@ -24,43 +24,43 @@
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <span>Fetching population registry records...</span>
+      <span>{{ t('registry.loading') }}</span>
     </div>
 
     <div v-else class="table-container">
       <div class="table-info">
-        Showing <strong>{{ filteredRecords.length }}</strong> of {{ records.length }} records
+        {{ t('common.showing') }} <strong>{{ filteredRecords.length }}</strong> {{ t('common.of') }} {{ records.length }} {{ t('common.records') }}
       </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
               <th class="th-index">#</th>
-              <th>Name</th>
-              <th>Gender</th>
-              <th>Age</th>
-              <th>Education</th>
-              <th>Occupation</th>
-              <th>Disability Type</th>
+              <th>{{ t('registry.colName') }}</th>
+              <th>{{ t('registry.colGender') }}</th>
+              <th>{{ t('registry.colAge') }}</th>
+              <th>{{ t('registry.colEducation') }}</th>
+              <th>{{ t('registry.colOccupation') }}</th>
+              <th>{{ t('registry.colDisability') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(record, index) in paginatedRecords" :key="`${record.name}-${index}`" class="table-row">
               <td class="td-index">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
               <td class="td-name">{{ record.name || '—' }}</td>
-              <td>{{ record.gender || '—' }}</td>
+              <td>{{ translateCategory(record.gender, locale) || '—' }}</td>
               <td>{{ record.age || '—' }}</td>
-              <td>{{ record.education || 'Not Available' }}</td>
-              <td>{{ record.occupation || 'Not Working' }}</td>
-              <td>{{ record.disabilityType || '—' }}</td>
+              <td>{{ translateCategory(record.education, locale) || t('common.notAvailable') }}</td>
+              <td>{{ translateOccupation(record.occupation, locale) || t('common.notWorking') }}</td>
+              <td>{{ translateCategory(record.disabilityType, locale) || '—' }}</td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="pagination">
-        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">← Prev</button>
-        <span class="pg-info">Page {{ currentPage }} of {{ totalPages }}</span>
-        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">Next →</button>
+        <button class="pg-btn" :disabled="currentPage <= 1" @click="currentPage--">{{ t('common.prev') }}</button>
+        <span class="pg-info">{{ t('common.pageOf', { current: currentPage, total: totalPages }) }}</span>
+        <button class="pg-btn" :disabled="currentPage >= totalPages" @click="currentPage++">{{ t('common.next') }}</button>
       </div>
     </div>
   </div>
@@ -68,7 +68,11 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getPopulationRegistry } from './api.js'
+import { translateOccupation, translateCategory } from '../../utils/translateDynamicValue.js'
+
+const { t, locale } = useI18n()
 
 const loading = ref(true)
 const records = ref([])
@@ -77,12 +81,12 @@ const activeFilter = ref('')
 const currentPage = ref(1)
 const pageSize = 50
 
-const filters = [
-  { label: 'All', value: '' },
-  { label: 'BPL', value: 'bpl' },
-  { label: 'Student', value: 'student' },
-  { label: 'Divyang', value: 'divyang' },
-]
+const filters = computed(() => [
+  { label: t('registry.filterAll'),     value: '' },
+  { label: t('registry.filterBpl'),     value: 'bpl' },
+  { label: t('registry.filterStudent'), value: 'student' },
+  { label: t('registry.filterDivyang'), value: 'divyang' },
+])
 
 onMounted(async () => {
   await loadRecords()

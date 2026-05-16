@@ -27,12 +27,12 @@
           </svg>
         </div>
         <div class="brand-text">
-          <span class="brand-name">Digital Twin Platform</span>
-          <span class="brand-sub">IVDP — Integrated Village Development</span>
+          <span class="brand-name">{{ t('brand.platform') }}</span>
+          <span class="brand-sub">{{ t('brand.ivdp') }}</span>
         </div>
       </div>
 
-      <h2 class="form-title">Sign in to continue</h2>
+      <h2 class="form-title">{{ t('login.title') }}</h2>
 
       <form @submit.prevent="handleLogin" novalidate>
 
@@ -46,7 +46,7 @@
 
         <!-- ── Username ── -->
         <div class="field" :class="{ 'has-error': fieldErrors.username }">
-          <label for="username">Username</label>
+          <label for="username">{{ t('login.username') }}</label>
           <div class="input-wrap">
             <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
@@ -55,7 +55,7 @@
               id="username"
               v-model="username"
               type="text"
-              placeholder="Enter your IVDP username"
+              :placeholder="t('login.usernamePlaceholder')"
               autocomplete="username"
               autofocus
               spellcheck="false"
@@ -73,7 +73,7 @@
 
         <!-- ── Password ── -->
         <div class="field" :class="{ 'has-error': fieldErrors.password }">
-          <label for="password">Password</label>
+          <label for="password">{{ t('login.password') }}</label>
           <div class="input-wrap">
             <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
@@ -82,7 +82,7 @@
               id="password"
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
-              placeholder="Enter your password"
+              :placeholder="t('login.passwordPlaceholder')"
               autocomplete="current-password"
               @input="onPasswordInput"
               @dragover.prevent
@@ -93,7 +93,7 @@
               class="toggle-pw"
               @click="showPassword = !showPassword"
               tabindex="-1"
-              :title="showPassword ? 'Hide password' : 'Show password'"
+              :title="showPassword ? t('login.hidePassword') : t('login.showPassword')"
             >
               <!-- eye-open -->
               <svg v-if="showPassword" viewBox="0 0 20 20" fill="currentColor">
@@ -114,7 +114,7 @@
         <div class="captcha-row">
           <!-- Generated captcha (read-only display) -->
           <div class="field captcha-display-field" :class="{ 'has-error': fieldErrors.captcha }">
-            <label>Captcha</label>
+            <label>{{ t('login.captcha') }}</label>
             <div class="input-wrap">
               <input
                 type="text"
@@ -128,7 +128,7 @@
                 type="button"
                 class="captcha-refresh"
                 @click="refreshCaptcha"
-                title="Refresh captcha"
+                :title="t('login.refreshCaptcha')"
                 tabindex="-1"
               >
                 <!-- refresh icon -->
@@ -141,13 +141,13 @@
 
           <!-- User-entered captcha -->
           <div class="field captcha-entry-field" :class="{ 'has-error': fieldErrors.captcha }">
-            <label for="captcha-entry">Enter Captcha</label>
+            <label for="captcha-entry">{{ t('login.captchaEntry') }}</label>
             <div class="input-wrap">
               <input
                 id="captcha-entry"
                 v-model="enteredCaptcha"
                 type="text"
-                placeholder="Type captcha"
+                :placeholder="t('login.captchaPlaceholder')"
                 maxlength="6"
                 autocomplete="off"
                 spellcheck="false"
@@ -164,11 +164,11 @@
         <!-- Submit -->
         <button type="submit" class="submit-btn" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span>{{ loading ? 'Signing in…' : 'Sign In' }}</span>
+          <span>{{ loading ? t('login.signingIn') : t('login.signIn') }}</span>
         </button>
       </form>
 
-      <p class="footer-note">Use your IVDP portal credentials — contact your administrator if you need access.</p>
+      <p class="footer-note">{{ t('login.footerNote') }}</p>
     </div>
   </div>
 </template>
@@ -176,7 +176,10 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { login } from '../api/index.js'
+
+const { t } = useI18n()
 
 // ── Captcha config (mirrors IVDP captcha.js exactly) ─────────────────────────
 const CAPTCHA_CHARS  = '23456789QWERTYUPASDFGHJKZXCVBNM'
@@ -213,7 +216,7 @@ onMounted(() => {
   // Show a clear message when the user arrives here after a failed SSO attempt.
   // The router guard appends ?error=sso_failed before redirecting to /login.
   if (route.query.error === 'sso_failed') {
-    globalError.value = 'Invalid SSO session. Please log in with your IVDP credentials.'
+    globalError.value = t('login.invalidSSO')
   }
 })
 
@@ -276,20 +279,20 @@ function validate() {
   const trimmedUser = username.value.replace(/\s/g, '')
 
   if (!trimmedUser) {
-    fieldErrors.username = 'Username is required.'
+    fieldErrors.username = t('login.usernameRequired')
     valid = false
   }
 
   if (!password.value.trim()) {
-    fieldErrors.password = 'Password is required.'
+    fieldErrors.password = t('login.passwordRequired')
     valid = false
   }
 
   if (!enteredCaptcha.value) {
-    fieldErrors.captcha = 'Captcha is required.'
+    fieldErrors.captcha = t('login.captchaRequired')
     valid = false
   } else if (enteredCaptcha.value.toUpperCase() !== generatedCaptcha.value.toUpperCase()) {
-    fieldErrors.captcha = 'Incorrect captcha. Please try again.'
+    fieldErrors.captcha = t('login.captchaIncorrect')
     valid = false
   }
 

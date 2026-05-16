@@ -19,7 +19,7 @@
       <div class="top-bar-left">
         <!-- Hamburger toggle -->
         <button class="hamburger-btn" @click="toggleSidebar"
-                :title="isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+                :title="isSidebarOpen ? t('header.collapse') : t('header.expand')"
                 :aria-expanded="isSidebarOpen" aria-controls="app-sidebar">
           <svg class="hamburger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -41,20 +41,43 @@
           </div>
           <div class="brand-text">
             <span class="brand-name">AgriTwin</span>
-            <span class="brand-sub">Digital Twin Platform</span>
+            <span class="brand-sub">{{ t('brand.agriSub') }}</span>
           </div>
         </router-link>
       </div>
 
-      <button class="logout-btn" @click="handleLogout" title="Sign out">
-        <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-          <polyline points="16 17 21 12 16 7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
-        <span>Logout</span>
-      </button>
+      <div class="top-bar-right">
+        <!-- Language switcher -->
+        <div class="lang-switcher" ref="langSwitcherEl">
+          <button class="lang-btn" @click="toggleLangMenu" :title="t('header.language')">
+            <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+            </svg>
+            <span class="lang-current">{{ locale === 'mr' ? 'मर' : 'EN' }}</span>
+          </button>
+          <div v-if="langMenuOpen" class="lang-menu">
+            <button class="lang-option" :class="{ active: locale === 'en' }" @click="setLocale('en')">
+              {{ t('lang.en') }}
+            </button>
+            <button class="lang-option" :class="{ active: locale === 'mr' }" @click="setLocale('mr')">
+              {{ t('lang.mr') }}
+            </button>
+          </div>
+        </div>
+
+        <button class="logout-btn" @click="handleLogout" :title="t('header.signOut')">
+          <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span>{{ t('header.logout') }}</span>
+        </button>
+      </div>
     </header>
 
     <!-- ── Body: sidebar + content ── -->
@@ -66,8 +89,7 @@
 
           <router-link to="/agriculture/dashboard" class="nav-item"
             :class="{ active: $route.path === '/agriculture/dashboard' }"
-            title="Dashboard">
-            <!-- Dashboard: grid icon -->
+            :title="t('nav.dashboard')">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -75,13 +97,12 @@
               <rect x="14" y="14" width="7" height="7" rx="1"/>
               <rect x="3"  y="14" width="7" height="7" rx="1"/>
             </svg>
-            <span class="nav-label">Dashboard</span>
+            <span class="nav-label">{{ t('nav.dashboard') }}</span>
           </router-link>
 
           <router-link to="/agriculture/citizens" class="nav-item"
             :class="{ active: $route.path.startsWith('/agriculture/citizens') || $route.path.startsWith('/agriculture/registry') }"
-            title="Citizens">
-            <!-- Citizens: users icon -->
+            :title="t('nav.citizens')">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
@@ -89,33 +110,31 @@
               <path d="M23 21v-2a4 4 0 00-3-3.87"/>
               <path d="M16 3.13a4 4 0 010 7.75"/>
             </svg>
-            <span class="nav-label">Citizens</span>
+            <span class="nav-label">{{ t('nav.citizens') }}</span>
           </router-link>
 
           <router-link to="/agriculture/map" class="nav-item"
             :class="{ active: $route.path.startsWith('/agriculture/map') }"
-            title="2D Map">
-            <!-- 2D Map: map icon -->
+            :title="t('nav.map2d')">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
               <line x1="8"  y1="2"  x2="8"  y2="18"/>
               <line x1="16" y1="6"  x2="16" y2="22"/>
             </svg>
-            <span class="nav-label">2D Map</span>
+            <span class="nav-label">{{ t('nav.map2d') }}</span>
           </router-link>
 
           <router-link to="/agriculture/twin" class="nav-item"
             :class="{ active: $route.path.startsWith('/agriculture/twin') }"
-            title="3D Twin">
-            <!-- 3D Twin: cube icon -->
+            :title="t('nav.twin3d')">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
               <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
               <line x1="12" y1="22.08" x2="12" y2="12"/>
             </svg>
-            <span class="nav-label">3D Twin</span>
+            <span class="nav-label">{{ t('nav.twin3d') }}</span>
           </router-link>
 
         </div>
@@ -123,7 +142,7 @@
         <!-- Sidebar footer: theme toggle + API status -->
         <div class="sidebar-footer">
           <button class="theme-toggle" @click="toggleTheme"
-                  :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+                  :title="theme === 'dark' ? t('header.lightMode') : t('header.darkMode')">
             <div class="theme-track" :class="{ light: theme === 'light' }">
               <div class="theme-thumb">
                 <svg v-if="theme === 'light'" viewBox="0 0 20 20" fill="currentColor" class="theme-icon sun">
@@ -134,12 +153,12 @@
                 </svg>
               </div>
             </div>
-            <span class="theme-label">{{ theme === 'dark' ? 'Dark' : 'Light' }}</span>
+            <span class="theme-label">{{ theme === 'dark' ? t('header.dark') : t('header.light') }}</span>
           </button>
 
           <div class="api-pill" role="status" aria-live="polite">
             <div class="system-dot" :class="apiStatus"></div>
-            <span>{{ apiStatus === 'online' ? 'Online' : 'Offline' }}</span>
+            <span>{{ apiStatus === 'online' ? t('header.online') : t('header.offline') }}</span>
           </div>
         </div>
       </nav>
@@ -160,12 +179,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { logout } from '../../api/index.js'
+import { STORAGE_KEY } from '../../i18n.js'
 
-const apiStatus     = ref('offline')
-const theme         = ref(localStorage.getItem('agritwin-theme') || 'dark')
-const isSidebarOpen = ref(true)
+const { t, locale } = useI18n()
+
+const apiStatus      = ref('offline')
+const theme          = ref(localStorage.getItem('agritwin-theme') || 'dark')
+const isSidebarOpen  = ref(true)
+const langMenuOpen   = ref(false)
+const langSwitcherEl = ref(null)
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
@@ -179,6 +204,26 @@ async function handleLogout() {
   await logout()
 }
 
+function setLocale(lang) {
+  locale.value = lang
+  localStorage.setItem(STORAGE_KEY, lang)
+  langMenuOpen.value = false
+}
+
+function toggleLangMenu() {
+  langMenuOpen.value = !langMenuOpen.value
+}
+
+function closeLangMenu() {
+  langMenuOpen.value = false
+}
+
+function onDocClick(e) {
+  if (langSwitcherEl.value && !langSwitcherEl.value.contains(e.target)) {
+    langMenuOpen.value = false
+  }
+}
+
 watch(theme, (val) => {
   localStorage.setItem('agritwin-theme', val)
   document.documentElement.setAttribute('data-theme', val)
@@ -186,12 +231,17 @@ watch(theme, (val) => {
 
 onMounted(async () => {
   document.documentElement.setAttribute('data-theme', theme.value)
+  document.addEventListener('click', onDocClick)
   try {
     const res = await fetch('/api/ping')
     if (res.ok) apiStatus.value = 'online'
   } catch {
     apiStatus.value = 'offline'
   }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
 })
 </script>
 
@@ -382,6 +432,85 @@ html, body, #app {
 .hamburger-icon {
   width: 18px;
   height: 18px;
+}
+
+/* Top-bar right group */
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* ── Language Switcher ── */
+.lang-switcher {
+  position: relative;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  padding: 0.34rem 0.6rem;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.lang-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--amber);
+  color: var(--text-body);
+}
+.lang-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.lang-current {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow);
+  overflow: hidden;
+  z-index: 200;
+  min-width: 110px;
+}
+
+.lang-option {
+  display: block;
+  width: 100%;
+  padding: 0.52rem 0.85rem;
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lang-option:hover {
+  background: var(--bg-surface);
+  color: var(--text-body);
+}
+.lang-option.active {
+  color: var(--amber);
+  font-weight: 600;
+  background: var(--amber-dim);
 }
 
 /* Logout button (top-right) */
