@@ -88,16 +88,16 @@
               <td class="td-num">{{ formatLand(citizen.totalLand) }}</td>
               <td class="td-water">
                 <span class="water-badge" :class="waterClass(citizen.waterSource)">
-                  {{ translateDynamicValue(citizen.waterSource, locale) || '—' }}
+                  {{ citizen.waterSource || '—' }}
                 </span>
               </td>
               <td>
                 <span class="ration-badge" :class="waterClass(citizen.waterSource)">
-                  {{ getIrrigationType(citizen.waterSource) === 'Irrigated' ? t('registry.irrigatedLabel') : t('registry.rainfedLabel') }}
+                  {{ getIrrigationType(citizen.waterSource) }}
                 </span>
               </td>
-              <td class="td-name">{{ translateOccupation(formatWorkDetails(citizen.workDetails, citizen.occupation), locale) || t('common.notWorking') }}</td>
-              <td class="td-num">{{ translateIncome(formatIncome(citizen.annualIncome), locale) || '—' }}</td>
+              <td class="td-name">{{ formatWorkDetails(citizen.workDetails, citizen.occupation) || t('common.notWorking') }}</td>
+              <td class="td-num">{{ formatIncome(citizen.annualIncome) || '—' }}</td>
               <td class="td-num">{{ citizen.childrenCount ?? 0 }}</td>
             </tr>
           </tbody>
@@ -116,9 +116,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getCitizens } from '../../api/index.js'
-import { translateDynamicValue, translateOccupation, translateIncome } from '../../utils/translateDynamicValue.js'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 const loading = ref(true)
 const citizens = ref([])

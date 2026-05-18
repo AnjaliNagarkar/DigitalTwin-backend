@@ -185,9 +185,8 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { getUnifiedRegistry, getCitizens } from '../api/index.js'
 import { getRegistryState } from '../state/registryStateCache.js'
-import { translateDynamicValue, translateOccupation, translateIncome } from '../utils/translateDynamicValue.js'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 // ── Props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -736,7 +735,7 @@ const dynamicSubFilters = computed(() => {
 
       const sortedValues = Array.from(unique).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
       const options = sortedValues.map((value) => ({
-        label: sf.key === 'occupationType' ? (value === 'Housewife' ? 'Homemaker' : value) : formatDynamicLabel(value),
+        label: sf.key === 'occupationType' ? value : formatDynamicLabel(value),
         value,
       }))
 
@@ -837,38 +836,38 @@ function renderCell(r, col) {
       const rabi   = r.rabiCrop   && r.rabiCrop   !== 'N/A' ? r.rabiCrop   : null
       if (!kharif && !rabi) return `<span class="text-dim-sm">—</span>`
       const parts = []
-      if (kharif) parts.push(`<span class="badge badge-kharif" title="${t('analytics.kharif')}">☀ ${esc(translateDynamicValue(kharif, locale.value))}</span>`)
-      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="${t('analytics.rabi')}">❄ ${esc(translateDynamicValue(rabi, locale.value))}</span>`)
+      if (kharif) parts.push(`<span class="badge badge-kharif" title="${t('analytics.kharif')}">☀ ${esc(kharif)}</span>`)
+      if (rabi)   parts.push(`<span class="badge badge-rabi"   title="${t('analytics.rabi')}">❄ ${esc(rabi)}</span>`)
       return parts.join(' ')
     }
 
     case 'irrigationType': {
       const cls = v === 'Irrigated' ? 'badge-irrigated' : v === 'Rain-fed' ? 'badge-rainfed' : 'badge-muted'
-      const label = v === 'Irrigated' ? t('registry.irrigatedLabel') : v === 'Rain-fed' ? t('registry.rainfedLabel') : (v || '—')
+      const label = (v && String(v).trim()) ? String(v).trim() : '—'
       return `<span class="badge ${cls}">${esc(label)}</span>`
     }
 
     case 'waterSource':
-      return `<span class="text-dim-sm">${esc(translateDynamicValue(v, locale.value) || '—')}</span>`
+      return `<span class="text-dim-sm">${esc(String(v || '').trim() || '—')}</span>`
 
     case 'educationLevel': {
       const map = { Graduate: 'badge-blue', Undergraduate: 'badge-teal', 'Anganwadi/Primary': 'badge-orange', 'Not Available': 'badge-muted' }
       const cls = map[v] || 'badge-muted'
-      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || t('common.notAvailable'))}</span>`
+      return `<span class="badge ${cls}">${esc(String(v || '').trim() || t('common.notAvailable'))}</span>`
     }
 
     case 'scholarship': {
       const cls = v === 'Yes' ? 'badge-green' : 'badge-muted'
-      return `<span class="badge ${cls}">${esc(v ? (v === 'Yes' ? t('common.yes') : t('common.no')) : '—')}</span>`
+      return `<span class="badge ${cls}">${esc(v ? String(v).trim() : '—')}</span>`
     }
 
     case 'pensionStatus': {
       const cls = v === 'Eligible' ? 'badge-green' : 'badge-muted'
-      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || '—')}</span>`
+      return `<span class="badge ${cls}">${esc(String(v || '').trim() || '—')}</span>`
     }
 
     case 'disabilityType':
-      return v ? `<span class="text-body-sm">${esc(translateDynamicValue(v, locale.value))}</span>` : `<span class="text-dim-sm">${t('common.notAvailable')}</span>`
+      return v ? `<span class="text-body-sm">${esc(String(v).trim())}</span>` : `<span class="text-dim-sm">${t('common.notAvailable')}</span>`
 
     case 'disabilityPercent':
       return v && v !== '0' ? `<span class="badge badge-orange">${esc(v)}%</span>` : `<span class="text-dim-sm">—</span>`
@@ -894,7 +893,7 @@ function renderCell(r, col) {
         'None':                   'badge-muted',
       }
       const cls = colorMap[v] || 'badge-muted'
-      return `<span class="badge ${cls}">${esc(translateDynamicValue(v, locale.value) || t('common.na'))}</span>`
+      return `<span class="badge ${cls}">${esc(String(v || '').trim() || t('common.na'))}</span>`
     }
 
     case 'caretakerName':
@@ -904,9 +903,8 @@ function renderCell(r, col) {
       return v ? `<span class="text-body-sm">${esc(v)}</span>` : `<span class="text-dim-sm">${t('common.notAvailable')}</span>`
 
     case 'occupation': {
-      const occ = translateOccupation(String(v || '').trim(), locale.value)
-      if (String(v || '').trim() === 'Housewife') return esc(t('unifiedRegistry.catHomemaker'))
-      return esc(occ || t('common.notWorking'))
+      const raw = String(v || '').trim()
+      return esc(raw || t('common.notWorking'))
     }
 
     case 'age':
@@ -921,11 +919,11 @@ function renderCell(r, col) {
       if (b === 'High') color = '#20c997';
       else if (b === 'Mid') color = '#ffc107';
       
-      return `<span style="color: ${color}; font-weight: 500;">${esc(translateIncome(inc, locale.value) || inc)}</span>`;
+      return `<span style="color: ${color}; font-weight: 500;">${esc(String(inc).trim())}</span>`;
     }
     
     case 'maritalStatus': {
-      return v ? `<span class="badge badge-blue">${esc(translateDynamicValue(v, locale.value) || v)}</span>` : `<span class="text-dim-sm">—</span>`
+      return v ? `<span class="badge badge-blue">${esc(String(v).trim())}</span>` : `<span class="text-dim-sm">—</span>`
     }
 
     case 'childrenCount':

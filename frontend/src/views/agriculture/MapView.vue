@@ -234,7 +234,7 @@
                 <div class="dp-field-row">
                   <span class="dp-field-icon">📋</span>
                   <span class="dp-field-key">{{ t('map.occupation') }}</span>
-                  <span class="dp-field-val">{{ tdOcc(getWorkingOccupations(selectedHouse)) }}</span>
+                  <span class="dp-field-val">{{ getWorkingOccupations(selectedHouse) || '—' }}</span>
                 </div>
               </template>
             </template>
@@ -247,25 +247,25 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
                 <span class="dp-field-key">{{ t('mapView.toiletAvailable') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
                 <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
                 <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.lighting) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.lighting) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
@@ -277,19 +277,19 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
                 <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.lighting) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.lighting) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
                 <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
@@ -301,49 +301,49 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏚️</span>
                 <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🧾</span>
                 <span class="dp-field-key">{{ t('mapView.ownership') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.OWNERSHIP_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.OWNERSHIP_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏛️</span>
                 <span class="dp-field-key">{{ t('mapView.pmAwas') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.PRADHAN_MANTRI_AWAS) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.PRADHAN_MANTRI_AWAS) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
                 <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
-                <span class="dp-field-val">{{ td(normalizedSelectedHouse.ELECTRICITY_CONNECTION) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(normalizedSelectedHouse.ELECTRICITY_CONNECTION) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
                 <span class="dp-field-key">{{ t('mapView.waterSource') }}</span>
-                <span class="dp-field-val">{{ td(normalizedSelectedHouse.DRINKING_WATER_SOURCE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(normalizedSelectedHouse.DRINKING_WATER_SOURCE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
                 <span class="dp-field-key">{{ t('mapView.toilet') }}</span>
-                <span class="dp-field-val">{{ td(normalizedSelectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(normalizedSelectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🪪</span>
                 <span class="dp-field-key">{{ t('mapView.rationCard') }}</span>
-                <span class="dp-field-val">{{ td(normalizedSelectedHouse.RATION_CARD_COLOR) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(normalizedSelectedHouse.RATION_CARD_COLOR) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
-                <span class="dp-field-val">{{ td(normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(normalizedSelectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
             </template>
 
@@ -367,7 +367,7 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('mapView.coverageStatus') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.aadhaarCoverageStatus) || t('analytics.unknown') }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.aadhaarCoverageStatus) || t('analytics.unknown') }}</span>
               </div>
             </template>
 
@@ -391,7 +391,7 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('mapView.coverageStatus') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.casteCertificateCoverageStatus) || t('analytics.unknown') }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.casteCertificateCoverageStatus) || t('analytics.unknown') }}</span>
               </div>
             </template>
 
@@ -403,25 +403,25 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">💧</span>
                 <span class="dp-field-key">{{ t('mapView.wastewaterSystem') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.A_SOAKPIT_MANAGING_WASTEWATER) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.A_SOAKPIT_MANAGING_WASTEWATER) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
                 <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🚽</span>
                 <span class="dp-field-key">{{ t('mapView.toiletAccess') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.SANITATION_TOILET_FACILITY_HOME) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">⚡</span>
                 <span class="dp-field-key">{{ t('viewBy.electricity') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.ELECTRICITY_CONNECTION || selectedHouse.lighting) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.ELECTRICITY_CONNECTION || selectedHouse.lighting) || '—' }}</span>
               </div>
             </template>
 
@@ -434,22 +434,22 @@
               <div class="dp-stat-row">
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Total Land</div>
+                  <div class="dp-stat-key">{{ t('mapView.totalLand') }}</div>
                 </div>
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Cultivated</div>
+                  <div class="dp-stat-key">{{ t('mapView.cultivated') }}</div>
                 </div>
               </div>
 
               <div class="dp-chip-row">
                 <div class="dp-chip-block">
                   <div class="dp-chip-label">{{ t('analytics.kharif') }} Crop</div>
-                  <div class="dp-chip dp-chip-kharif">{{ td(selectedHouse.kharif) || '—' }}</div>
+                  <div class="dp-chip dp-chip-kharif">{{ dbLabel(selectedHouse.kharif) || '—' }}</div>
                 </div>
                 <div class="dp-chip-block">
                   <div class="dp-chip-label">{{ t('analytics.rabi') }} Crop</div>
-                  <div class="dp-chip dp-chip-rabi">{{ td(selectedHouse.rabi) || '—' }}</div>
+                  <div class="dp-chip dp-chip-rabi">{{ dbLabel(selectedHouse.rabi) || '—' }}</div>
                 </div>
               </div>
 
@@ -458,7 +458,7 @@
                 <span class="dp-field-key">{{ t('mapView.irrigationSource') }}</span>
                 <span class="dp-field-val"
                       :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#15803d' }">
-                  {{ td(selectedHouse.waterSource) || '—' }}
+                  {{ dbLabel(selectedHouse.waterSource) || '—' }}
                 </span>
               </div>
             </template>
@@ -474,24 +474,24 @@
                 <span class="dp-field-key">{{ t('mapView.waterSource') }}</span>
                 <span class="dp-field-val"
                       :style="{ color: (selectedHouse.waterSource || '').toLowerCase().includes('rain') ? '#b45309' : '#16a34a' }">
-                  {{ td(selectedHouse.waterSource || selectedHouse.SOURCE_WATER_IRRIGATION) || '—' }}
+                  {{ dbLabel(selectedHouse.waterSource || selectedHouse.SOURCE_WATER_IRRIGATION) || '—' }}
                 </span>
               </div>
 
               <div class="dp-field-row">
                 <span class="dp-field-icon">🌾</span>
                 <span class="dp-field-key">{{ t('mapView.ownAgriLand') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
               </div>
 
               <div class="dp-stat-row">
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Total Land</div>
+                  <div class="dp-stat-key">{{ t('mapView.totalLand') }}</div>
                 </div>
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Cultivated</div>
+                  <div class="dp-stat-key">{{ t('mapView.cultivated') }}</div>
                 </div>
               </div>
             </template>
@@ -505,28 +505,28 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">🌾</span>
                 <span class="dp-field-key">{{ t('mapView.ownAgriLand') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.ownLand || selectedHouse.OWN_AGRICULTURE_LAND) || '—' }}</span>
               </div>
 
               <div class="dp-stat-row">
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.totalLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Total Land</div>
+                  <div class="dp-stat-key">{{ t('mapView.totalLand') }}</div>
                 </div>
                 <div class="dp-stat">
                   <div class="dp-stat-val">{{ selectedHouse.cultivatedLand || '0' }} <small>ac</small></div>
-                  <div class="dp-stat-key">Cultivated</div>
+                  <div class="dp-stat-key">{{ t('mapView.cultivated') }}</div>
                 </div>
               </div>
 
               <div class="dp-chip-row">
                 <div class="dp-chip-block">
                   <div class="dp-chip-label">{{ t('analytics.kharif') }} Crop</div>
-                  <div class="dp-chip dp-chip-kharif">{{ td(selectedHouse.kharif) || '—' }}</div>
+                  <div class="dp-chip dp-chip-kharif">{{ dbLabel(selectedHouse.kharif) || '—' }}</div>
                 </div>
                 <div class="dp-chip-block">
                   <div class="dp-chip-label">{{ t('analytics.rabi') }} Crop</div>
-                  <div class="dp-chip dp-chip-rabi">{{ td(selectedHouse.rabi) || '—' }}</div>
+                  <div class="dp-chip dp-chip-rabi">{{ dbLabel(selectedHouse.rabi) || '—' }}</div>
                 </div>
               </div>
             </template>
@@ -571,7 +571,7 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">🏠</span>
                 <span class="dp-field-key">{{ t('mapView.houseType') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.TYPE_HOUSE) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.TYPE_HOUSE) || '—' }}</span>
               </div>
 
               <div class="dp-field-row">
@@ -583,7 +583,7 @@
               <div class="dp-field-row">
                 <span class="dp-field-icon">📊</span>
                 <span class="dp-field-key">{{ t('viewBy.bplStatus') }}</span>
-                <span class="dp-field-val">{{ td(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
+                <span class="dp-field-val">{{ dbLabel(selectedHouse.bplCategory || selectedHouse.FAMILY_BELONG_BPL_CATEGORY) || '—' }}</span>
               </div>
 
               <template v-if="selectedHouse.annualIncome && selectedHouse.annualIncome !== '0'">
@@ -802,26 +802,14 @@ import { useI18n } from 'vue-i18n'
 import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
-import {
-  translateDynamicValue,
-  translateOccupationDisplay,
-  translateCategory,
-} from '../../utils/translateDynamicValue.js'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
-/**
- * td(value) — translate a dynamic DB category/type value using the current locale.
- * Use in templates wherever a DB enum/category string is displayed directly.
- * Never mutates the original data; purely display-layer.
- */
-const td = (value) => translateDynamicValue(value, locale.value)
-
-/**
- * tdOcc(value) — translate a comma/pipe-separated occupation display string.
- * Use for getWorkingOccupations() output.
- */
-const tdOcc = (value) => translateOccupationDisplay(value, locale.value)
+/** Trimmed DB/API string for display only (no translation). */
+function dbLabel(value) {
+  if (value === null || value === undefined) return ''
+  return String(value).trim()
+}
 
 const loading       = ref(true)
 const hasAppliedFilters = ref(false)
@@ -2043,12 +2031,12 @@ const detailStats = computed(() => {
   return [
     { label: t('mapView.totalLand'),  value: `${h.totalLand || '0'} acres` },
     { label: t('mapView.cultivated'), value: `${h.cultivatedLand || '0'} acres` },
-    { label: t('mapView.irrigation'), value: td(h.waterSource) || t('common.none') },
-    { label: t('mapView.latrine'),    value: td(h.latrine) || t('common.none'), style: { color: getConditionColor(h) } },
-    { label: t('mapView.lighting'),   value: td(h.lighting) || t('common.none') },
-    { label: t('mapView.rationCard'), value: td(h.rationCard) || t('common.unknown') },
-    { label: t('mapView.kharifCrop'), value: td(h.kharif) || t('common.no') },
-    { label: t('mapView.rabiCrop'),   value: td(h.rabi) || t('common.no') },
+    { label: t('mapView.irrigation'), value: dbLabel(h.waterSource) || t('common.none') },
+    { label: t('mapView.latrine'),    value: dbLabel(h.latrine) || t('common.none'), style: { color: getConditionColor(h) } },
+    { label: t('mapView.lighting'),   value: dbLabel(h.lighting) || t('common.none') },
+    { label: t('mapView.rationCard'), value: dbLabel(h.rationCard) || t('common.unknown') },
+    { label: t('mapView.kharifCrop'), value: dbLabel(h.kharif) || t('common.no') },
+    { label: t('mapView.rabiCrop'),   value: dbLabel(h.rabi) || t('common.no') },
   ]
 })
 
@@ -2288,8 +2276,8 @@ const analyticsChart = computed(() => {
       centerLabel: t('analytics.householdsLabel'),
       centerValue: rows.length.toLocaleString(),
       segments: [
-        { label: td('Pucca'),   value: pucca,   color: '#22c55e' },
-        { label: td('Kucha'),   value: kucha,   color: '#ef4444' },
+        { label: dbLabel('Pucca'),   value: pucca,   color: '#22c55e' },
+        { label: dbLabel('Kucha'),   value: kucha,   color: '#ef4444' },
         { label: t('analytics.unknown'), value: unknown, color: '#9ca3af' },
       ],
     }
@@ -2511,8 +2499,8 @@ const headerLegend = computed(() => {
     ]
   } else if (colorMode.value === 'housing_quality') {
     entries = [
-      { color: '#22c55e', label: `${td('Pucca')} (${t('legend.good')})` },
-      { color: '#ef4444', label: `${td('Kucha')} (${t('legend.poor')})` },
+      { color: '#22c55e', label: `${dbLabel('Pucca')} (${t('legend.good')})` },
+      { color: '#ef4444', label: `${dbLabel('Kucha')} (${t('legend.poor')})` },
       { color: '#9ca3af', label: t('analytics.unknown') },
     ]
   } else {
@@ -3133,8 +3121,8 @@ function addHouseMarker(house) {
     // 3a. BPL Status mode — show BPL category and ration card
     if (mode === 'bpl_status') {
       const houseNo = getHouseNumber(house) || '—'
-      const bpl     = td(house.bplCategory || house.FAMILY_BELONG_BPL_CATEGORY) || t('common.unknown')
-      const ration  = td(house.rationCard  || house.RATION_CARD_COLOR || house.RATION_CARD_TYPE) || '—'
+      const bpl     = dbLabel(house.bplCategory || house.FAMILY_BELONG_BPL_CATEGORY) || t('common.unknown')
+      const ration  = dbLabel(house.rationCard  || house.RATION_CARD_COLOR || house.RATION_CARD_TYPE) || '—'
       return `
         <strong>${name}</strong><br/>
         ${t('mapView.houseNo')}: ${houseNo}<br/>
@@ -3196,7 +3184,7 @@ function addHouseMarker(house) {
       const rawSource  = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource ?? ''
       const noIrrig    = isNoIrrigationValue(rawSource)
       const statusLine = noIrrig ? t('mapView.noIrrigation') : t('common.available')
-      const sourceLine = (!noIrrig && String(rawSource).trim()) ? `<br/>${t('mapView.waterSource')}: ${td(rawSource)}` : ''
+      const sourceLine = (!noIrrig && String(rawSource).trim()) ? `<br/>${t('mapView.waterSource')}: ${dbLabel(rawSource)}` : ''
       return `
         <strong>${name}</strong><br/>
         ${t('mapView.houseNo')}: ${houseNo}<br/>
@@ -3229,9 +3217,9 @@ function addHouseMarker(house) {
 
     // 5. Infrastructure modes: Housing Quality, Electricity, Toilet Access, Wastewater
     if (mode === 'housing_quality' || mode === 'electricity' || mode === 'toilet_access' || mode === 'wastewater_management') {
-      const elec   = td(house.lighting || house.ELECTRICITY_CONNECTION) || '—'
-      const toilet = td(house.latrine  || house.SANITATION_TOILET_FACILITY_HOME) || '—'
-      const water  = td(house.waterSource || house.DRINKING_WATER_SOURCE) || '—'
+      const elec   = dbLabel(house.lighting || house.ELECTRICITY_CONNECTION) || '—'
+      const toilet = dbLabel(house.latrine  || house.SANITATION_TOILET_FACILITY_HOME) || '—'
+      const water  = dbLabel(house.waterSource || house.DRINKING_WATER_SOURCE) || '—'
       return `
         <strong>${name}</strong><br/>
         ${t('viewBy.electricity')}: ${elec} · ${t('mapView.toiletAccess')}: ${toilet}<br/>
@@ -3241,8 +3229,8 @@ function addHouseMarker(house) {
 
     // 6. Welfare / Document Gap modes: Aadhaar Coverage, Caste Certificate Coverage
     if (mode === 'aadhaar_coverage' || mode === 'caste_certificate_coverage') {
-      const aadhaar = td(house.aadhaarCoverageStatus || house.AadhaarCoverageStatus) || '—'
-      const caste   = td(house.casteCertificateCoverageStatus || house.CasteCertificateCoverageStatus) || '—'
+      const aadhaar = dbLabel(house.aadhaarCoverageStatus || house.AadhaarCoverageStatus) || '—'
+      const caste   = dbLabel(house.casteCertificateCoverageStatus || house.CasteCertificateCoverageStatus) || '—'
       return `
         <strong>${name}</strong><br/>
         ${t('mapView.aadhaar')}: ${aadhaar} · ${t('mapView.casteCert')}: ${caste}

@@ -192,11 +192,11 @@
                 <div class="dp-stat-row">
                   <div class="dp-stat">
                     <div class="dp-stat-val">{{ displayLandValue(selectedHouse.totalLand) }} <small v-if="displayLandValue(selectedHouse.totalLand) !== '—'">ac</small></div>
-                    <div class="dp-stat-key">Total Land</div>
+                    <div class="dp-stat-key">{{ t('mapView.totalLand') }}</div>
                   </div>
                   <div class="dp-stat">
                     <div class="dp-stat-val">{{ displayLandValue(selectedHouse.cultivatedLand) }} <small v-if="displayLandValue(selectedHouse.cultivatedLand) !== '—'">ac</small></div>
-                    <div class="dp-stat-key">Cultivated</div>
+                    <div class="dp-stat-key">{{ t('mapView.cultivated') }}</div>
                   </div>
                 </div>
 

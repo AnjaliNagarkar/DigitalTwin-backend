@@ -288,12 +288,13 @@ import { useI18n } from 'vue-i18n'
 import L from 'leaflet'
 import { getLocationOptions } from '../../api/index.js'
 import { getPopulationMapData, getPopulationMapInsights, getPopulationMapSummary } from './api.js'
-import { translateDynamicValue, translateOccupationDisplay, translateIncome } from '../../utils/translateDynamicValue.js'
 
-const { t, locale } = useI18n()
-const td = (value) => translateDynamicValue(value, locale.value)
-const tdOcc = (value) => translateOccupationDisplay(value, locale.value)
-const tdInc = (value) => translateIncome(value, locale.value)
+const { t } = useI18n()
+
+function dbStr(v) {
+  if (v === null || v === undefined) return ''
+  return String(v).trim()
+}
 
 const mapContainer = ref(null)
 const mapContentRef = ref(null)
@@ -992,9 +993,9 @@ const popupSection = computed(() => {
     return {
       title: t('popMap.economicStatus'),
       fields: [
-        { label: t('mapView.bplCategory'),   value: td(marker.FAMILY_BELONG_BPL_CATEGORY) || t('common.na') },
-        { label: t('mapView.rationCard'),     value: td(marker.RATION_CARD_TYPE)           || t('common.na') },
-        { label: t('mapView.annualIncome'),   value: translateIncome(marker.ANNUAL_INCOME, locale.value) || t('common.na') },
+        { label: t('mapView.bplCategory'),   value: dbStr(marker.FAMILY_BELONG_BPL_CATEGORY) || t('common.na') },
+        { label: t('mapView.rationCard'),     value: dbStr(marker.RATION_CARD_TYPE)           || t('common.na') },
+        { label: t('mapView.annualIncome'),   value: dbStr(marker.ANNUAL_INCOME)                || t('common.na') },
       ],
     }
   }
@@ -1018,7 +1019,7 @@ const popupSection = computed(() => {
       fields: [
         { label: t('map.workingMembers'), value: workingMembers.toLocaleString() },
         { label: t('popMap.nonWorking'),  value: Number(nonWorking || 0).toLocaleString() },
-        { label: t('map.occupation'),     value: tdOcc(marker.working_occupations || marker.occupation_list) || t('common.na'), full: true },
+        { label: t('map.occupation'),     value: dbStr(marker.working_occupations || marker.occupation_list) || t('common.na'), full: true },
       ],
     }
   }

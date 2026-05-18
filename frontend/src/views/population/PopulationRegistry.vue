@@ -48,11 +48,11 @@
             <tr v-for="(record, index) in paginatedRecords" :key="`${record.name}-${index}`" class="table-row">
               <td class="td-index">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
               <td class="td-name">{{ record.name || '—' }}</td>
-              <td>{{ translateCategory(record.gender, locale) || '—' }}</td>
+              <td>{{ record.gender || '—' }}</td>
               <td>{{ record.age || '—' }}</td>
-              <td>{{ translateCategory(record.education, locale) || t('common.notAvailable') }}</td>
-              <td>{{ translateOccupation(record.occupation, locale) || t('common.notWorking') }}</td>
-              <td>{{ translateCategory(record.disabilityType, locale) || '—' }}</td>
+              <td>{{ record.education || t('common.notAvailable') }}</td>
+              <td>{{ record.occupation || t('common.notWorking') }}</td>
+              <td>{{ record.disabilityType || '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -70,9 +70,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getPopulationRegistry } from './api.js'
-import { translateOccupation, translateCategory } from '../../utils/translateDynamicValue.js'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 const loading = ref(true)
 const records = ref([])

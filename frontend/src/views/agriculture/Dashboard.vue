@@ -381,7 +381,7 @@ import { Chart, registerables } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { getDashboardSummary, getLocationOptions } from '../../api/index.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 Chart.register(...registerables, ChartDataLabels)
 Chart.defaults.font.family = 'inherit'
@@ -561,12 +561,13 @@ function syncAgeIncomeGenderChart() {
         displayColors: true,
         callbacks: {
           title(items) {
-            return `Age group: ${items?.[0]?.raw?.x || items?.[0]?.label || ''}`
+            const group = items?.[0]?.raw?.x || items?.[0]?.label || ''
+            return t('agriDashboard.ageGroupTooltip', { group })
           },
           label(context) {
             const raw = context.raw || {}
             const families = Number(raw.families || 0)
-            return [`Families: ${families.toLocaleString()}`]
+            return [t('agriDashboard.familiesTooltip', { count: families.toLocaleString() })]
           },
         },
       },
@@ -604,7 +605,7 @@ function syncAgeIncomeGenderChart() {
         },
         title: {
           display: true,
-          text: 'Age group',
+          text: t('agriDashboard.ageGroupAxis'),
         },
       },
       y: {
@@ -619,7 +620,7 @@ function syncAgeIncomeGenderChart() {
         },
         title: {
           display: true,
-          text: 'Families count',
+          text: t('agriDashboard.familiesCountAxis'),
         },
         ticks: {
           color: '#6b7280',
@@ -893,7 +894,7 @@ watch(
 )
 
 watch(
-  [loading, ageIncomeGenderSegments],
+  [loading, ageIncomeGenderSegments, locale],
   async ([isLoading]) => {
     if (isLoading) {
       destroyAgeIncomeGenderChart()
@@ -989,28 +990,54 @@ const bplPieStyle = computed(() => {
 
 const DIVYANG_COLORS = ['#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#22c55e', '#3b82f6', '#14b8a6', '#9ca3af']
 
-function mapDisabilityGroup(name) {
-  const n = String(name || '').toLowerCase()
+/** Frontend disability category keys (not raw API names). */
+const DISABILITY_GROUP_I18N = {
+  visual: 'disabilityVisual',
+  locomotor: 'disabilityLocomotor',
+  intellectual: 'disabilityIntellectual',
+  hearing: 'disabilityHearing',
+  speech: 'disabilitySpeech',
+  multiple: 'disabilityMultiple',
+  chronic: 'disabilityChronic',
+  other: 'disabilityOther',
+}
 
-  if (n.includes('blind') || n.includes('low-vision') || n.includes('low vision')) return 'Visual Disability'
+/** Backend aggregate labels (SQL CASE) → frontend i18n group keys. */
+const DISABILITY_AGGREGATE_LABELS = {
+  'visual disability': 'visual',
+  'locomotor disability': 'locomotor',
+  'intellectual disability': 'intellectual',
+  'hearing disability': 'hearing',
+  'speech disability': 'speech',
+  'multiple disabilities': 'multiple',
+  'chronic conditions': 'chronic',
+  other: 'other',
+}
+
+function mapDisabilityGroup(name) {
+  const n = String(name || '').toLowerCase().trim()
+
+  if (DISABILITY_AGGREGATE_LABELS[n]) return DISABILITY_AGGREGATE_LABELS[n]
+
+  if (n.includes('blind') || n.includes('low-vision') || n.includes('low vision')) return 'visual'
 
   if (
     n.includes('locomotor') ||
     n.includes('cerebral') ||
     n.includes('muscular') ||
     n.includes('dwarf')
-  ) return 'Locomotor Disability'
+  ) return 'locomotor'
 
   if (
     n.includes('mental') ||
     n.includes('autism') ||
     n.includes('intellectual') ||
     n.includes('learning')
-  ) return 'Intellectual Disability'
+  ) return 'intellectual'
 
-  if (n.includes('hearing')) return 'Hearing Disability'
-  if (n.includes('speech')) return 'Speech Disability'
-  if (n.includes('multiple')) return 'Multiple Disabilities'
+  if (n.includes('hearing')) return 'hearing'
+  if (n.includes('speech')) return 'speech'
+  if (n.includes('multiple')) return 'multiple'
 
   if (
     n.includes('parkinson') ||
@@ -1018,14 +1045,14 @@ function mapDisabilityGroup(name) {
     n.includes('sickle') ||
     n.includes('thalassemia') ||
     n.includes('neurological')
-  ) return 'Chronic Conditions'
+  ) return 'chronic'
 
-  if (
-    n.includes('acid attack') ||
-    n.includes('leprosy')
-  ) return 'Other'
+  if (n.includes('acid attack') || n.includes('leprosy')) return 'other'
 
-  return name ? String(name).trim() : 'Other'
+  // Unmatched API name — keep original DB value for display
+  if (name && String(name).trim()) return { raw: String(name).trim() }
+
+  return 'other'
 }
 
 const divyangSegments = computed(() => {
@@ -1036,14 +1063,22 @@ const divyangSegments = computed(() => {
   const grouped = new Map()
   for (const item of source) {
     const group = mapDisabilityGroup(item?.name)
+    const groupKey = group && typeof group === 'object' ? group.raw : group
     const next = Number(item?.value || 0)
-    grouped.set(group, Number(grouped.get(group) || 0) + next)
+    const existing = grouped.get(groupKey)
+    grouped.set(groupKey, { group, count: Number(existing?.count || 0) + next })
+  }
+
+  const labelForGroup = (group) => {
+    if (group && typeof group === 'object' && group.raw) return group.raw
+    const key = DISABILITY_GROUP_I18N[group]
+    return key ? t(`agriDashboard.${key}`) : t('agriDashboard.disabilityOther')
   }
 
   const rows = [...grouped.entries()]
-    .map(([label, value], index) => ({
-      label,
-      value,
+    .map(([, entry], index) => ({
+      label: labelForGroup(entry.group),
+      value: entry.count,
       color: DIVYANG_COLORS[index % DIVYANG_COLORS.length],
     }))
     .filter(item => item.value > 0)
@@ -1175,7 +1210,7 @@ const landUtilizationHasData = computed(() =>
 
 const landUtilizationOptions = computed(() => {
   const total = landUtilizationRows.value.total
-  const totalFormatted = `${Number(total || 0).toLocaleString()} acres`
+  const totalFormatted = `${Number(total || 0).toLocaleString()} ${t('agriDashboard.acresUnit')}`
   const cultivatedPercent = landUtilizationRows.value.cultivatedPercent
   const unusedPercent = landUtilizationRows.value.unusedPercent
   
@@ -1184,7 +1219,7 @@ const landUtilizationOptions = computed(() => {
       type: 'donut',
       toolbar: { show: false },
     },
-    labels: ['Cultivated Land', 'Unused Land'],
+    labels: [t('agriDashboard.cultivatedLand'), t('agriDashboard.unusedLand')],
     plotOptions: {
       pie: {
         donut: {
@@ -1206,7 +1241,7 @@ const landUtilizationOptions = computed(() => {
             },
             total: {
               show: true,
-              label: 'Total Land',
+              label: t('agriDashboard.totalLandLabel'),
               fontSize: '11px',
               fontFamily: 'var(--font-body)',
               color: 'var(--text-dim)',
@@ -1228,7 +1263,7 @@ const landUtilizationOptions = computed(() => {
       y: {
         formatter: (value, { seriesIndex }) => {
           const pct = seriesIndex === 0 ? cultivatedPercent : unusedPercent
-          return `${Number(value || 0).toLocaleString()} acres (${Number(pct || 0).toFixed(2)}%)`
+          return `${Number(value || 0).toLocaleString()} ${t('agriDashboard.acresUnit')} (${Number(pct || 0).toFixed(2)}%)`
         },
       },
     },
@@ -1357,7 +1392,7 @@ const seasonCropOptions = computed(() => ({
       },
     },
     title: {
-      text: 'Crop name',
+      text: t('agriDashboard.cropNameAxis'),
       offsetY: -5,
       style: {
         fontSize: '13px',
@@ -1379,7 +1414,7 @@ const seasonCropOptions = computed(() => ({
       },
     },
     title: {
-      text: 'Count',
+      text: t('agriDashboard.countAxis'),
       offsetX: -10,
       style: {
         color: '#475569',
@@ -1404,13 +1439,14 @@ function landPct(count) {
   return (count / max * 100).toFixed(1)
 }
 
+const LAND_CATEGORY_DISPLAY_KEYS = {
+  Landless: 'landCategoryLandless',
+  Small: 'landCategorySmall',
+  Medium: 'landCategoryMedium',
+  Large: 'landCategoryLarge',
+}
+
 const landDistributionRows = computed(() => {
-  const LAND_LABEL_DISPLAY = {
-    Landless: 'Landless (0 acres)',
-    Small:    'Small (0–2.5 acres)',
-    Medium:   'Medium (2.5–10 acres)',
-    Large:    'Large (>10 acres)',
-  }
   const rows = Array.isArray(agriculture.value?.landDistribution)
     ? agriculture.value.landDistribution
     : []
@@ -1420,7 +1456,8 @@ const landDistributionRows = computed(() => {
         .trim()
         .replace(/\s+/g, ' ')
       const count = Number(row?.count || 0)
-      const displayLabel = LAND_LABEL_DISPLAY[label] || label
+      const i18nKey = LAND_CATEGORY_DISPLAY_KEYS[label]
+      const displayLabel = i18nKey ? t(`agriDashboard.${i18nKey}`) : label
       return { label, displayLabel, count }
     })
     .filter(row => row.label !== '')
