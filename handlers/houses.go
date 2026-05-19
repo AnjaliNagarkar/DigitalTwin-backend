@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,15 +76,16 @@ type HouseRecord struct {
 	HeadName                       string  `json:"headName"`
 
 	// Population aggregate fields
-	TotalMembers      int    `json:"totalMembers"`
-	MaleMembers       int    `json:"maleMembers"`
-	FemaleMembers     int    `json:"femaleMembers"`
-	WorkingMembers    int    `json:"workingMembers"`
-	IlliterateMembers int    `json:"illiterateMembers"`
-	DivyangMembers    int    `json:"divyangMembers"`
-	UnemployedMembers int    `json:"unemployedMembers"`
-	BplCategory       string `json:"bplCategory"`
-	AnnualIncome      string `json:"annualIncome"`
+	TotalMembers         int                   `json:"totalMembers"`
+	MaleMembers          int                   `json:"maleMembers"`
+	FemaleMembers        int                   `json:"femaleMembers"`
+	WorkingMembers       int                   `json:"workingMembers"`
+	IlliterateMembers    int                   `json:"illiterateMembers"`
+	DivyangMembers       int                   `json:"divyangMembers"`
+	UnemployedMembers    int                   `json:"unemployedMembers"`
+	BplCategory          string                `json:"bplCategory"`
+	AnnualIncome         string                `json:"annualIncome"`
+	DivyangMemberDetails []DivyangMemberRecord `json:"divyangMemberDetails,omitempty"`
 }
 
 type HouseDetail struct {
@@ -108,6 +110,15 @@ type MemberRecord struct {
 	DisabilityPercentage string `json:"disabilityPercentage"`
 	Aadhaar              string `json:"aadhaar"`
 	CasteCertificate     string `json:"casteCertificate"`
+}
+
+type DivyangMemberRecord struct {
+	FullName              string `json:"fullName"`
+	Gender                string `json:"gender"`
+	Relation              string `json:"relation"`
+	DisabilityCategory    string `json:"disabilityCategory"`
+	DisabilityPercentage  string `json:"disabilityPercentage"`
+	DisabilityCertificate string `json:"disabilityCertificate"`
 }
 
 type HouseHandler struct {
@@ -203,6 +214,73 @@ func (h *HouseHandler) memberColExists(col string) bool {
 	h.memberColCacheMu.Unlock()
 
 	return exists
+}
+
+func (h *HouseHandler) buildDivyangMembersSQL(scopeJoin string) string {
+	if !h.memberColExists("EXTERNAL_FAMILY_ID") {
+		return ""
+	}
+	if !h.memberColExists("DIVYANG") && !h.memberColExists("DISABILITY_CATEGORY") {
+		return ""
+	}
+
+	textExpr := func(col string) string {
+		if h.memberColExists(col) {
+			return fmt.Sprintf("NULLIF(TRIM(COALESCE(fm.%s, '')), '')", col)
+		}
+		return "NULL"
+	}
+	castExpr := func(col string) string {
+		if h.memberColExists(col) {
+			return fmt.Sprintf("NULLIF(TRIM(CAST(fm.%s AS CHAR)), '')", col)
+		}
+		return "NULL"
+	}
+
+	fullNameExpr := fmt.Sprintf("COALESCE(NULLIF(TRIM(CONCAT_WS(' ', %s, %s, %s)), ''), '')", textExpr("FIRST_NAME"), textExpr("MIDDLE_NAME"), textExpr("LAST_NAME"))
+	genderExpr := fmt.Sprintf("COALESCE(%s, '')", textExpr("GENDER"))
+	relationExpr := fmt.Sprintf("COALESCE(%s, '')", textExpr("RELATION_FAMILY_HEAD"))
+	disabilityCategoryExpr := fmt.Sprintf("COALESCE(%s, '')", textExpr("DISABILITY_CATEGORY"))
+	disabilityPercentageExpr := fmt.Sprintf("COALESCE(%s, '')", castExpr("DISABILITY_PERCENTAGE"))
+	disabilityCertificateExpr := fmt.Sprintf("COALESCE(%s, '')", castExpr("DISABILITY_CERTIFICATE"))
+
+	whereParts := make([]string, 0, 2)
+	if h.memberColExists("DIVYANG") {
+		whereParts = append(whereParts, "UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'")
+	}
+	if h.memberColExists("DISABILITY_CATEGORY") {
+		whereParts = append(whereParts, "NULLIF(TRIM(COALESCE(fm.DISABILITY_CATEGORY, '')), '') IS NOT NULL")
+	}
+	if len(whereParts) == 0 {
+		return ""
+	}
+
+	whereClause := "WHERE " + whereParts[0]
+	if len(whereParts) > 1 {
+		whereClause = "WHERE (" + strings.Join(whereParts, " OR ") + ")"
+	}
+
+	scope := ""
+	if strings.TrimSpace(scopeJoin) != "" {
+		scope = "\n" + scopeJoin + "\n"
+	}
+
+	return fmt.Sprintf(`
+		SELECT
+			CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) AS family_join_id,
+			COALESCE(CONCAT('[', GROUP_CONCAT(JSON_OBJECT(
+				'fullName', %s,
+				'gender', %s,
+				'relation', %s,
+				'disabilityCategory', %s,
+				'disabilityPercentage', %s,
+				'disabilityCertificate', %s
+			) ORDER BY fm.FAMILY_MEMBER_ID SEPARATOR ','), ']'), '[]') AS divyang_members_json
+		FROM FAMILY_MEMBER fm
+		%s%s
+		GROUP BY CAST(fm.EXTERNAL_FAMILY_ID AS CHAR)`,
+		fullNameExpr, genderExpr, relationExpr, disabilityCategoryExpr, disabilityPercentageExpr, disabilityCertificateExpr,
+		scope, whereClause)
 }
 
 // buildPopStatsSQL returns a SQL subquery that aggregates per-family member stats.
@@ -727,6 +805,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			memberDivyangExpr = "SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.DIVYANG,'')))='YES' THEN 1 ELSE 0 END)"
 		}
 	}
+	divyangMembersSQL := h.buildDivyangMembersSQL("INNER JOIN page_families pf\n\t\t\t\tON CAST(fm.EXTERNAL_FAMILY_ID AS CHAR) = CAST(COALESCE(pf.EXTERNAL_FAMILY_ID, '') AS CHAR)")
 
 	// CTE-scoped query: page families are materialised once; all three FAMILY_MEMBER
 	// aggregations (fm_agg, aadhaar_agg, caste_agg) join against that CTE so they
@@ -785,6 +864,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			COALESCE(fm_agg.illiterate_members, 0),
 			COALESCE(fm_agg.divyang_members, 0),
 			COALESCE(fm_agg.unemployed_members, 0),
+			COALESCE(divyang_agg.divyang_members_json, '[]'),
 			%s,
 			%s
 		FROM page_families f
@@ -835,6 +915,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 				ON %s = CAST(COALESCE(pf.EXTERNAL_FAMILY_ID, '') AS CHAR)
 			GROUP BY %s
 		) caste_agg ON caste_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN (%s) divyang_agg ON divyang_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
@@ -858,6 +939,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 		mfj,
 		casteCertAvailableExpr, casteCertAvailableExpr, casteCertAvailableExpr,
 		mfj, mfj, // INNER JOIN ON + GROUP BY
+		divyangMembersSQL,
 	)
 	// args used exactly once — the CTE contains the only WHERE clause in the query
 	queryArgs := append([]interface{}{}, args...)
@@ -1004,6 +1086,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 	var houses []HouseRecord
 	for rows.Next() {
 		var house HouseRecord
+		var divyangMembersJSON string
 		if err := rows.Scan(
 			&house.FamilyID,
 			&house.ExternalFamilyID,
@@ -1022,7 +1105,7 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 			&house.Occupation, &house.HeadName,
 			&house.TotalMembers, &house.MaleMembers, &house.FemaleMembers,
 			&house.WorkingMembers, &house.IlliterateMembers,
-			&house.DivyangMembers, &house.UnemployedMembers,
+			&house.DivyangMembers, &house.UnemployedMembers, &divyangMembersJSON,
 			&house.BplCategory, &house.AnnualIncome,
 		); err != nil {
 			log.Println("SCAN ERROR:", err)
@@ -1033,6 +1116,10 @@ func (h *HouseHandler) GetHouses(c *gin.Context) {
 				"limit": limit,
 			})
 			return
+		}
+		house.DivyangMemberDetails = []DivyangMemberRecord{}
+		if strings.TrimSpace(divyangMembersJSON) != "" && divyangMembersJSON != "[]" {
+			_ = json.Unmarshal([]byte(divyangMembersJSON), &house.DivyangMemberDetails)
 		}
 		houses = append(houses, house)
 	}

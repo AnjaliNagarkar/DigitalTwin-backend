@@ -108,7 +108,7 @@
               <span class="cs-arrow">▾</span>
             </button>
             <div class="cs-dropdown cs-dropdown-right" v-show="openDropdown === 'colorMode'" @click.stop>
-              <template v-for="group in groupedColorOptions" :key="group.label">
+              <div v-for="group in groupedColorOptions" :key="group.label" class="cs-option-group">
                 <div class="cs-option-group-label">— {{ group.label }} —</div>
                 <div
                   class="cs-option"
@@ -119,7 +119,7 @@
                 >
                   {{ option.label }}
                 </div>
-              </template>
+              </div>
             </div>
           </div>
         </div>
@@ -223,6 +223,61 @@
                 <span class="dp-field-key">{{ t('mapView.femaleCount') }}</span>
                 <span class="dp-field-val">{{ getFemaleMembers(selectedHouse).toLocaleString() }}</span>
               </div>
+
+              <template v-if="isDivyangPresenceMode">
+                <div class="dp-section-label">
+                  <span class="dp-section-icon">♿</span> {{ t('mapView.divyangMemberDetails') }}
+                </div>
+
+                <div v-if="selectedDivyangMembers.length" class="divyang-member-list">
+                  <article
+                    v-for="(member, index) in selectedDivyangMembers"
+                    :key="`${member.fullName || member.gender || 'divyang'}-${index}`"
+                    class="divyang-member-card"
+                  >
+                    <div class="divyang-member-name">
+                      {{ member.fullName || '—' }}
+                    </div>
+
+                    <div class="divyang-member-stack">
+                      <div class="divyang-member-meta-item">
+                        <span class="divyang-member-meta-key">{{ t('mapView.gender') }}</span>
+                        <span class="divyang-member-meta-val">{{ dbLabel(member.gender) || '—' }}</span>
+                      </div>
+
+                      <div class="divyang-member-meta-item">
+                        <span class="divyang-member-meta-key">{{ t('mapView.relation') }}</span>
+                        <span class="divyang-member-meta-val">{{ dbLabel(member.relation) || '—' }}</span>
+                      </div>
+
+                      <div class="divyang-member-divider"></div>
+
+                      <div class="divyang-member-meta-item divyang-member-meta-item--full">
+                        <span class="divyang-member-meta-key">{{ t('mapView.disabilityCategory') }}</span>
+                        <span class="divyang-member-meta-val divyang-member-meta-val--wrap">
+                          {{ dbLabel(member.disabilityCategory) || '—' }}
+                        </span>
+                      </div>
+
+                      <div class="divyang-member-divider"></div>
+
+                      <div class="divyang-member-meta-item">
+                        <span class="divyang-member-meta-key">{{ t('mapView.disabilityPercentage') }}</span>
+                        <span class="divyang-member-meta-val">{{ dbLabel(member.disabilityPercentage) || '—' }}</span>
+                      </div>
+
+                      <div class="divyang-member-meta-item">
+                        <span class="divyang-member-meta-key">{{ t('mapView.certificate') }}</span>
+                        <span class="divyang-member-meta-val">{{ dbLabel(member.disabilityCertificate) || '—' }}</span>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
+                <div v-else class="divyang-member-empty">
+                  {{ t('mapView.noDetailsAvailable') }}
+                </div>
+              </template>
 
               <template v-if="colorMode === 'employment_status' || colorMode === 'employment'">
                 <div class="dp-field-row">
@@ -992,6 +1047,7 @@ const isToiletAccessMode = computed(() => colorMode.value === 'toilet_access')
 const isWastewaterManagementMode = computed(() => colorMode.value === 'wastewater_management')
 const isAadhaarCoverageMode = computed(() => colorMode.value === 'aadhaar_coverage')
 const isCasteCertificateCoverageMode = computed(() => colorMode.value === 'caste_certificate_coverage')
+const isDivyangPresenceMode = computed(() => colorMode.value === 'divyang_presence')
 
 const normalizedSelectedHouse = computed(() => {
   const house = selectedHouse.value || {}
@@ -1008,6 +1064,11 @@ const normalizedSelectedHouse = computed(() => {
     FAMILY_BELONG_BPL_CATEGORY:
       house.FAMILY_BELONG_BPL_CATEGORY || house.bplCategory || '',
   }
+})
+
+const selectedDivyangMembers = computed(() => {
+  const members = normalizedSelectedHouse.value?.divyangMemberDetails
+  return Array.isArray(members) ? members : []
 })
 
 function normalizeText(value) {
@@ -4028,6 +4089,88 @@ watch(analyticsPanelOpen, async () => {
 .dp-field-icon { font-size: 0.82rem; flex-shrink: 0; width: 1.1rem; text-align: center; }
 .dp-field-key  { font-size: 0.66rem; color: #64748b; font-weight: 500; flex: 1; }
 .dp-field-val  { font-size: 0.73rem; color: #0f172a; font-weight: 600; text-align: right; max-width: 55%; }
+
+.divyang-member-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0 0.95rem 0.65rem;
+}
+
+.divyang-member-card {
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.82rem 0.85rem 0.75rem;
+}
+
+.divyang-member-name {
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+  margin-bottom: 0.7rem;
+}
+
+.divyang-member-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.divyang-member-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.divyang-member-meta-item--full {
+  width: 100%;
+}
+
+.divyang-member-meta-key {
+  font-size: 0.56rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.divyang-member-meta-val {
+  font-size: 0.78rem;
+  color: #0f172a;
+  font-weight: 600;
+  line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.divyang-member-divider {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(226,232,240,0), rgba(226,232,240,1), rgba(226,232,240,0));
+  margin: 0.05rem 0;
+}
+
+.divyang-member-empty {
+  padding: 0 0.95rem 0.65rem;
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.divyang-member-meta-val--wrap {
+  white-space: normal;
+}
+
+@media (max-width: 420px) {
+  .divyang-member-list {
+    padding-inline: 0.8rem;
+  }
+
+  .divyang-member-card {
+    padding: 0.76rem 0.8rem 0.68rem;
+  }
+}
 
 .panel-coords {
   margin-top: 0.6rem;
