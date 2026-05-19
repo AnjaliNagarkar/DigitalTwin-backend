@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -213,8 +214,19 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 }
 
 // GetUnifiedRegistry handles GET /unified-registry.
+// Supports ?limit=N&offset=M for pagination (default: limit=2000, offset=0).
+// This prevents a full FAMILY_MEMBER table scan on every Citizens page load.
 func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
-	query := h.query
+	limit := 2000
+	offset := 0
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "2000")); err == nil && l > 0 && l <= 10000 {
+		limit = l
+	}
+	if o, err := strconv.Atoi(c.DefaultQuery("offset", "0")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	query := h.query + fmt.Sprintf(" ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID LIMIT %d OFFSET %d", limit, offset)
 
 	rows, err := h.DB.Query(query)
 	if err != nil {

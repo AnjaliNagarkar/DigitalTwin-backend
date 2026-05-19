@@ -360,12 +360,15 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 		COALESCE(f.LAST_NAME_HOUSEHOLD_HEAD, '')
 	)), '')`
 
-	// Build family member aggregation (matches GetHouses dual-join strategy)
+	// Build member aggregation as a single CTE so FAMILY_MEMBER is scanned once.
+	// Previously this called buildPopStatsSQL() twice + buildAadhaarCoverageSQL()
+	// + buildCasteCertificateCoverageSQL() — 4 full FAMILY_MEMBER scans.
+	// The aadhaar/caste JOINs were also unused by PreloadHouseCache (not in Scan()).
+	// Now: one CTE, two cheap alias JOINs → 1 scan total.
 	popStatsSQL := h.buildPopStatsSQL()
-	aadhaarCoverageSQL := h.buildAadhaarCoverageSQL()
-	casteCertificateCoverageSQL := h.buildCasteCertificateCoverageSQL()
 
 	return fmt.Sprintf(`
+		WITH ms AS (%s)
 		SELECT
 			f.FAMILY_ID,
 			COALESCE(CAST(f.DISTRICT_ID AS CHAR), ''),
@@ -397,15 +400,13 @@ func (h *HouseHandler) buildHouseCacheQuery() string {
 			%s,
 			%s
 		FROM FAMILY f
-		LEFT JOIN (%s) fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
-		LEFT JOIN (%s) aadhaar_agg ON aadhaar_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
-		LEFT JOIN (%s) caste_agg ON caste_agg.family_join_id = CAST(f.EXTERNAL_FAMILY_ID AS CHAR)
+		LEFT JOIN ms fm_agg_fid ON fm_agg_fid.family_join_id = CAST(f.FAMILY_ID AS CHAR)
+		LEFT JOIN ms fm_agg_ext ON fm_agg_ext.family_join_id = CAST(COALESCE(f.EXTERNAL_FAMILY_ID, f.FAMILY_ID) AS CHAR)
 		LEFT JOIN district_master dm ON dm.pklDistrictId = f.DISTRICT_ID
 		LEFT JOIN taluka_master tm ON tm.pklTalukaId = f.TALUKA_ID
 		LEFT JOIN village_master vm ON vm.pklVillageId = f.VILLAGE_ID
 		ORDER BY f.FAMILY_ID
-	`, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr, popStatsSQL, popStatsSQL, aadhaarCoverageSQL, casteCertificateCoverageSQL)
+	`, popStatsSQL, latCol, lngCol, sanitationExpr, lightingExpr, rationExpr, headNameExpr, bplExpr, incomeExpr)
 }
 
 func (h *HouseHandler) PreloadHouseCache() error {
