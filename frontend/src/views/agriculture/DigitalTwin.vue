@@ -1,6 +1,8 @@
 <template>
   <div class="twin-page">
-    <div class="cesium-wrap" ref="cesiumContainer">
+    <div class="cesium-wrap" ref="cesiumContainer"
+         @mousemove="onMapMouseMove"
+         @mouseleave="hoveredHouse = null">
       <!-- MAP-ONLY FULLSCREEN TOGGLE -->
       <button
         class="map-fs-btn"
@@ -760,16 +762,14 @@
 
       </div>
 
-      <!-- HOVER TOOLTIP — lives INSIDE .cesium-wrap so position:absolute coordinates
-           align 1-to-1 with Cesium's endPosition (canvas-relative), regardless of
-           sidebar width or topbar height. -->
-      <!-- translate(-50%, calc(-100% - 14px)):
-           -50%           → centre card on cursor X
-           calc(-100%-14) → float card 14px above mouseY so card body never
-                            covers the building; arrow bridges that 14px gap -->
+
+    </div>
+
+    <!-- HOVER TOOLTIP — teleported to <body> so position:fixed coords are pure
+         viewport-relative with no parent transform / overflow interference. -->
+    <Teleport to="body">
       <div v-if="hoveredHouse" class="hover-card"
-           :style="{ left: mouseX + 'px', top: mouseY + 'px', transform: 'translate(-50%, calc(-100% - 14px))' }">
-        <!-- Header: name + condition badge -->
+           :style="{ left: mouseX + 'px', top: mouseY + 'px' }">
         <div class="hc-head">
           <div class="hc-name">{{ hoveredHouse.headName || 'Household #' + hoveredHouse.familyId }}</div>
           <span class="hc-badge" :style="{
@@ -779,8 +779,6 @@
           }">{{ getConditionLabel(hoveredHouse) }}</span>
         </div>
         <div class="hc-loc">{{ hoveredHouse.villageName || '—' }}{{ hoveredHouse.talukaName ? ' · ' + hoveredHouse.talukaName : '' }}</div>
-
-        <!-- Status grid: 4 key indicators with color-coded dot -->
         <div class="hc-grid">
           <div class="hc-cell">
             <span class="hc-dot" :style="{ background: isRainFed(hoveredHouse) ? '#ef4444' : '#16a34a' }"></span>
@@ -788,40 +786,28 @@
             <span class="hc-cv">{{ isRainFed(hoveredHouse) ? 'Rain-fed' : 'Irrigated' }}</span>
           </div>
           <div class="hc-cell">
-            <span class="hc-dot" :style="{
-              background: normalizeRationCardValue(hoveredHouse) ? '#16a34a' : '#94a3b8'
-            }"></span>
+            <span class="hc-dot" :style="{ background: normalizeRationCardValue(hoveredHouse) ? '#16a34a' : '#94a3b8' }"></span>
             <span class="hc-ck">Ration</span>
             <span class="hc-cv">{{ hoveredHouse.rationCard || '—' }}</span>
           </div>
           <div class="hc-cell">
-            <span class="hc-dot" :style="{
-              background: parseFloat(hoveredHouse.totalLand) > 0 ? '#16a34a' : '#ef4444'
-            }"></span>
+            <span class="hc-dot" :style="{ background: parseFloat(hoveredHouse.totalLand) > 0 ? '#16a34a' : '#ef4444' }"></span>
             <span class="hc-ck">Land</span>
             <span class="hc-cv">{{ parseFloat(hoveredHouse.totalLand) > 0 ? (hoveredHouse.totalLand + ' ac') : 'None' }}</span>
           </div>
           <div class="hc-cell">
-            <span class="hc-dot" :style="{
-              background: hasElectricityConnection(hoveredHouse) ? '#16a34a' : '#f59e0b'
-            }"></span>
+            <span class="hc-dot" :style="{ background: hasElectricityConnection(hoveredHouse) ? '#16a34a' : '#f59e0b' }"></span>
             <span class="hc-ck">Power</span>
             <span class="hc-cv">{{ hasElectricityConnection(hoveredHouse) ? 'Yes' : 'No' }}</span>
           </div>
         </div>
-
-        <!-- Crops row -->
         <div class="hc-crops" v-if="hoveredHouse.kharif || hoveredHouse.rabi">
           <span class="hc-ck">Crops</span>
-          <span class="hc-cv">
-            {{ [hoveredHouse.kharif, hoveredHouse.rabi].filter(Boolean).join(' · ') || '—' }}
-          </span>
+          <span class="hc-cv">{{ [hoveredHouse.kharif, hoveredHouse.rabi].filter(Boolean).join(' · ') || '—' }}</span>
         </div>
-
         <div class="hc-hint">Click for full details</div>
       </div>
-
-    </div>
+    </Teleport>
 
     <!-- CLUSTER SOLUTION PANEL -->
     <transition name="slide">
@@ -961,6 +947,16 @@ const selectedHouse       = ref(null)
 const hoveredHouse        = ref(null)
 const mouseX              = ref(0)
 const mouseY              = ref(0)
+
+function onMapMouseMove(e) {
+  mouseX.value = e.clientX
+  mouseY.value = e.clientY
+  if (!viewer || viewer.isDestroyed()) return
+  const rect = cesiumContainer.value.getBoundingClientRect()
+  const picked = viewer.scene.pick(new Cesium.Cartesian2(e.clientX - rect.left, e.clientY - rect.top))
+  hoveredHouse.value = resolvePickedHouse(picked)
+}
+
 const selectedView        = ref('')
 const hasUserSelectedView = ref(false)
 const colorMode           = ref(null)
@@ -1116,6 +1112,21 @@ let buildingPanTimer = null       // debounce handle for viewport-pan rebuilds w
 const jitterCache = new Map()           // familyId → {lat, lng}  populated during chunked build
 const entityMap  = new Map()            // entityId → house  (building boxes + cluster entities)
 const ptPrimMap  = new Map()            // familyId → PointPrimitive  (fast primitive lookup)
+
+function resolvePickedHouse(picked) {
+  if (!Cesium.defined(picked)) return null
+  if (picked.primitive instanceof Cesium.Billboard) {
+    const payload = picked.id
+    if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
+  }
+  if (picked.primitive instanceof Cesium.PointPrimitive) {
+    const payload = picked.id
+    if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
+    return payload ?? null
+  }
+  if (picked.id) return entityMap.get(picked.id.id) ?? null
+  return null
+}
 const buildingIds = new Set()           // 3D box entity IDs
 // Enrichment cache: stores full house detail (including member stats) for houses
 // previously fetched via /house/:id or /houses/batch-members.
@@ -5259,23 +5270,7 @@ onMounted(async () => {
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
     })
 
-    // ── Resolve a scene.pick() result to a house object ─────────────────────────
-    // PointPrimitiveCollection: picked.primitive is a PointPrimitive with .id = house
-    // Entity API (buildings, clusters):  picked.id is the Entity object, .id.id is UUID
-    function resolvePickedHouse(picked) {
-      if (!Cesium.defined(picked)) return null
-      if (picked.primitive instanceof Cesium.Billboard) {
-        const payload = picked.id
-        if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
-      }
-      if (picked.primitive instanceof Cesium.PointPrimitive) {
-        const payload = picked.id
-        if (payload && typeof payload === 'object' && payload.kind === 'cluster') return null
-        return payload ?? null
-      }
-      if (picked.id) return entityMap.get(picked.id.id) ?? null
-      return null
-    }
+    // resolvePickedHouse is defined at module scope (see below onMounted)
 
     function getStrictZoomInHeight(calculatedAltitude) {
       const currentHeight = Number(viewer?.camera?.positionCartographic?.height ?? 0)
@@ -5483,13 +5478,6 @@ onMounted(async () => {
       // Keep double-click inert to avoid accidental zoom bounce.
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
-    // Hover → tooltip (raw canvas coordinates; template handles offset via CSS transform)
-    viewer.screenSpaceEventHandler.setInputAction((e) => {
-      mouseX.value = e.endPosition.x
-      mouseY.value = e.endPosition.y
-      const picked = viewer.scene.pick(e.endPosition)
-      hoveredHouse.value = resolvePickedHouse(picked)
-    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
     setupZoomListener()
 
@@ -6388,48 +6376,19 @@ onUnmounted(() => {
    HOVER TOOLTIP (rich data popup)
 ═══════════════════════════════════════════════ */
 .hover-card {
-  position: absolute; z-index: 300;
+  position: fixed;
+  z-index: 99999;
   background: #ffffff;
   border: 1.5px solid #d1d5db;
-  /* Flat bottom-centre so the arrow sits flush against the card edge */
-  border-radius: 12px 12px 12px 12px;
+  border-radius: 12px;
   padding: 0.65rem 0.8rem 0.55rem;
   box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.10);
   pointer-events: none;
   min-width: 210px;
   max-width: 260px;
-  /* Inline style applies: translate(-50%, calc(-100% - 14px))
-     Card floats 14px above mouseY; arrow bridges that gap. */
+  transform: translate(16px, calc(-100% - 16px));
 }
 
-/* ── Arrow (border layer) ────────────────────────────────────────────────
-   Card bottom is 14px above mouseY.
-   ::before is 15px tall, bottom at -15px → tip lands at mouseY + 1px (just
-   past the building top, hidden behind the building model so no visible gap).
-   Starts 1px inside the card (bottom: -15 + 15 = 0) covering the border seam.
-──────────────────────────────────────────────────────────────────────── */
-.hover-card::before {
-  content: '';
-  position: absolute;
-  bottom: -15px; left: 50%;
-  transform: translateX(-50%);
-  border: 15px solid transparent;
-  border-top-color: #d1d5db;
-  border-bottom: none;
-}
-/* ── Arrow (white fill layer) ───────────────────────────────────────────
-   Slightly smaller than ::before so the border colour shows as a 1px rim.
-   tip lands at mouseY - 1px (1px clear of building — prevents z-fighting).
-──────────────────────────────────────────────────────────────────────── */
-.hover-card::after {
-  content: '';
-  position: absolute;
-  bottom: -13px; left: 50%;
-  transform: translateX(-50%);
-  border: 13px solid transparent;
-  border-top-color: #ffffff;
-  border-bottom: none;
-}
 /* Header */
 .hc-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.16rem; }
 .hc-name  { font-size: 0.82rem; font-weight: 700; color: #111827; line-height: 1.25; flex: 1; }
