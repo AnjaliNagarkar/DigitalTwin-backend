@@ -272,6 +272,16 @@ export function getDistrictCentroids(params = {}) {
   const qs = toQueryString(params)
   return fetchJSON(qs ? `/map/district-centroids?${qs}` : '/map/district-centroids', TIMEOUT_DATA)
 }
+
+export function getTalukaCentroids(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/taluka-centroids?${qs}` : '/map/taluka-centroids', TIMEOUT_DATA)
+}
+
+export function getVillageCentroids(params = {}) {
+  const qs = toQueryString(params)
+  return fetchJSON(qs ? `/map/village-centroids?${qs}` : '/map/village-centroids', TIMEOUT_DATA)
+}
 /**
  * Fetch farm advisory for a household's identified problems.
  * @param {string[]} problems  - array of problem keys e.g. ['noIrrigation','singleSeason']

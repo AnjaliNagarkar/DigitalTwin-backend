@@ -38,6 +38,8 @@ func main() {
 	locationHandler := &handlers.LocationHandler{DB: conn}
 	districtSurveyCountHandler := &handlers.DistrictSurveyCountHandler{DB: conn}
 	districtCentroidsHandler := &handlers.DistrictCentroidsHandler{DB: conn}
+	talukaCentroidsHandler := &handlers.TalukaCentroidsHandler{DB: conn}
+	villageCentroidsHandler := &handlers.VillageCentroidsHandler{DB: conn}
 	pdfHandler := &handlers.PDFHandler{DB: conn, CC: cc}
 	pdfTwinHandler := &handlers.TwinPDFHandler{DB: conn, CC: cc}
 	populationHandler := &handlers.PopulationHandler{DB: conn}
@@ -123,6 +125,8 @@ func main() {
 	protected.GET("/location-options", locationHandler.GetLocationOptions)
 	protected.GET("/map/district-survey-counts", districtSurveyCountHandler.GetDistrictSurveyCounts)
 	protected.GET("/map/district-centroids", districtCentroidsHandler.GetDistrictCentroids)
+	protected.GET("/map/taluka-centroids", talukaCentroidsHandler.GetTalukaCentroids)
+	protected.GET("/map/village-centroids", villageCentroidsHandler.GetVillageCentroids)
 
 	// ── PDF report (POST — reads DB, streams PDF; no DB writes) ──────────────
 	protected.POST("/pdf/report", pdfHandler.GeneratePDF)

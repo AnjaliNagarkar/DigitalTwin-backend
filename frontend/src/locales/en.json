@@ -636,7 +636,9 @@
     "latrine": "Latrine",
     "lighting": "Lighting",
     "kharifCrop": "Kharif Crop",
-    "rabiCrop": "Rabi Crop"
+    "rabiCrop": "Rabi Crop",
+    "geoNavBack": "Back",
+    "geoBreadcrumbMaharashtra": "Maharashtra"
   },
 
   "twin": {

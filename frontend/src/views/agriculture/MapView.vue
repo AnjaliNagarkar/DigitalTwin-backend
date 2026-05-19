@@ -11,6 +11,17 @@
             {{ houses.length.toLocaleString() }} {{ t('map.households') }}
           </template>
         </p>
+        <div v-if="showGeoNavBar" class="geo-nav-bar">
+          <button
+            type="button"
+            class="geo-nav-back"
+            :disabled="!canGeoNavBack"
+            @click="handleGeoNavBack"
+          >
+            {{ t('mapView.geoNavBack') }}
+          </button>
+          <div class="geo-nav-breadcrumb" aria-live="polite">{{ geoNavBreadcrumb }}</div>
+        </div>
       </div>
       <div class="map-controls">
         <!-- View mode toggle -->
@@ -854,7 +865,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions } from '../../api/index.js'
+import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions, getTalukaCentroids, getVillageCentroids } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
 
@@ -889,6 +900,9 @@ const villageOptions = ref([])
 const selectedDistrict = ref(null)
 const selectedTaluka = ref(null)
 const selectedVillage = ref(null)
+/** GIS drill-down: district → taluka → village → household (Apply can jump to household). */
+const navigationLevel = ref('district')
+const zoomStack = ref([])
 const showAnomalies        = ref(false)
 const anomalyDrawerOpen    = ref(false)   // panel visible/hidden
 const alpCollapsed         = ref(false)   // panel body collapsed (header-only mode)
@@ -1038,6 +1052,15 @@ function selectColorMode(mode) {
 const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || t('map.allDistricts'))
 const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || t('map.allTalukas'))
 const selectedVillageLabel = computed(() => selectedVillage.value?.label || t('map.allVillages'))
+const showGeoNavBar = computed(() => navigationLevel.value !== 'district' || zoomStack.value.length > 0)
+const canGeoNavBack = computed(() => zoomStack.value.length > 0)
+const geoNavBreadcrumb = computed(() => {
+  const parts = [t('mapView.geoBreadcrumbMaharashtra')]
+  if (selectedDistrict.value?.label) parts.push(selectedDistrict.value.label)
+  if (selectedTaluka.value?.label) parts.push(selectedTaluka.value.label)
+  if (selectedVillage.value?.label) parts.push(selectedVillage.value.label)
+  return parts.join(' › ')
+})
 // Always derive label from the reactive computed map — auto-updates on locale change
 const selectedColorModeLabel = computed(() => colorMode.value ? (COLOR_MODE_LABELS_MAP.value[colorMode.value] || '') : '')
 const isPopulationMode = computed(() => populationFilters.includes(colorMode.value))
@@ -1687,7 +1710,10 @@ function logApplyProfileSummary(p, t8) {
   console.log('Rendering time:', renderingMs, 'ms')
   console.log('Total:', t8 - p.t0, 'ms')
 }
-let districtCentroidMarkerLayer = null  // L.layerGroup for district centroid markers
+let districtLayer = null
+let talukaLayer = null
+let villageLayer = null
+let householdLayer = null
 const MARKER_RENDER_CHUNK_SIZE = 100
 let markerRenderToken = 0
 let markerRenderFrame = null
@@ -1702,16 +1728,65 @@ function buildHouseRenderSignature(rows = []) {
   return rows.map(h => `${h.familyId ?? h.family_id}|${h.lat ?? h.latitude}|${h.lng ?? h.longitude}`).join(';')
 }
 
-function clearDistrictCentroids() {
-  if (map && districtCentroidMarkerLayer) {
-    map.removeLayer(districtCentroidMarkerLayer)
+function clearDistrictLayer() {
+  if (map && districtLayer) {
+    map.removeLayer(districtLayer)
   }
-  districtCentroidMarkerLayer = null
+  districtLayer = null
+}
+
+function clearTalukaLayer() {
+  if (map && talukaLayer) {
+    map.removeLayer(talukaLayer)
+  }
+  talukaLayer = null
+}
+
+function clearVillageLayer() {
+  if (map && villageLayer) {
+    map.removeLayer(villageLayer)
+  }
+  villageLayer = null
+}
+
+function clearHouseholdLayer() {
+  if (map && householdLayer) {
+    map.removeLayer(householdLayer)
+  }
+  householdLayer = null
+}
+
+function clearAllCentroidLayers() {
+  clearDistrictLayer()
+  clearTalukaLayer()
+  clearVillageLayer()
+}
+
+function clearDrillZoomHistory() {
+  zoomStack.value = []
+}
+
+function pushZoomStack() {
+  if (!map) return
+  const c = map.getCenter()
+  zoomStack.value.push({
+    center: { lat: c.lat, lng: c.lng },
+    zoom: map.getZoom(),
+    level: navigationLevel.value,
+  })
+}
+
+function districtOptionForId(districtId) {
+  const idStr = String(districtId ?? '')
+  const rows = districtOptions.value || []
+  const found = rows.find(r => r.value != null && String(r.value) === idStr)
+  if (found) return found
+  return { label: idStr ? `${t('map.district')} ${idStr}` : '', value: districtId }
 }
 
 function renderDistrictCentroids(centroidRows) {
-  clearDistrictCentroids()
-  districtCentroidMarkerLayer = L.layerGroup()
+  clearDistrictLayer()
+  districtLayer = L.layerGroup()
   console.log('District count:', Array.isArray(centroidRows) ? centroidRows.length : 0)
 
   if (Array.isArray(centroidRows) && centroidRows.length < 30) {
@@ -1719,17 +1794,16 @@ function renderDistrictCentroids(centroidRows) {
   }
 
   centroidRows.forEach((d) => {
-    if (!d.lat || !d.lng) {
+    const lat = Number(d.lat)
+    const lng = Number(d.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return
     }
-
-    const lat = d.lat + (Math.random() * 0.02)
-    const lng = d.lng + (Math.random() * 0.02)
 
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'district-marker',
-        html: `<div class="marker-count">${d.count}</div>`,
+        html: `<div class="district-marker-count">${d.count}</div>`,
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       }),
@@ -1742,15 +1816,228 @@ function renderDistrictCentroids(centroidRows) {
       offset: [0, -10],
     })
 
-    marker.bindPopup(`District ID: ${d.district_id}<br/>Count: ${d.count}`)
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e)
+      handleDistrictCentroidClick(d, lat, lng)
+    })
 
-    marker.addTo(districtCentroidMarkerLayer)
+    marker.addTo(districtLayer)
   })
 
-  if (districtCentroidMarkerLayer.getLayers().length > 0) {
-    districtCentroidMarkerLayer.addTo(map)
+  if (districtLayer.getLayers().length > 0) {
+    districtLayer.addTo(map)
   } else {
-    districtCentroidMarkerLayer = null
+    districtLayer = null
+  }
+}
+
+async function handleDistrictCentroidClick(d, lat, lng) {
+  if (!map) return
+  pushZoomStack()
+  const opt = districtOptionForId(d.district_id)
+  selectedDistrict.value = opt.value != null && opt.value !== ''
+    ? { label: String(opt.label ?? ''), value: opt.value }
+    : null
+  navigationLevel.value = 'taluka'
+  clearDistrictLayer()
+  await loadTalukaOptionsByDistrict(geoFilterParam(selectedDistrict.value))
+  await refreshTalukaCentroids()
+  map.flyTo([lat, lng], 9, { duration: 0.85 })
+}
+
+function renderTalukaCentroids(rows) {
+  clearTalukaLayer()
+  talukaLayer = L.layerGroup()
+  if (!Array.isArray(rows) || !rows.length || !map) {
+    talukaLayer = null
+    return
+  }
+
+  rows.forEach((row) => {
+    const lat = Number(row.lat)
+    const lng = Number(row.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'district-marker',
+        html: `<div class="taluka-marker-count">${row.count}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      }),
+    })
+    const name = row.taluka_name || row.talukaName || ''
+    marker.bindTooltip(
+      `${name ? `${name} · ` : ''}ID: ${row.taluka_id} | Count: ${row.count}`,
+      { permanent: false, sticky: true, direction: 'top', offset: [0, -10] },
+    )
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e)
+      handleTalukaCentroidClick(row, lat, lng)
+    })
+    marker.addTo(talukaLayer)
+  })
+
+  talukaLayer.addTo(map)
+}
+
+async function handleTalukaCentroidClick(row, lat, lng) {
+  if (!map) return
+  pushZoomStack()
+  selectedTaluka.value = {
+    label: String(row.taluka_name || row.talukaName || ''),
+    value: row.taluka_id,
+  }
+  navigationLevel.value = 'village'
+  clearTalukaLayer()
+  await loadVillageOptionsByTaluka(
+    geoFilterParam(selectedDistrict.value),
+    geoFilterParam(selectedTaluka.value),
+  )
+  await refreshVillageCentroids()
+  map.flyTo([lat, lng], 11, { duration: 0.85 })
+}
+
+function renderVillageCentroids(rows) {
+  clearVillageLayer()
+  villageLayer = L.layerGroup()
+  if (!Array.isArray(rows) || !rows.length || !map) {
+    villageLayer = null
+    return
+  }
+
+  rows.forEach((row) => {
+    const lat = Number(row.lat)
+    const lng = Number(row.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'district-marker',
+        html: `<div class="village-marker-count">${row.count}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      }),
+    })
+    const name = row.village_name || row.villageName || ''
+    marker.bindTooltip(
+      `${name ? `${name} · ` : ''}ID: ${row.village_id} | Count: ${row.count}`,
+      { permanent: false, sticky: true, direction: 'top', offset: [0, -10] },
+    )
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e)
+      handleVillageCentroidClick(row, lat, lng)
+    })
+    marker.addTo(villageLayer)
+  })
+
+  villageLayer.addTo(map)
+}
+
+async function handleVillageCentroidClick(row, lat, lng) {
+  if (!map) return
+  pushZoomStack()
+  selectedVillage.value = {
+    label: String(row.village_name || row.villageName || ''),
+    value: row.village_id,
+  }
+  navigationLevel.value = 'household'
+  clearVillageLayer()
+  clearRetryTimer()
+  const requestToken = ++activeHouseLoadToken
+  loading.value = true
+  houses.value = []
+  selectedHouse.value = null
+  selectedCluster.value = null
+  clearClusterSelection()
+  if (clusterGroup) {
+    clusterGroup.remove()
+    clusterGroup = null
+  }
+  clearMarkers()
+  lastRenderedHouseSignature = ''
+  fitAfterLoad = false
+  await loadLiveHouseData(requestToken)
+  map.flyTo([lat, lng], 14, { duration: 0.85 })
+}
+
+async function refreshTalukaCentroids() {
+  if (!map) return
+  const did = geoFilterParam(selectedDistrict.value)
+  if (!did) return
+  try {
+    const rows = await getTalukaCentroids({ district_id: did })
+    renderTalukaCentroids(Array.isArray(rows) ? rows : [])
+  } catch (error) {
+    console.warn('Taluka centroids unavailable:', error?.message || error)
+  }
+}
+
+async function refreshVillageCentroids() {
+  if (!map) return
+  const did = geoFilterParam(selectedDistrict.value)
+  const tid = geoFilterParam(selectedTaluka.value)
+  if (!did || !tid) return
+  try {
+    const rows = await getVillageCentroids({ district_id: did, taluka_id: tid })
+    renderVillageCentroids(Array.isArray(rows) ? rows : [])
+  } catch (error) {
+    console.warn('Village centroids unavailable:', error?.message || error)
+  }
+}
+
+async function handleGeoNavBack() {
+  if (!map || zoomStack.value.length === 0) return
+  const prev = zoomStack.value.pop()
+  if (!prev || !prev.center) return
+
+  if (clusterGroup) {
+    clusterGroup.remove()
+    clusterGroup = null
+  }
+  clearClusterSelection()
+  clearMarkers()
+  houses.value = []
+  selectedHouse.value = null
+  lastRenderedHouseSignature = ''
+  loading.value = false
+
+  const { lat, lng } = prev.center
+  map.flyTo([lat, lng], prev.zoom, { duration: 0.75 })
+
+  if (prev.level === 'district') {
+    navigationLevel.value = 'district'
+    selectedDistrict.value = null
+    selectedTaluka.value = null
+    selectedVillage.value = null
+    talukaOptions.value = []
+    villageOptions.value = []
+    clearAllCentroidLayers()
+    await refreshDistrictCentroids()
+    return
+  }
+
+  if (prev.level === 'taluka') {
+    navigationLevel.value = 'taluka'
+    selectedTaluka.value = null
+    selectedVillage.value = null
+    villageOptions.value = []
+    clearTalukaLayer()
+    clearVillageLayer()
+    await loadTalukaOptionsByDistrict(geoFilterParam(selectedDistrict.value))
+    await refreshTalukaCentroids()
+    return
+  }
+
+  if (prev.level === 'village') {
+    navigationLevel.value = 'village'
+    selectedVillage.value = null
+    clearVillageLayer()
+    await loadVillageOptionsByTaluka(
+      geoFilterParam(selectedDistrict.value),
+      geoFilterParam(selectedTaluka.value),
+    )
+    await refreshVillageCentroids()
   }
 }
 
@@ -1824,9 +2111,19 @@ function clearMarkers() {
     markerRenderFrame = null
   }
   markerRefs.forEach(({ marker }) => {
-    if (map && map.hasLayer(marker)) map.removeLayer(marker)
+    if (!map) return
+    try {
+      if (householdLayer && householdLayer.hasLayer(marker)) {
+        householdLayer.removeLayer(marker)
+      } else if (map.hasLayer(marker)) {
+        map.removeLayer(marker)
+      }
+    } catch (_) {
+      /* ignore */
+    }
   })
   markerRefs.length = 0
+  clearHouseholdLayer()
 }
 
 async function loadDistrictOptionsOnce() {
@@ -2001,6 +2298,7 @@ function applyFilters(autoZoomToResults = true) {
   console.log('APPLY CLICKED')
 
   hasAppliedFilters.value = true
+  clearDrillZoomHistory()
 
   clearRetryTimer()
   const requestToken = ++activeHouseLoadToken
@@ -2017,6 +2315,7 @@ function applyFilters(autoZoomToResults = true) {
   const district_id = geoFilterParam(selectedDistrict.value)
   if (!district_id) {
     console.log('No district selected, skipping API')
+    navigationLevel.value = 'district'
     loading.value = false
     fitAfterLoad = false
     houses.value = []
@@ -2025,12 +2324,14 @@ function applyFilters(autoZoomToResults = true) {
     clearClusterSelection()
     if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
     clearMarkers()
+    clearAllCentroidLayers()
     refreshDistrictCentroids()
     console.log('AFTER APPLY:', houses.value.length)
     return
   }
 
   if (!map) {
+    navigationLevel.value = 'household'
     loading.value = false
     houses.value = []
     selectedHouse.value = null
@@ -2041,6 +2342,8 @@ function applyFilters(autoZoomToResults = true) {
     console.log('AFTER APPLY:', houses.value.length)
     return
   }
+
+  navigationLevel.value = 'household'
 
   // House fetch path: set loading before clearing houses so empty-state never flashes
   loading.value = true
@@ -2058,7 +2361,7 @@ function applyFilters(autoZoomToResults = true) {
     geoFilterParam(selectedTaluka.value) ||
     geoFilterParam(selectedVillage.value)
   ) {
-    clearDistrictCentroids()
+    clearAllCentroidLayers()
   } else {
     refreshDistrictCentroids()
   }
@@ -2069,6 +2372,8 @@ async function resetFilters() {
   clearRetryTimer()
   ++activeHouseLoadToken
   hasAppliedFilters.value = false
+  navigationLevel.value = 'district'
+  clearDrillZoomHistory()
   selectedDistrict.value = null
   selectedTaluka.value = null
   selectedVillage.value = null
@@ -2081,6 +2386,7 @@ async function resetFilters() {
   clearMarkers()
   loading.value = false
   if (map) {
+    clearAllCentroidLayers()
     refreshDistrictCentroids()
     fitToMaharashtra()
   }
@@ -2743,12 +3049,20 @@ function drawClusters(clusters) {
 function showPointLayer() {
   if (clusterGroup) { clusterGroup.remove(); clusterGroup = null }
   clearClusterSelection()
-  // Markers are already on the map from plotMarkers; just need to show them
-  markerRefs.forEach(({ marker }) => marker.addTo(map))
+  const target = householdLayer || map
+  markerRefs.forEach(({ marker }) => {
+    if (target && !target.hasLayer(marker)) marker.addTo(target)
+  })
 }
 
 function hidePointLayer() {
-  markerRefs.forEach(({ marker }) => map.removeLayer(marker))
+  markerRefs.forEach(({ marker }) => {
+    if (householdLayer && householdLayer.hasLayer(marker)) {
+      householdLayer.removeLayer(marker)
+    } else if (map && map.hasLayer(marker)) {
+      map.removeLayer(marker)
+    }
+  })
 }
 
 async function setViewMode(mode) {
@@ -3122,10 +3436,11 @@ async function addMaharashtraHighlight(mapInstance) {
 
 function addHouseMarker(house) {
   const color  = getMarkerColor(house)
+  const target = householdLayer || map
   const marker = L.circleMarker([house.latitude, house.longitude], {
     radius: 5, fillColor: color, color: '#fff',
     weight: 1.5, opacity: 1, fillOpacity: 0.88,
-  }).addTo(map)
+  }).addTo(target)
   markerRefs.push({ marker, house })
 
   marker.on('click', (e) => {
@@ -3156,6 +3471,8 @@ function addHouseMarker(house) {
 function getHouseTooltip(house) {
   const name = house.headName || ('Household #' + house.familyId)
   const loc  = [house.villageName, house.talukaName].filter(Boolean).join(' · ')
+  const id   = house.familyId ?? house.family_id ?? ''
+  const location = loc
   const mode = colorMode.value
 
   if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) {
@@ -3326,6 +3643,9 @@ function getHouseTooltip(house) {
 function plotMarkers(data, profileRequestToken = null) {
   console.time('plotMarkers')
   clearMarkers()
+  if (map && data.length > 0) {
+    householdLayer = L.layerGroup().addTo(map)
+  }
   const renderToken = markerRenderToken
   let index = 0
 
@@ -3516,7 +3836,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearRetryTimer()
   clearAnomalyLayer()
-  clearDistrictCentroids()
+  clearAllCentroidLayers()
   clearMarkers()
   lastRenderedHouseSignature = ''
   window.removeEventListener('resize', handleMapResize)
@@ -3575,7 +3895,36 @@ watch(analyticsPanelOpen, async () => {
 }
 
 .page-title { font-family: var(--font-display); font-size: 1.45rem; color: var(--text-primary); font-weight: 400; letter-spacing: -0.01em; }
+.map-title-area { display: flex; flex-direction: column; align-items: flex-start; }
 .page-subtitle { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.2rem; display: flex; align-items: center; gap: 0.5rem; }
+
+.geo-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+  max-width: 52vw;
+}
+.geo-nav-back {
+  font-size: 0.72rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.geo-nav-back:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.geo-nav-breadcrumb {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
 
 .map-controls { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
 .map-control-group { display: flex; align-items: center; gap: 0.45rem; }
@@ -4593,8 +4942,9 @@ watch(analyticsPanelOpen, async () => {
 	border: 0;
 }
 
-.marker-count {
-  background: #ea580c;
+.district-marker-count,
+.taluka-marker-count,
+.village-marker-count {
   color: #ffffff;
   border-radius: 50%;
   width: 32px;
@@ -4604,9 +4954,23 @@ watch(analyticsPanelOpen, async () => {
   justify-content: center;
   font-size: 11px;
   font-weight: 700;
-  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.42);
   border: 2px solid rgba(255, 255, 255, 0.95);
   font-variant-numeric: tabular-nums;
+}
+
+.district-marker-count {
+  background: #ea580c;
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.42);
+}
+
+.taluka-marker-count {
+  background: #2563eb;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.42);
+}
+
+.village-marker-count {
+  background: #16a34a;
+  box-shadow: 0 6px 18px rgba(22, 163, 74, 0.42);
 }
 
 .district-survey-popup {
