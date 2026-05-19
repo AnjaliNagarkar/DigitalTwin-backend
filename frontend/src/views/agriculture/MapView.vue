@@ -3321,7 +3321,6 @@ function getHouseTooltip(house) {
       ID ${id}<br/>
       ${location}
     `
-  }, { className: 'map-tooltip', direction: 'top', offset: L.point(0, -14), sticky: true, permanent: false })
 }
 
 function plotMarkers(data, profileRequestToken = null) {
