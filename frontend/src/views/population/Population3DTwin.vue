@@ -10,6 +10,7 @@
       >
         {{ isTwinFullscreen ? '⤡' : '⤢' }}
       </button>
+
     </div>
 
     <div class="topbar">
@@ -316,9 +317,6 @@ const insights = ref(null)
 const loadingLiveData = ref(true)
 const selectedHouse = ref(null)
 const previouslySelectedHouseNo = ref(null)
-const hoveredHouse = ref(null)
-const mouseX = ref(0)
-const mouseY = ref(0)
 const pdfLoading = ref(false)
 const tileStyle = ref('street')
 const sidebarCollapsed = ref(false)
@@ -358,6 +356,7 @@ const clusterLabels = []
 function handleTwinFullscreenChange() {
   isTwinFullscreen.value = !!document.fullscreenElement
 }
+
 
 const THRESHOLD_BUILDINGS = 3500
 const MIN_PIXEL_DISTANCE = 40
@@ -1497,7 +1496,7 @@ function updateHouseSelectionState() {
           if (entity.box.material && isSelected) {
             entity.box.material = Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
             entity.box.outlineColor = Cesium.Color.fromCssColorString('#f59e0b')
-            entity.box.outlineWidth = 2
+            entity.box.outlineWidth = 4
           } else if (entity.box.material && !isSelected) {
             // Restore original color based on data
             entity.box.material = cesiumColor(house).withAlpha(1.0)
@@ -1510,10 +1509,10 @@ function updateHouseSelectionState() {
         if (entity.point) {
           // Update point entities (far zoom)
           if (isSelected) {
-            entity.point.pixelSize = 13
+            entity.point.pixelSize = 18
             entity.point.color = Cesium.Color.fromCssColorString('#facc15').withAlpha(1.0)
             entity.point.outlineColor = Cesium.Color.WHITE
-            entity.point.outlineWidth = 2
+            entity.point.outlineWidth = 4
           } else {
             entity.point.pixelSize = 8
             entity.point.color = cesiumColor(house).withAlpha(1.0)
@@ -1701,7 +1700,7 @@ function buildEntities() {
         material: wallColor,
         outline: true,
         outlineColor: wallOutline,
-        outlineWidth: isSelected ? 2 : 1.5,
+        outlineWidth: isSelected ? 4 : 1.5,
       },
     })
     baseEnt.houseData = house
@@ -1717,7 +1716,7 @@ function buildEntities() {
         outlineColor: isSelected
           ? Cesium.Color.WHITE
           : roofColor.darken(0.25, new Cesium.Color()),
-        outlineWidth: isSelected ? 2 : 1.5,
+        outlineWidth: isSelected ? 4 : 1.5,
       },
     })
     roofEnt.houseData = house
@@ -2045,15 +2044,6 @@ onMounted(async () => {
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
-  viewer.screenSpaceEventHandler.setInputAction((event) => {
-    const picked = viewer.scene.pick(event.endPosition)
-    const house = picked?.id ? entityMap.get(picked.id.id || picked.id) : null
-    hoveredHouse.value = house || null
-    if (house) {
-      mouseX.value = event.endPosition.x + 18
-      mouseY.value = event.endPosition.y + 16
-    }
-  }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
   viewer.screenSpaceEventHandler.setInputAction((event) => {
     const picked = viewer.scene.pick(event.position)
@@ -2696,21 +2686,6 @@ onUnmounted(() => {
 /* ═══════════════════════════════════════════════
    HOVER CARD
 ═══════════════════════════════════════════════ */
-.hover-card {
-  position: fixed; z-index: 300;
-  background: #ffffff;
-  border: 1.5px solid #d1d5db;
-  border-radius: var(--radius);
-  padding: 0.6rem 0.85rem;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08);
-  pointer-events: none;
-  min-width: 170px;
-}
-.hover-name { font-size: 0.82rem; font-weight: 700; color: #111827; margin-bottom: 0.35rem; }
-.hover-row  { display: flex; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.12rem; }
-.hr-key     { font-size: 0.66rem; color: #6b7280; }
-.hr-val     { font-size: 0.66rem; color: #111827; font-weight: 600; }
-.hover-hint { font-size: 0.61rem; color: #9ca3af; margin-top: 0.38rem; font-style: italic; border-top: 1px solid #e5e7eb; padding-top: 0.32rem; }
 
 /* ═══════════════════════════════════════════════
    DETAIL PANEL (right slide-in)

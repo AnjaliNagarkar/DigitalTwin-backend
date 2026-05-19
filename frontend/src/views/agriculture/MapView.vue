@@ -3148,36 +3148,53 @@ function addHouseMarker(house) {
 
   // Tooltip: content adapts to the active View By mode.
   // Anomaly warning is always highest priority; generic identity shown when no mode selected.
-  marker.bindTooltip(() => {
-    const name = house.headName || 'Household'
-    const id   = house.familyId || house.FAMILY_ID || house.EXTERNAL_FAMILY_ID || '—'
-    const village = house.villageName || ''
-    const taluka  = house.talukaName  || ''
-    const location = [village, taluka].filter(Boolean).join(', ') || '—'
+  marker.bindTooltip(() => getHouseTooltip(house), {
+    sticky: true, className: 'map-tooltip', direction: 'top', offset: [0, -6],
+  })
+}
 
-    // 1. GPS anomaly warning — always shown when anomaly mode active and marker is flagged
-    const isAnomaly = showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)
-    if (isAnomaly) {
-      const enriched = anomalies.value.find(a => a.familyId === house.familyId)
-      const km = enriched?._distanceKm ?? '?'
-      return `
-        <strong>${name}</strong><br/>
-        <span style="color:#ef4444;font-weight:600;">⚠️ Village Mismatch</span><br/>
-        <span style="color:#ef4444;font-weight:700;">${km} km</span> <span style="color:#64748b;">from registered village</span><br/>
-        <span style="color:#94a3b8;font-size:0.7em;">Click to see details</span>
-      `
-    }
+function getHouseTooltip(house) {
+  const name = house.headName || ('Household #' + house.familyId)
+  const loc  = [house.villageName, house.talukaName].filter(Boolean).join(' · ')
+  const mode = colorMode.value
 
-    const mode = colorMode.value
+  if (showAnomalies.value && anomalyFamilyIdSet.value.has(house.familyId)) {
+    return `<strong>${name}</strong><br/>${loc || ''}<br/><span style="color:#ef4444">⚠ GPS anomaly flagged</span>`
+  }
 
-    // 2. No View By selected — show generic household identity only
-    if (!mode) {
-      return `
-        <strong>${name}</strong><br/>
-        ID ${id}<br/>
-        ${location}
-      `
-    }
+  let detail = ''
+  if (mode === 'population_density') {
+    const members = getTotalMembers(house)
+    detail = `Members: <strong>${members}</strong>`
+  } else if (mode === 'bpl_status') {
+    detail = `BPL: <strong>${getBplStatus(house) === 'yes' ? 'Yes' : 'No'}</strong>`
+  } else if (mode === 'electricity') {
+    detail = `Electricity: <strong>${hasElectricity(house) ? 'Yes' : 'No'}</strong>`
+  } else if (mode === 'toilet_access') {
+    detail = `Toilet: <strong>${hasToilet(house) ? 'Yes' : 'No'}</strong>`
+  } else if (mode === 'wastewater_management') {
+    const v = String(house?.A_SOAKPIT_MANAGING_WASTEWATER ?? '').toLowerCase().trim()
+    detail = `Wastewater mgmt: <strong>${v === 'yes' ? 'Yes' : v || 'Unknown'}</strong>`
+  } else if (mode === 'aadhaar_coverage') {
+    detail = `Aadhaar: <strong>${getAadhaarCoverageStatus(house) || 'Unknown'}</strong>`
+  } else if (mode === 'caste_certificate_coverage') {
+    detail = `Caste Cert: <strong>${getCasteCertificateCoverageStatus(house) || 'Unknown'}</strong>`
+  } else if (mode === 'divyang_presence') {
+    detail = `Divyang: <strong>${hasDivyangPresence(house) ? 'Yes' : 'No'}</strong>`
+  } else if (mode === 'employment_status' || mode === 'employment') {
+    detail = `Employment: <strong>${hasEmployment(house) ? 'Yes' : 'No'}</strong>`
+  } else if (mode === 'crops') {
+    const crops = [house.kharif, house.rabi].filter(Boolean).join(', ')
+    detail = `Crops: <strong>${crops || 'None'}</strong>`
+  } else if (mode === 'land') {
+    const acres = house.totalLand || house.AREA_AGRICULTURE_LAND_ACRES || house.area_agriculture_land_acres || 0
+    detail = `Land: <strong>${parseFloat(acres) > 0 ? acres + ' ac' : 'None'}</strong>`
+  } else if (mode === 'irrigation') {
+    const irrigation = house?.SOURCE_WATER_IRRIGATION ?? house?.waterSource
+    detail = `Irrigation: <strong>${isNoIrrigationValue(irrigation) ? 'Rain-fed' : 'Irrigated'}</strong>`
+  } else if (mode === 'housing_quality') {
+    detail = `Housing: <strong>${house.housingType || house.HOUSING_TYPE || '—'}</strong>`
+  }
 
     // 3a. BPL Status mode — show BPL category and ration card
     if (mode === 'bpl_status') {

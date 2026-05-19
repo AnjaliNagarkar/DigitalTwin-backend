@@ -493,6 +493,7 @@ function toggleDuplicateListForMarker(marker) {
 
 function closeSelectedMarker() {
   selectedMarker.value = null
+  updateMarkerHighlight()
 }
 
 function zoomToSelectedMarker() {
@@ -586,22 +587,6 @@ function getMarkerColor(house) {
   return '#2c7a7b'
 }
 
-function buildTooltipContent(house) {
-  const houseNo = escapeHtml(house.house_no || 'N/A')
-  const headName = escapeHtml(house.head_name || '')
-  const members = Number(house.total_members || 0)
-
-  if (colorMode.value === 'employment') {
-    const workingMembers = getWorkingMembers(house)
-    return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}<br/>Working Members: ${workingMembers}`
-  }
-
-  if (colorMode.value === 'bpl_status') {
-    const category = escapeHtml(getBplStatusLabel(house))
-    return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}<br/>Category: ${category}`
-  }
-  return `House No: ${houseNo}<br/>Head: ${headName}<br/>Members: ${members}`
-}
 
 function buildQueryParams() {
   const params = {}
@@ -739,15 +724,6 @@ function renderMarkers(options = {}) {
       fillOpacity: 0.9,
     })
 
-    circle.bindTooltip(buildTooltipContent(marker), {
-      sticky: true,
-      permanent: false,
-      direction: 'top',
-      offset: [0, -10],
-      opacity: 0.96,
-      className: 'map-tooltip',
-    })
-
     circle.on('click', () => {
       const firstName = String(marker.first_name_household_head || marker.FIRST_NAME_HOUSEHOLD_HEAD || '').trim()
       const lastName = String(marker.last_name_household_head || marker.LAST_NAME_HOUSEHOLD_HEAD || '').trim()
@@ -774,6 +750,7 @@ function renderMarkers(options = {}) {
 
       selectedMarker.value = markerData
       selectedCluster.value = null
+      updateMarkerHighlight()
     })
 
     circle.addTo(markerLayer)
@@ -782,6 +759,34 @@ function renderMarkers(options = {}) {
   if (fitBounds) {
     fitMapToMarkers()
   }
+}
+
+function updateMarkerHighlight() {
+  if (!markerLayer) return
+  const selected = selectedMarker.value
+
+  markerLayer.eachLayer((layer) => {
+    if (selected && layer._latlng && Math.abs(layer._latlng.lat - selected.lat) < 0.0001 && Math.abs(layer._latlng.lng - selected.lng) < 0.0001) {
+      layer.setStyle({
+        radius: 11,
+        weight: 3,
+        color: '#fbbf24',
+        opacity: 1,
+        fillOpacity: 0.95,
+      })
+      layer.bringToFront()
+    } else {
+      const baseColor = getMarkerColor(markers.value.find((m) => m.lat === layer._latlng.lat && m.lng === layer._latlng.lng))
+      layer.setStyle({
+        radius: 8,
+        weight: 2,
+        color: '#ffffff',
+        opacity: 1,
+        fillOpacity: 0.9,
+        fillColor: baseColor,
+      })
+    }
+  })
 }
 
 function fitMapToMarkers() {
@@ -853,7 +858,6 @@ function renderClusters() {
     circle.on('mouseout', () => {
       circle.setStyle({ fillOpacity: baseStyle.fillOpacity, weight: baseStyle.weight, opacity: baseStyle.opacity })
     })
-    circle.bindTooltip(`<strong>${cluster.name}</strong><br/>${cluster.count} households`, { sticky: true, permanent: false, direction: 'top', offset: [0, -10], className: 'map-tooltip' })
   })
 
   const bounds = L.latLngBounds(clusters.map((cluster) => [cluster.latitude, cluster.longitude]))
@@ -2361,12 +2365,19 @@ onUnmounted(() => {
   color: var(--text-body) !important;
   font-family: var(--font-body) !important;
   font-size: 0.75rem !important;
-  padding: 0.5rem 0.75rem !important;
+  padding: 0.6rem 0.85rem !important;
   box-shadow: 0 4px 16px var(--shadow) !important;
   pointer-events: none !important;
+  margin-bottom: 16px !important;
+  z-index: 700 !important;
+  line-height: 1.4 !important;
 }
+
 .map-tooltip.leaflet-tooltip-top::before {
   border-top-color: var(--border) !important;
+  bottom: -10px !important;
+  margin-left: -5px !important;
+  left: 50% !important;
 }
 
 .leaflet-popup-content-wrapper.map-tooltip,
@@ -2390,5 +2401,13 @@ onUnmounted(() => {
   text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   white-space: nowrap;
   pointer-events: none;
+}
+
+.leaflet-marker-pane .leaflet-marker-icon {
+  z-index: 650 !important;
+}
+
+.leaflet-pane.householdMarkers {
+  z-index: 651 !important;
 }
 </style>

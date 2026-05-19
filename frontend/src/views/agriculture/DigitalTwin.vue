@@ -759,61 +759,68 @@
         </div>
 
       </div>
-    </div>
 
-    <!-- HOVER TOOLTIP -->
-    <div v-if="hoveredHouse" class="hover-card"
-         :style="{ left: mouseX + 16 + 'px', top: mouseY - 8 + 'px' }">
-      <!-- Header: name + condition badge -->
-      <div class="hc-head">
-        <div class="hc-name">{{ hoveredHouse.headName || 'Household #' + hoveredHouse.familyId }}</div>
-        <span class="hc-badge" :style="{
-          background: getConditionColor(hoveredHouse) + '22',
-          color: getConditionColor(hoveredHouse),
-          borderColor: getConditionColor(hoveredHouse) + '55'
-        }">{{ getConditionLabel(hoveredHouse) }}</span>
+      <!-- HOVER TOOLTIP — lives INSIDE .cesium-wrap so position:absolute coordinates
+           align 1-to-1 with Cesium's endPosition (canvas-relative), regardless of
+           sidebar width or topbar height. -->
+      <!-- translate(-50%, calc(-100% - 14px)):
+           -50%           → centre card on cursor X
+           calc(-100%-14) → float card 14px above mouseY so card body never
+                            covers the building; arrow bridges that 14px gap -->
+      <div v-if="hoveredHouse" class="hover-card"
+           :style="{ left: mouseX + 'px', top: mouseY + 'px', transform: 'translate(-50%, calc(-100% - 14px))' }">
+        <!-- Header: name + condition badge -->
+        <div class="hc-head">
+          <div class="hc-name">{{ hoveredHouse.headName || 'Household #' + hoveredHouse.familyId }}</div>
+          <span class="hc-badge" :style="{
+            background: getConditionColor(hoveredHouse) + '22',
+            color: getConditionColor(hoveredHouse),
+            borderColor: getConditionColor(hoveredHouse) + '55'
+          }">{{ getConditionLabel(hoveredHouse) }}</span>
+        </div>
+        <div class="hc-loc">{{ hoveredHouse.villageName || '—' }}{{ hoveredHouse.talukaName ? ' · ' + hoveredHouse.talukaName : '' }}</div>
+
+        <!-- Status grid: 4 key indicators with color-coded dot -->
+        <div class="hc-grid">
+          <div class="hc-cell">
+            <span class="hc-dot" :style="{ background: isRainFed(hoveredHouse) ? '#ef4444' : '#16a34a' }"></span>
+            <span class="hc-ck">Irrigation</span>
+            <span class="hc-cv">{{ isRainFed(hoveredHouse) ? 'Rain-fed' : 'Irrigated' }}</span>
+          </div>
+          <div class="hc-cell">
+            <span class="hc-dot" :style="{
+              background: normalizeRationCardValue(hoveredHouse) ? '#16a34a' : '#94a3b8'
+            }"></span>
+            <span class="hc-ck">Ration</span>
+            <span class="hc-cv">{{ hoveredHouse.rationCard || '—' }}</span>
+          </div>
+          <div class="hc-cell">
+            <span class="hc-dot" :style="{
+              background: parseFloat(hoveredHouse.totalLand) > 0 ? '#16a34a' : '#ef4444'
+            }"></span>
+            <span class="hc-ck">Land</span>
+            <span class="hc-cv">{{ parseFloat(hoveredHouse.totalLand) > 0 ? (hoveredHouse.totalLand + ' ac') : 'None' }}</span>
+          </div>
+          <div class="hc-cell">
+            <span class="hc-dot" :style="{
+              background: hasElectricityConnection(hoveredHouse) ? '#16a34a' : '#f59e0b'
+            }"></span>
+            <span class="hc-ck">Power</span>
+            <span class="hc-cv">{{ hasElectricityConnection(hoveredHouse) ? 'Yes' : 'No' }}</span>
+          </div>
+        </div>
+
+        <!-- Crops row -->
+        <div class="hc-crops" v-if="hoveredHouse.kharif || hoveredHouse.rabi">
+          <span class="hc-ck">Crops</span>
+          <span class="hc-cv">
+            {{ [hoveredHouse.kharif, hoveredHouse.rabi].filter(Boolean).join(' · ') || '—' }}
+          </span>
+        </div>
+
+        <div class="hc-hint">Click for full details</div>
       </div>
-      <div class="hc-loc">{{ hoveredHouse.villageName || '—' }}{{ hoveredHouse.talukaName ? ' · ' + hoveredHouse.talukaName : '' }}</div>
 
-      <!-- Status grid: 4 key indicators with color-coded dot -->
-      <div class="hc-grid">
-        <div class="hc-cell">
-          <span class="hc-dot" :style="{ background: isRainFed(hoveredHouse) ? '#ef4444' : '#16a34a' }"></span>
-          <span class="hc-ck">Irrigation</span>
-          <span class="hc-cv">{{ isRainFed(hoveredHouse) ? 'Rain-fed' : 'Irrigated' }}</span>
-        </div>
-        <div class="hc-cell">
-          <span class="hc-dot" :style="{
-            background: normalizeRationCardValue(hoveredHouse) ? '#16a34a' : '#94a3b8'
-          }"></span>
-          <span class="hc-ck">Ration</span>
-          <span class="hc-cv">{{ hoveredHouse.rationCard || '—' }}</span>
-        </div>
-        <div class="hc-cell">
-          <span class="hc-dot" :style="{
-            background: parseFloat(hoveredHouse.totalLand) > 0 ? '#16a34a' : '#ef4444'
-          }"></span>
-          <span class="hc-ck">Land</span>
-          <span class="hc-cv">{{ parseFloat(hoveredHouse.totalLand) > 0 ? (hoveredHouse.totalLand + ' ac') : 'None' }}</span>
-        </div>
-        <div class="hc-cell">
-          <span class="hc-dot" :style="{
-            background: hasElectricityConnection(hoveredHouse) ? '#16a34a' : '#f59e0b'
-          }"></span>
-          <span class="hc-ck">Power</span>
-          <span class="hc-cv">{{ hasElectricityConnection(hoveredHouse) ? 'Yes' : 'No' }}</span>
-        </div>
-      </div>
-
-      <!-- Crops row -->
-      <div class="hc-crops" v-if="hoveredHouse.kharif || hoveredHouse.rabi">
-        <span class="hc-ck">Crops</span>
-        <span class="hc-cv">
-          {{ [hoveredHouse.kharif, hoveredHouse.rabi].filter(Boolean).join(' · ') || '—' }}
-        </span>
-      </div>
-
-      <div class="hc-hint">Click for full details</div>
     </div>
 
     <!-- CLUSTER SOLUTION PANEL -->
@@ -1937,8 +1944,9 @@ async function enrichVisibleHousesForPopulationMode() {
   const visibleIds = mapPoints.value.map(p => Number(p.id)).filter(id => Number.isFinite(id))
   if (visibleIds.length === 0) return
 
-  // Chunk into batches of 500 to stay within URL length limits
-  const CHUNK = 500
+  // Chunk into batches of 2000 — backend serves from in-memory cache so each
+  // call is near-instant; larger batches cut round-trips from ~84 to ~21 for 41k records.
+  const CHUNK = 2000
   for (let i = 0; i < visibleIds.length; i += CHUNK) {
     if (seq !== _enrichSeq) return   // mode changed again — abort stale run
     const chunk = visibleIds.slice(i, i + CHUNK)
@@ -3911,13 +3919,13 @@ function addHouseModelEntity(house, lng, lat) {
   // roof colour (condition) is the primary visual signal. Flagged houses get a
   // pale-red tint; background houses are dimmed.
   const wallColor = isSelected
-    ? Cesium.Color.fromCssColorString('#fef3c7').withAlpha(1.0)
+    ? Cesium.Color.fromCssColorString('#fef9c3').withAlpha(1.0)   // brighter cream
     : isProblem
       ? Cesium.Color.fromCssColorString('#f4b8b8').withAlpha(0.95)
       : Cesium.Color.fromCssColorString('#c8a97e').withAlpha(isBackground ? 0.3 : 1.0)
 
   const wallOutline = isSelected
-    ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)
+    ? Cesium.Color.fromCssColorString('#f59e0b').withAlpha(1.0)   // amber ring
     : isProblem
       ? Cesium.Color.fromCssColorString('#dc2626').withAlpha(1.0)
       : Cesium.Color.fromCssColorString('#7a6040').withAlpha(isBackground ? 0.2 : 1.0)
@@ -3934,7 +3942,7 @@ function addHouseModelEntity(house, lng, lat) {
       material:     wallColor,
       outline:      true,
       outlineColor: wallOutline,
-      outlineWidth: isSelected ? 2 : isProblem ? 2 : 1.5,
+      outlineWidth: isSelected ? 3.5 : isProblem ? 2 : 1.5,
     },
   })
 
@@ -3950,7 +3958,7 @@ function addHouseModelEntity(house, lng, lat) {
         : isProblem
           ? roofColor.brighten(0.3, new Cesium.Color()).withAlpha(0.95)
           : roofColor.darken(0.25, new Cesium.Color()),
-      outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
+      outlineWidth: isSelected ? 3.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
     },
   })
 
@@ -4721,7 +4729,7 @@ function buildBuildingEntitiesForViewport() {
           : isProblem
             ? Cesium.Color.fromCssColorString('#fff5f5').withAlpha(0.95)
             : roofColor.darken(0.25, new Cesium.Color()),
-        outlineWidth: isSelected ? 2.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
+        outlineWidth: isSelected ? 3.5 : isProblem ? 2.5 : isBackground ? 0.5 : 1.5,
       },
     })
 
@@ -4837,9 +4845,13 @@ async function downloadPDF() {
       problemMatchTotal,
     }
 
+    const pdfToken = localStorage.getItem('auth_token')
     const res = await fetch('/pdf/report', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(pdfToken ? { Authorization: `Bearer ${pdfToken}` } : {}),
+      },
       body: JSON.stringify(body),
     })
 
@@ -5215,8 +5227,10 @@ onMounted(async () => {
     viewer.imageryLayers.removeAll()
     viewer.imageryLayers.addImageryProvider(buildImageryProvider('satellite'))
 
-    viewer.scene.backgroundColor              = Cesium.Color.fromCssColorString('#0c1a2e')
-    viewer.scene.globe.baseColor              = Cesium.Color.fromCssColorString('#4a7c59')
+    // Warm neutral — matches Maharashtra satellite terrain so tiles blend in
+    // as they load rather than flashing from dark navy to full colour.
+    viewer.scene.backgroundColor              = Cesium.Color.fromCssColorString('#c8bfb0')
+    viewer.scene.globe.baseColor              = Cesium.Color.fromCssColorString('#b5ab9a')
     viewer.scene.globe.enableLighting         = false
     viewer.scene.globe.showGroundAtmosphere   = false
     viewer.scene.fog.enabled                  = false
@@ -5469,10 +5483,10 @@ onMounted(async () => {
       // Keep double-click inert to avoid accidental zoom bounce.
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
-    // Hover → tooltip
+    // Hover → tooltip (raw canvas coordinates; template handles offset via CSS transform)
     viewer.screenSpaceEventHandler.setInputAction((e) => {
-      mouseX.value = e.endPosition.x + 16
-      mouseY.value = e.endPosition.y + 12
+      mouseX.value = e.endPosition.x
+      mouseY.value = e.endPosition.y
       const picked = viewer.scene.pick(e.endPosition)
       hoveredHouse.value = resolvePickedHouse(picked)
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
@@ -5579,6 +5593,8 @@ onUnmounted(() => {
 .cesium-wrap {
   position: absolute;
   inset: 0;
+  /* Warm neutral shown before WebGL canvas initialises — prevents the dark-navy flash */
+  background: #c8bfb0;
 }
 .cesium-wrap :deep(.cesium-widget),
 .cesium-wrap :deep(.cesium-widget canvas) {
@@ -6372,15 +6388,47 @@ onUnmounted(() => {
    HOVER TOOLTIP (rich data popup)
 ═══════════════════════════════════════════════ */
 .hover-card {
-  position: fixed; z-index: 300;
+  position: absolute; z-index: 300;
   background: #ffffff;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 0.65rem 0.8rem 0.5rem;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
+  border: 1.5px solid #d1d5db;
+  /* Flat bottom-centre so the arrow sits flush against the card edge */
+  border-radius: 12px 12px 12px 12px;
+  padding: 0.65rem 0.8rem 0.55rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.10);
   pointer-events: none;
   min-width: 210px;
   max-width: 260px;
+  /* Inline style applies: translate(-50%, calc(-100% - 14px))
+     Card floats 14px above mouseY; arrow bridges that gap. */
+}
+
+/* ── Arrow (border layer) ────────────────────────────────────────────────
+   Card bottom is 14px above mouseY.
+   ::before is 15px tall, bottom at -15px → tip lands at mouseY + 1px (just
+   past the building top, hidden behind the building model so no visible gap).
+   Starts 1px inside the card (bottom: -15 + 15 = 0) covering the border seam.
+──────────────────────────────────────────────────────────────────────── */
+.hover-card::before {
+  content: '';
+  position: absolute;
+  bottom: -15px; left: 50%;
+  transform: translateX(-50%);
+  border: 15px solid transparent;
+  border-top-color: #d1d5db;
+  border-bottom: none;
+}
+/* ── Arrow (white fill layer) ───────────────────────────────────────────
+   Slightly smaller than ::before so the border colour shows as a 1px rim.
+   tip lands at mouseY - 1px (1px clear of building — prevents z-fighting).
+──────────────────────────────────────────────────────────────────────── */
+.hover-card::after {
+  content: '';
+  position: absolute;
+  bottom: -13px; left: 50%;
+  transform: translateX(-50%);
+  border: 13px solid transparent;
+  border-top-color: #ffffff;
+  border-bottom: none;
 }
 /* Header */
 .hc-head  { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.16rem; }
