@@ -11,10 +11,11 @@ import (
 )
 
 type DistrictCentroid struct {
-	DistrictID int     `json:"district_id"`
-	Count      int64   `json:"count"`
-	Lat        float64 `json:"lat"`
-	Lng        float64 `json:"lng"`
+	DistrictID   int     `json:"district_id"`
+	DistrictName string  `json:"district_name"`
+	Count        int64   `json:"count"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
 }
 
 type DistrictCentroidsHandler struct {
@@ -28,22 +29,31 @@ func (h *DistrictCentroidsHandler) GetDistrictCentroids(c *gin.Context) {
 		log.Printf("[map/district-centroids] district_master column detection failed: %v", lookupErr)
 	}
 
-	query := `
+	joinCol := idCol
+	if joinCol == "" {
+		joinCol = "pklDistrictId"
+	}
+
+	query := fmt.Sprintf(`
 		SELECT
 			f.DISTRICT_ID,
+			MAX(COALESCE(dm.vsDistrictName, '')) AS district_name,
 			COUNT(*) AS total_count,
 			AVG(f.LATITUDE) AS lat,
 			AVG(f.LONGITUDE) AS lng
 		FROM FAMILY f
+		LEFT JOIN district_master dm
+			ON f.DISTRICT_ID = dm.%s
 		WHERE f.DISTRICT_ID IS NOT NULL
 		GROUP BY f.DISTRICT_ID
-	`
+	`, joinCol)
 
 	// If district master has usable coordinate columns, use them as fallback.
 	if idCol != "" && latCol != "" && lngCol != "" {
 		query = fmt.Sprintf(`
 			SELECT
 				f.DISTRICT_ID,
+				MAX(COALESCE(dm.vsDistrictName, '')) AS district_name,
 				COUNT(*) AS total_count,
 				COALESCE(AVG(f.LATITUDE), MAX(dm.%s)) AS lat,
 				COALESCE(AVG(f.LONGITUDE), MAX(dm.%s)) AS lng
@@ -65,14 +75,18 @@ func (h *DistrictCentroidsHandler) GetDistrictCentroids(c *gin.Context) {
 	centroids := []DistrictCentroid{}
 	for rows.Next() {
 		var centroid DistrictCentroid
+		var districtName sql.NullString
 		var lat sql.NullFloat64
 		var lng sql.NullFloat64
 
-		if scanErr := rows.Scan(&centroid.DistrictID, &centroid.Count, &lat, &lng); scanErr != nil {
+		if scanErr := rows.Scan(&centroid.DistrictID, &districtName, &centroid.Count, &lat, &lng); scanErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan district centroids", "detail": scanErr.Error()})
 			return
 		}
 
+		if districtName.Valid {
+			centroid.DistrictName = districtName.String
+		}
 		if lat.Valid {
 			centroid.Lat = lat.Float64
 		}

@@ -1809,7 +1809,8 @@ function renderDistrictCentroids(centroidRows) {
       }),
     })
 
-    marker.bindTooltip(`District ID: ${d.district_id} | Count: ${d.count}`, {
+    const districtLabel = String(d.district_name || d.districtName || districtOptionForId(d.district_id).label || '').trim()
+    marker.bindTooltip(districtLabel, {
       permanent: false,
       sticky: true,
       direction: 'top',
@@ -1866,10 +1867,15 @@ function renderTalukaCentroids(rows) {
         iconAnchor: [16, 16],
       }),
     })
-    const name = row.taluka_name || row.talukaName || ''
     marker.bindTooltip(
-      `${name ? `${name} · ` : ''}ID: ${row.taluka_id} | Count: ${row.count}`,
-      { permanent: false, sticky: true, direction: 'top', offset: [0, -10] },
+      row.taluka_name || row.talukaName || 'Unknown Taluka',
+      {
+        className: 'map-tooltip',
+        direction: 'top',
+        offset: L.point(0, -14),
+        sticky: true,
+        permanent: false,
+      },
     )
     marker.on('click', (e) => {
       L.DomEvent.stopPropagation(e)
@@ -1919,10 +1925,15 @@ function renderVillageCentroids(rows) {
         iconAnchor: [16, 16],
       }),
     })
-    const name = row.village_name || row.villageName || ''
     marker.bindTooltip(
-      `${name ? `${name} · ` : ''}ID: ${row.village_id} | Count: ${row.count}`,
-      { permanent: false, sticky: true, direction: 'top', offset: [0, -10] },
+      row.village_name || row.villageName || 'Unknown Village',
+      {
+        className: 'map-tooltip',
+        direction: 'top',
+        offset: L.point(0, -14),
+        sticky: true,
+        permanent: false,
+      },
     )
     marker.on('click', (e) => {
       L.DomEvent.stopPropagation(e)
