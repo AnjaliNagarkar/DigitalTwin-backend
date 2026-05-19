@@ -868,6 +868,9 @@ import { useI18n } from 'vue-i18n'
 import { getDistrictCentroids, getDistrictSurveyCounts, getDistricts, getHouses, getLocationOptions, getTalukaCentroids, getVillageCentroids } from '../../api/index.js'
 import { getPopulationMapData } from '../population/api.js'
 import L from 'leaflet'
+import 'leaflet.markercluster'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 const { t } = useI18n()
 
@@ -1743,8 +1746,9 @@ function clearTalukaLayer() {
 }
 
 function clearVillageLayer() {
-  if (map && villageLayer) {
-    map.removeLayer(villageLayer)
+  if (villageLayer) {
+    villageLayer.clearLayers()
+    if (map) map.removeLayer(villageLayer)
   }
   villageLayer = null
 }
@@ -1904,27 +1908,56 @@ async function handleTalukaCentroidClick(row, lat, lng) {
   map.flyTo([lat, lng], 11, { duration: 0.85 })
 }
 
+function villageClusterIcon(count) {
+  const label = Number(count) || 0
+  const size = label > 9999 ? 44 : label > 999 ? 40 : label > 99 ? 36 : 32
+  return L.divIcon({
+    className: 'district-marker',
+    html: `<div class="village-marker-count">${label.toLocaleString()}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  })
+}
+
 function renderVillageCentroids(rows) {
   clearVillageLayer()
-  villageLayer = L.layerGroup()
   if (!Array.isArray(rows) || !rows.length || !map) {
     villageLayer = null
     return
   }
+
+  villageLayer = L.markerClusterGroup({
+    spiderfyOnMaxZoom: false,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    disableClusteringAtZoom: 16,
+    maxClusterRadius(zoom) {
+      if (zoom >= 14) return 22
+      if (zoom >= 12) return 38
+      if (zoom >= 10) return 55
+      return 75
+    },
+    iconCreateFunction(cluster) {
+      const childMarkers = cluster.getAllChildMarkers()
+      const totalCount = childMarkers.reduce(
+        (sum, marker) => sum + (Number(marker.options.villageCount) || 0),
+        0,
+      )
+      return villageClusterIcon(totalCount)
+    },
+  })
 
   rows.forEach((row) => {
     const lat = Number(row.lat)
     const lng = Number(row.lng)
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
 
+    const surveyCount = Number(row.count) || 0
     const marker = L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'district-marker',
-        html: `<div class="village-marker-count">${row.count}</div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-      }),
+      icon: villageClusterIcon(surveyCount),
+      villageCount: surveyCount,
     })
+
     marker.bindTooltip(
       row.village_name || row.villageName || 'Unknown Village',
       {
@@ -1939,7 +1972,7 @@ function renderVillageCentroids(rows) {
       L.DomEvent.stopPropagation(e)
       handleVillageCentroidClick(row, lat, lng)
     })
-    marker.addTo(villageLayer)
+    villageLayer.addLayer(marker)
   })
 
   villageLayer.addTo(map)
