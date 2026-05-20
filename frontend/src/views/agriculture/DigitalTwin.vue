@@ -374,8 +374,6 @@
     <!-- ── TOP BAR ── -->
     <div class="topbar">
       <div class="topbar-brand">
-        <span class="brand-dot"></span>
-        <span class="brand-name">AgriTwin</span>
         <span class="brand-sub">3D Digital Twin</span>
       </div>
 
@@ -5658,13 +5656,6 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: 0.45rem;
   flex-shrink: 0; white-space: nowrap;
 }
-.brand-dot {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: #16a34a;
-  box-shadow: 0 0 0 2px #bbf7d0;
-  flex-shrink: 0;
-}
-.brand-name { font-weight: 700; font-size: 0.92rem; color: #111827; letter-spacing: -0.01em; }
 .brand-sub  { font-size: 0.68rem; color: #6b7280; padding-left: 0.1rem; }
 
 /* Filter bar */

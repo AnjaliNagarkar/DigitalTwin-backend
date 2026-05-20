@@ -1,5 +1,27 @@
 <template>
   <div class="login-shell">
+    <div class="login-top-right">
+      <div class="lang-switcher" ref="langSwitcherEl">
+        <button class="lang-btn" @click="toggleLangMenu" :title="t('header.language')">
+          <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+          </svg>
+          <span class="lang-current">{{ locale === 'mr' ? 'मराठी' : 'English' }}</span>
+        </button>
+        <div v-if="langMenuOpen" class="lang-menu">
+          <button class="lang-option" :class="{ active: locale === 'en' }" @click="setLocale('en')">
+            {{ t('lang.en') }}
+          </button>
+          <button class="lang-option" :class="{ active: locale === 'mr' }" @click="setLocale('mr')">
+            {{ t('lang.mr') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Topographic background -->
     <svg class="topo-bg" viewBox="0 0 1440 900" preserveAspectRatio="none">
       <defs>
@@ -162,13 +184,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { login } from '../api/index.js'
-import ivdpLogo from '../assets/icons/ivdp-logo.png'
+const ivdpLogo = 'https://ivdp2.mkcl.org/assets/logo-sm-CXFafxoa.webp'
+import { STORAGE_KEY } from '../i18n.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 // ── Captcha config (mirrors IVDP captcha.js exactly) ─────────────────────────
 const CAPTCHA_CHARS  = '23456789QWERTYUPASDFGHJKZXCVBNM'
@@ -192,6 +215,8 @@ const generatedCaptcha = ref('')
 const enteredCaptcha   = ref('')
 const loading          = ref(false)
 const globalError      = ref('')
+const langMenuOpen     = ref(false)
+const langSwitcherEl   = ref(null)
 
 const fieldErrors = reactive({
   username: '',
@@ -201,6 +226,7 @@ const fieldErrors = reactive({
 
 onMounted(() => {
   generatedCaptcha.value = generateCaptcha()
+  document.addEventListener('click', onDocClick)
 
   // Show a clear message when the user arrives here after a failed SSO attempt.
   // The router guard appends ?error=sso_failed before redirecting to /login.
@@ -208,6 +234,26 @@ onMounted(() => {
     globalError.value = t('login.invalidSSO')
   }
 })
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+})
+
+function setLocale(lang) {
+  locale.value = lang
+  localStorage.setItem(STORAGE_KEY, lang)
+  langMenuOpen.value = false
+}
+
+function toggleLangMenu() {
+  langMenuOpen.value = !langMenuOpen.value
+}
+
+function onDocClick(e) {
+  if (langSwitcherEl.value && !langSwitcherEl.value.contains(e.target)) {
+    langMenuOpen.value = false
+  }
+}
 
 // ── Input handlers ────────────────────────────────────────────────────────────
 
@@ -325,10 +371,96 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a1f18 0%, #0f2a22 50%, #0d2318 100%);
+  background-image: url('https://ivdp2.mkcl.org/assets/bg-login-Dygaimwr.webp');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
   padding: 1.5rem;
+}
+
+.login-top-right {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 3;
+}
+
+.lang-switcher {
+  position: relative;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #d7dee8;
+  border-radius: 7px;
+  padding: 0.34rem 0.6rem;
+  color: #334155;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+
+.lang-btn:hover {
+  background: #ffffff;
+  border-color: #c2cedd;
+  color: #0f172a;
+}
+
+.lang-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.lang-current {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+  z-index: 20;
+  min-width: 110px;
+}
+
+.lang-option {
+  display: block;
+  width: 100%;
+  padding: 0.52rem 0.85rem;
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.83rem;
+  color: #334155;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.lang-option:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.lang-option.active {
+  color: #0f766e;
+  font-weight: 600;
+  background: #ecfeff;
 }
 
 .topo-bg {
@@ -345,15 +477,14 @@ async function handleLogin() {
   z-index: 1;
   width: 100%;
   max-width: 440px;
-  background: rgba(15, 42, 34, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2.4rem 2.2rem 2rem;
   backdrop-filter: blur(12px);
   box-shadow:
-    0 4px 6px rgba(0,0,0,0.3),
-    0 20px 60px rgba(0,0,0,0.4),
-    0 0 0 1px rgba(232,168,56,0.06);
+    0 6px 12px rgba(15,23,42,0.06),
+    0 24px 56px rgba(15,23,42,0.10);
 }
 
 /* ── Brand ──────────────────────────────────────────────────────────────── */
@@ -363,12 +494,12 @@ async function handleLogin() {
   justify-content: center;
   margin-bottom: 1.8rem;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid #e9eef5;
 }
 .brand-logo {
   display: block;
-  height: 56px;
-  width: auto;
+  width: 100px;
+  height: auto;
   max-width: 100%;
   object-fit: contain;
 }
@@ -377,7 +508,7 @@ async function handleLogin() {
 .form-title {
   font-size: 1.05rem;
   font-weight: 600;
-  color: #d5e5dd;
+  color: #0f172a;
   margin: 0 0 1.4rem;
 }
 
@@ -390,7 +521,7 @@ async function handleLogin() {
   border: 1px solid rgba(239,68,68,0.30);
   border-radius: 8px;
   padding: 0.65rem 0.85rem;
-  color: #fca5a5;
+  color: #b91c1c;
   font-size: 0.85rem;
   margin-bottom: 1.2rem;
 }
@@ -403,7 +534,7 @@ async function handleLogin() {
   display: block;
   font-size: 0.78rem;
   font-weight: 500;
-  color: #8bb3a1;
+  color: #64748b;
   margin-bottom: 0.4rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -418,18 +549,18 @@ async function handleLogin() {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  color: #8bb3a1;
+  color: #94a3b8;
   pointer-events: none;
 }
 
 .input-wrap input {
   width: 100%;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
   border-radius: 8px;
   padding: 0.62rem 2.4rem 0.62rem 2.4rem;
   font-size: 0.9rem;
-  color: #e8f4ee;
+  color: #0f172a;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
@@ -441,10 +572,12 @@ async function handleLogin() {
   padding-left: 0.85rem;
 }
 
-.input-wrap input::placeholder { color: rgba(139,179,161,0.45); }
-.input-wrap input:focus {
-  border-color: #e8a838;
-  box-shadow: 0 0 0 3px rgba(232,168,56,0.12);
+.input-wrap input::placeholder { color: #94a3b8; }
+.input-wrap input:focus,
+.input-wrap input:focus-visible {
+  outline: none;
+  border-color: rgba(44, 152, 107, 1);
+  box-shadow: 0 0 0 3px rgba(44, 152, 107, 0.22);
 }
 
 /* Error state */
@@ -459,7 +592,7 @@ async function handleLogin() {
 .field-error {
   display: block;
   font-size: 0.75rem;
-  color: #fca5a5;
+  color: #dc2626;
   margin-top: 0.3rem;
 }
 
@@ -473,11 +606,11 @@ async function handleLogin() {
   border: none;
   cursor: pointer;
   padding: 0;
-  color: #8bb3a1;
+  color: #64748b;
   display: flex;
   align-items: center;
 }
-.toggle-pw:hover { color: #e8a838; }
+.toggle-pw:hover { color: #0f766e; }
 .toggle-pw svg { width: 16px; height: 16px; }
 
 /* ── Captcha row ────────────────────────────────────────────────────────── */
@@ -494,16 +627,18 @@ async function handleLogin() {
   font-size: 1.05rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.25em !important;
-  color: #e8a838 !important;
+  color: #0f766e !important;
   cursor: default !important;
   padding-right: 2.4rem !important;
-  background: rgba(232,168,56,0.06) !important;
-  border-color: rgba(232,168,56,0.20) !important;
+  background: #f0fdfa !important;
+  border-color: #99f6e4 !important;
   user-select: none;
 }
-.captcha-input:focus {
-  border-color: rgba(232,168,56,0.20) !important;
-  box-shadow: none !important;
+.captcha-input:focus,
+.captcha-input:focus-visible {
+  outline: none !important;
+  border-color: rgba(44, 152, 107, 1) !important;
+  box-shadow: 0 0 0 3px rgba(44, 152, 107, 0.22) !important;
 }
 
 /* Refresh button inside captcha display field */
@@ -516,11 +651,11 @@ async function handleLogin() {
   border: none;
   cursor: pointer;
   padding: 0;
-  color: #8bb3a1;
+  color: #64748b;
   display: flex;
   align-items: center;
 }
-.captcha-refresh:hover { color: #e8a838; }
+.captcha-refresh:hover { color: #0f766e; }
 .captcha-refresh svg { width: 15px; height: 15px; }
 
 /* ── Submit button ──────────────────────────────────────────────────────── */
@@ -528,8 +663,8 @@ async function handleLogin() {
   width: 100%;
   margin-top: 1rem;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #d09b2a 0%, #e8a838 100%);
-  color: #1c1302;
+  background: rgba(44, 152, 107, 1);
+  color: #ffffff;
   border: none;
   border-radius: 9px;
   font-size: 0.95rem;
@@ -542,15 +677,15 @@ async function handleLogin() {
   gap: 0.55rem;
   letter-spacing: 0.01em;
 }
-.submit-btn:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+.submit-btn:hover:not(:disabled) { opacity: 0.95; transform: translateY(-1px); }
 .submit-btn:active:not(:disabled) { transform: translateY(0); }
 .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(28,19,2,0.3);
-  border-top-color: #1c1302;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   flex-shrink: 0;
@@ -562,7 +697,7 @@ async function handleLogin() {
   margin-top: 1.5rem;
   text-align: center;
   font-size: 0.75rem;
-  color: rgba(139,179,161,0.5);
+  color: #94a3b8;
   line-height: 1.5;
 }
 

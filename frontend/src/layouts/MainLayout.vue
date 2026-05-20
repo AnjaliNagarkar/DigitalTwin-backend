@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import ivdpLogo from '../assets/icons/ivdp-logo.png'
+const ivdpLogo = 'https://ivdp2.mkcl.org/assets/logo-sm-CXFafxoa.webp'
 </script>
 
 <style scoped>

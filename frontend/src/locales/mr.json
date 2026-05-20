@@ -550,7 +550,7 @@
   },
 
   "mapView": {
-    "geoIntelligence": "भू-बुद्धिमत्ता नकाशा",
+    "geoIntelligence": "जिओ-इंटेलिजन्स मॅप",
     "household": "कुटुंब",
     "noData": "डेटाबेस API कडून कोणताही थेट कुटुंब डेटा परत आला नाही.",
     "selectView": "दृश्य निवडा…",

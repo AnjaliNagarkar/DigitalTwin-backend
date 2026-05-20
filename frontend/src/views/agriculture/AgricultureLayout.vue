@@ -171,7 +171,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { logout } from '../../api/index.js'
 import { STORAGE_KEY } from '../../i18n.js'
-import ivdpLogo from '../../assets/icons/ivdp-logo.png'
+const ivdpLogo = 'https://ivdp2.mkcl.org/assets/logo-sm-CXFafxoa.webp'
 
 const { t, locale } = useI18n()
 
