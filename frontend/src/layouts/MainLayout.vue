@@ -2,8 +2,7 @@
   <div class="main-shell">
     <aside class="sidebar">
       <div class="brand">
-        <h1>{{ $t('brand.digitalTwin') }}</h1>
-        <p>{{ $t('brand.moduleGateway') }}</p>
+        <img :src="ivdpLogo" alt="IVDP logo" class="brand-logo" />
       </div>
 
       <nav class="nav" :aria-label="$t('nav.dashboard')">
@@ -44,6 +43,10 @@
   </div>
 </template>
 
+<script setup>
+import ivdpLogo from '../assets/icons/ivdp-logo.png'
+</script>
+
 <style scoped>
 .main-shell {
   min-height: 100vh;
@@ -68,19 +71,12 @@
   margin-bottom: 1rem;
 }
 
-.brand h1 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.brand p {
-  margin: 0.25rem 0 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #8bb3a1;
+.brand-logo {
+  display: block;
+  height: 48px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .nav {

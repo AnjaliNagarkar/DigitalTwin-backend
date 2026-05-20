@@ -17,19 +17,7 @@
     <div class="login-card">
       <!-- Brand -->
       <div class="brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 40 40" fill="none">
-            <rect x="3"  y="18" width="7" height="19" rx="1.5" fill="#e8a838"/>
-            <rect x="13" y="10" width="7" height="27" rx="1.5" fill="#2dd4bf"/>
-            <rect x="23" y="5"  width="7" height="32" rx="1.5" fill="#e8a838" opacity="0.75"/>
-            <rect x="33" y="13" width="5" height="24" rx="1.5" fill="#2dd4bf" opacity="0.65"/>
-            <line x1="0" y1="37" x2="40" y2="37" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <span class="brand-name">{{ t('brand.platform') }}</span>
-          <span class="brand-sub">{{ t('brand.ivdp') }}</span>
-        </div>
+        <img :src="ivdpLogo" alt="IVDP logo" class="brand-logo" />
       </div>
 
       <h2 class="form-title">{{ t('login.title') }}</h2>
@@ -178,6 +166,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { login } from '../api/index.js'
+import ivdpLogo from '../assets/icons/ivdp-logo.png'
 
 const { t } = useI18n()
 
@@ -371,25 +360,17 @@ async function handleLogin() {
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  justify-content: center;
   margin-bottom: 1.8rem;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
-.brand-icon svg { width: 40px; height: 40px; }
-.brand-text { display: flex; flex-direction: column; }
-.brand-name {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.01em;
-}
-.brand-sub {
-  font-size: 0.72rem;
-  color: #8bb3a1;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-top: 2px;
+.brand-logo {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 /* ── Form title ─────────────────────────────────────────────────────────── */

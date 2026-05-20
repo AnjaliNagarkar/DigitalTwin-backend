@@ -14,6 +14,10 @@
     <!-- ── Thin top bar: hamburger + logo left, logout right ── -->
     <header class="top-bar">
       <div class="top-bar-left">
+        <router-link to="/population/dashboard" class="brand-link">
+          <img :src="ivdpLogo" alt="IVDP logo" class="brand-logo" />
+        </router-link>
+
         <button class="hamburger-btn" @click="toggleSidebar"
                 :title="isSidebarOpen ? t('header.collapse') : t('header.expand')"
                 :aria-expanded="isSidebarOpen" aria-controls="pop-sidebar">
@@ -24,22 +28,6 @@
             <line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
-
-        <router-link to="/population/dashboard" class="brand-link">
-          <div class="brand-icon">
-            <svg viewBox="0 0 32 32" fill="none">
-              <rect x="2"  y="14" width="6" height="16" rx="1" fill="var(--teal)"/>
-              <rect x="10" y="8"  width="6" height="22" rx="1" fill="var(--amber)"/>
-              <rect x="18" y="4"  width="6" height="26" rx="1" fill="var(--teal)"  opacity="0.7"/>
-              <rect x="26" y="10" width="4" height="20" rx="1" fill="var(--amber)" opacity="0.6"/>
-              <line x1="0" y1="30" x2="32" y2="30" stroke="var(--slate-400)" stroke-width="1"/>
-            </svg>
-          </div>
-          <div class="brand-text">
-            <span class="brand-name">PopTwin</span>
-            <span class="brand-sub">{{ t('brand.popSub') }}</span>
-          </div>
-        </router-link>
       </div>
 
       <div class="top-bar-right">
@@ -52,7 +40,7 @@
               <line x1="2" y1="12" x2="22" y2="12"/>
               <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
             </svg>
-            <span class="lang-current">{{ locale === 'mr' ? 'मर' : 'EN' }}</span>
+            <span class="lang-current">{{ locale === 'mr' ? 'मराठी' : 'English' }}</span>
           </button>
           <div v-if="langMenuOpen" class="lang-menu">
             <button class="lang-option" :class="{ active: locale === 'en' }" @click="setLocale('en')">
@@ -179,6 +167,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { logout } from '../../api/index.js'
 import { STORAGE_KEY } from '../../i18n.js'
+import ivdpLogo from '../../assets/icons/ivdp-logo.png'
 
 const { t, locale } = useI18n()
 
@@ -294,7 +283,7 @@ onUnmounted(() => {
   --slate-500: var(--text-dim);
   --font-display: 'Instrument Serif', Georgia, serif;
   --font-body:    'Outfit', system-ui, sans-serif;
-  --topbar-h:   52px;
+  --topbar-h:   64px;
   --sidebar-w: 220px;
   --top-nav-h: 0px;
 }
@@ -358,24 +347,22 @@ html, body, #app {
 .brand-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
   text-decoration: none;
 }
-.brand-icon { width: 28px; height: 28px; flex-shrink: 0; }
-.brand-icon svg { width: 100%; height: 100%; }
-.brand-text { display: flex; flex-direction: column; }
-.brand-name {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  color: var(--text-primary);
-  line-height: 1;
+.brand-logo {
+  display: block;
+  height: 50px;
+  width: auto;
+  max-height: calc(var(--topbar-h) - 10px);
+  max-width: 100%;
+  object-fit: contain;
 }
-.brand-sub {
-  font-size: 0.58rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 500;
+
+@media (max-width: 768px) {
+  .brand-logo {
+    height: 42px;
+    max-height: calc(var(--topbar-h) - 10px);
+  }
 }
 
 /* Top-bar right group */
