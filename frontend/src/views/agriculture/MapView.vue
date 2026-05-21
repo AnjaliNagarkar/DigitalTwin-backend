@@ -906,6 +906,8 @@ const selectedVillage = ref(null)
 /** GIS drill-down: district → taluka → village → household (Apply can jump to household). */
 const navigationLevel = ref('district')
 const zoomStack = ref([])
+/** Layout scroll parent (.main-content) — locked on map route to prevent 100vh overflow scroll. */
+let mapScrollParentEl = null
 const showAnomalies        = ref(false)
 const anomalyDrawerOpen    = ref(false)   // panel visible/hidden
 const alpCollapsed         = ref(false)   // panel body collapsed (header-only mode)
@@ -1055,7 +1057,8 @@ function selectColorMode(mode) {
 const selectedDistrictLabel = computed(() => selectedDistrict.value?.label || t('map.allDistricts'))
 const selectedTalukaLabel = computed(() => selectedTaluka.value?.label || t('map.allTalukas'))
 const selectedVillageLabel = computed(() => selectedVillage.value?.label || t('map.allVillages'))
-const showGeoNavBar = computed(() => navigationLevel.value !== 'district' || zoomStack.value.length > 0)
+// Geo nav mounts only when drill level changes — not on zoomStack alone (avoids header shrink before taluka render).
+const showGeoNavBar = computed(() => navigationLevel.value !== 'district')
 const canGeoNavBack = computed(() => zoomStack.value.length > 0)
 const geoNavBreadcrumb = computed(() => {
   const parts = [t('mapView.geoBreadcrumbMaharashtra')]
@@ -1821,6 +1824,9 @@ function renderDistrictCentroids(centroidRows) {
       offset: [0, -10],
     })
 
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
     marker.on('click', (e) => {
       L.DomEvent.stopPropagation(e)
       handleDistrictCentroidClick(d, lat, lng)
@@ -1836,31 +1842,75 @@ function renderDistrictCentroids(centroidRows) {
   }
 }
 
+function getMapScrollParent() {
+  return mapScrollParentEl || mapContainer.value?.closest('.main-content') || null
+}
+
+/** Prevent .main-content scrollTop drift while header/geo-nav reflows during drill-down. */
+function pinMapScrollParent() {
+  const el = getMapScrollParent()
+  if (!el) {
+    return { pinNow() {}, release() {} }
+  }
+  let lockedTop = el.scrollTop
+  const onScroll = () => {
+    if (el.scrollTop !== lockedTop) el.scrollTop = lockedTop
+  }
+  el.addEventListener('scroll', onScroll, { passive: true })
+  return {
+    pinNow() {
+      lockedTop = el.scrollTop
+      el.scrollTop = lockedTop
+    },
+    release() {
+      el.removeEventListener('scroll', onScroll)
+      el.scrollTop = lockedTop
+    },
+  }
+}
+
+/** One sync after layout change — Leaflet must read final container height before flyTo. */
+function syncMapSizeAfterLayout() {
+  if (!map) return
+  try {
+    map.invalidateSize({ animate: false })
+  } catch (e) {
+    console.warn('Map sync size after layout:', e.message)
+  }
+}
+
+function waitForMapMoveEnd() {
+  return new Promise((resolve) => {
+    if (!map) {
+      resolve()
+      return
+    }
+    map.once('moveend', resolve)
+  })
+}
+
 async function handleDistrictCentroidClick(d, lat, lng) {
   if (!map) return
-  pushZoomStack()
-  const opt = districtOptionForId(d.district_id)
-  selectedDistrict.value = opt.value != null && opt.value !== ''
-    ? { label: String(opt.label ?? ''), value: opt.value }
-    : null
-  navigationLevel.value = 'taluka'
-  // Geo nav bar grows the header and shrinks the map — wait for DOM + staged invalidateSize before taluka paint.
-  await nextTick()
-  await awaitMapContainerStable()
-  clearDistrictLayer()
-  // Taluka dropdown options load via watch(selectedDistrict); avoid duplicate fetch here.
-  await refreshTalukaCentroids()
-  await new Promise((resolve) => {
-    map.once('moveend', () => {
-      try {
-        map.invalidateSize(false)
-      } catch (e) {
-        console.warn('Map invalidateSize after district flyTo:', e.message)
-      }
-      resolve()
-    })
+  const scrollPin = pinMapScrollParent()
+  try {
+    pushZoomStack()
+    const opt = districtOptionForId(d.district_id)
+    selectedDistrict.value = opt.value != null && opt.value !== ''
+      ? { label: String(opt.label ?? ''), value: opt.value }
+      : null
+    navigationLevel.value = 'taluka'
+    await nextTick()
+    scrollPin.pinNow()
+    syncMapSizeAfterLayout()
+    clearDistrictLayer()
+    const moveDone = waitForMapMoveEnd()
     map.flyTo([lat, lng], 9, { duration: 0.85 })
-  })
+    await moveDone
+    // Taluka dropdown options load via watch(selectedDistrict); render at final projection only.
+    await refreshTalukaCentroids()
+  } finally {
+    scrollPin.release()
+  }
 }
 
 function renderTalukaCentroids(rows) {
@@ -3285,21 +3335,8 @@ function resizeMapAfterTransition() {
   setTimeout(() => { if (map) map.invalidateSize({ animate: false }) }, 260)
 }
 
-/** After header/geo-nav layout changes: rAF paint + same staged resize as sidebars (260ms). */
-async function awaitMapContainerStable() {
-  await new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve))
-  })
-  resizeMapAfterTransition()
-  await new Promise((resolve) => setTimeout(resolve, 260))
-}
-
 watch(alpCollapsed, resizeMapAfterTransition)
 watch(anomalyDrawerOpen, resizeMapAfterTransition)
-watch(showGeoNavBar, async () => {
-  await nextTick()
-  resizeMapAfterTransition()
-})
 
 /** Restore all household dot colors to their normal (non-anomaly) state */
 function clearAnomalyLayer() {
@@ -3858,6 +3895,12 @@ onMounted(async () => {
   }
 
   if (mapContainer.value) {
+    mapScrollParentEl = mapContainer.value.closest('.main-content')
+    if (mapScrollParentEl) {
+      mapScrollParentEl.classList.add('map-route-scroll-lock')
+      mapScrollParentEl.scrollTop = 0
+    }
+
     // Ensure container has proper dimensions before map init
     const rect = mapContainer.value.getBoundingClientRect()
     if (rect.width < 100 || rect.height < 100) {
@@ -3905,6 +3948,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (mapScrollParentEl) {
+    mapScrollParentEl.classList.remove('map-route-scroll-lock')
+    mapScrollParentEl = null
+  }
   clearRetryTimer()
   clearAnomalyLayer()
   clearAllCentroidLayers()
@@ -3945,9 +3992,29 @@ watch(analyticsPanelOpen, async () => {
 
 </script>
 
+<!-- Map route: stop .main-content vertical scroll (100vh child overflow) -->
+<style>
+.main-content.map-route-scroll-lock {
+  overflow-y: hidden !important;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.main-content.map-route-scroll-lock > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+</style>
+
 <style scoped>
 .map-page {
-  height: 100vh;
+  /* Fill .main-content — 100vh caused overflow scroll + Leaflet offset desync on drill-down */
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
