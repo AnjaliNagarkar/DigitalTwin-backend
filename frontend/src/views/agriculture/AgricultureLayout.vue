@@ -15,7 +15,7 @@
     </svg>
 
     <!-- ── Thin top bar: hamburger + logo on left, logout on right ── -->
-    <header class="top-bar">
+    <header v-if="!isEmbedded" class="top-bar">
       <div class="top-bar-left">
         <router-link to="/agriculture/dashboard" class="brand-link">
           <img :src="ivdpLogo" alt="IVDP logo" class="brand-logo" />
@@ -72,7 +72,7 @@
     <div class="body-wrap">
 
       <!-- ── Left sidebar ── -->
-      <nav id="app-sidebar" class="sidebar" :class="{ collapsed: !isSidebarOpen }" aria-label="Primary navigation">
+      <nav v-if="!isEmbedded" id="app-sidebar" class="sidebar" :class="{ collapsed: !isSidebarOpen }" aria-label="Primary navigation">
         <div class="sidebar-links">
 
           <router-link to="/agriculture/dashboard" class="nav-item"
@@ -167,11 +167,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, inject, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { logout } from '../../api/index.js'
 import { STORAGE_KEY } from '../../i18n.js'
-const ivdpLogo = 'https://ivdp2.mkcl.org/assets/logo-sm-CXFafxoa.webp'
+const ivdpLogo  = 'https://ivdp2.mkcl.org/assets/logo-sm-CXFafxoa.webp'
+const isEmbedded = inject('isEmbedded', ref(false))
 
 const { t, locale } = useI18n()
 
