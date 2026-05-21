@@ -757,7 +757,7 @@
           <!-- ── Anomaly side panel — right-side floating, collapsible ── -->
         </div>
 
-        <transition name="analytics-panel-slide">
+        <transition name="analytics-panel-slide" @after-leave="handleAnalyticsPanelAfterLeave">
           <aside v-if="analyticsPanelOpen" class="analytics-panel" aria-label="Map analytics">
             <div class="analytics-panel-head">
               <h2 class="analytics-panel-title">{{ t('mapView.mapAnalytics') }}</h2>
@@ -895,6 +895,12 @@ const isMapVisualReady = ref(false)
 const colorMode     = ref(null)
 const viewMode      = ref('points')   // 'points' | 'villages'
 const analyticsPanelOpen = ref(false)
+/** Original fitBounds geometry from page load (bounds + padding); used for reset/geo-back restore. */
+const initialMaharashtraFit = ref(null)
+/** True after analytics panel opened; cleared after pre-restore width sync. */
+const analyticsAffectedMapLayout = ref(false)
+let analyticsPanelLeaveSettled = Promise.resolve()
+let resolveAnalyticsPanelLeave = null
 const isFullscreen = ref(false)
 const districtOptions = ref([])
 const isDistrictLoading = ref(true)
@@ -2110,7 +2116,6 @@ async function handleGeoNavBack() {
   loading.value = false
 
   const { lat, lng } = prev.center
-  map.flyTo([lat, lng], prev.zoom, { duration: 0.75 })
 
   if (prev.level === 'district') {
     navigationLevel.value = 'district'
@@ -2121,8 +2126,11 @@ async function handleGeoNavBack() {
     villageOptions.value = []
     clearAllCentroidLayers()
     await refreshDistrictCentroids()
+    await restoreInitialMaharashtraFit()
     return
   }
+
+  map.flyTo([lat, lng], prev.zoom, { duration: 0.75 })
 
   if (prev.level === 'taluka') {
     navigationLevel.value = 'taluka'
@@ -2174,6 +2182,76 @@ function handleMapResize() {
   }
 }
 
+function beginAnalyticsPanelLeaveWait() {
+  analyticsPanelLeaveSettled = new Promise((resolve) => {
+    resolveAnalyticsPanelLeave = resolve
+  })
+}
+
+function finishAnalyticsPanelLeaveWait() {
+  if (resolveAnalyticsPanelLeave) {
+    resolveAnalyticsPanelLeave()
+    resolveAnalyticsPanelLeave = null
+  }
+}
+
+/** Analytics close only: resize after leave transition when .map-stage is full width. */
+async function handleAnalyticsPanelAfterLeave() {
+  console.log('[analytics-map] after-leave', performance.now())
+  try {
+    await nextTick()
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    if (!map) return
+    const containerWidth = mapContainer.value?.getBoundingClientRect().width
+    console.log('[analytics-map] invalidateSize after leave', {
+      mapSize: map.getSize(),
+      containerWidth,
+      center: map.getCenter(),
+      zoom: map.getZoom(),
+    })
+    try {
+      map.invalidateSize({ animate: false })
+    } catch (e) {
+      console.warn('Analytics panel map resize:', e.message)
+    }
+  } finally {
+    finishAnalyticsPanelLeaveWait()
+  }
+}
+
+/** Before Maharashtra restore when analytics changed map width (no staged invalidates). */
+async function awaitFinalMapWidthAfterAnalytics() {
+  if (!analyticsAffectedMapLayout.value || !map) return
+
+  const logMapWidth = (label) => {
+    const containerWidth = mapContainer.value?.getBoundingClientRect().width
+    console.log(`[maharashtra-view] analytics map width ${label}`, {
+      analyticsPanelOpen: analyticsPanelOpen.value,
+      mapContainerWidth: containerWidth,
+      mapSize: map.getSize(),
+    })
+  }
+
+  logMapWidth('before leave settle')
+  await analyticsPanelLeaveSettled
+  logMapWidth('after leave settle')
+
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+
+  logMapWidth('before invalidate')
+  try {
+    map.invalidateSize({ animate: false })
+  } catch (e) {
+    console.warn('Map analytics width sync:', e.message)
+  }
+
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  logMapWidth('after invalidate')
+
+  analyticsAffectedMapLayout.value = false
+}
+
 function ensureMapReady() {
   if (!map) return
   try {
@@ -2191,9 +2269,89 @@ function getMaharashtraFitPadding() {
   return [32, 32]
 }
 
-function fitToMaharashtra() {
+function fitToMaharashtra({ animate = true } = {}) {
   if (!map) return
-  map.fitBounds(MAHARASHTRA_BOUNDS, { padding: getMaharashtraFitPadding() })
+  map.fitBounds(MAHARASHTRA_BOUNDS, {
+    padding: getMaharashtraFitPadding(),
+    animate,
+  })
+}
+
+function captureInitialMaharashtraFit() {
+  if (initialMaharashtraFit.value || !map) return
+  const padding = getMaharashtraFitPadding()
+  const size = map.getSize()
+  const visible = map.getBounds()
+  initialMaharashtraFit.value = {
+    bounds: MAHARASHTRA_BOUNDS,
+    padding: [...padding],
+    mapSize: { x: size.x, y: size.y },
+  }
+  console.log('[maharashtra-view] initial fit captured', {
+    padding: initialMaharashtraFit.value.padding,
+    mapSize: initialMaharashtraFit.value.mapSize,
+    visibleBounds: {
+      south: visible.getSouth(),
+      west: visible.getWest(),
+      north: visible.getNorth(),
+      east: visible.getEast(),
+    },
+    zoom: map.getZoom(),
+  })
+}
+
+async function restoreInitialMaharashtraFit() {
+  if (!map) return
+
+  console.log('[maharashtra-view] before restoreInitialMaharashtraFit', {
+    analyticsPanelOpen: analyticsPanelOpen.value,
+    analyticsAffectedMapLayout: analyticsAffectedMapLayout.value,
+    mapContainerWidth: mapContainer.value?.getBoundingClientRect().width,
+    mapSize: map.getSize(),
+  })
+
+  await awaitFinalMapWidthAfterAnalytics()
+
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+
+  console.log('[maharashtra-view] restoring Maharashtra fit', {
+    analyticsPanelOpen: analyticsPanelOpen.value,
+    mapContainerWidth: mapContainer.value?.getBoundingClientRect().width,
+    mapSize: map.getSize(),
+  })
+
+  const fit = initialMaharashtraFit.value
+  if (!fit) {
+    console.log('[maharashtra-view] restore fallback fitToMaharashtra (no snapshot)')
+    fitToMaharashtra({ animate: false })
+    return
+  }
+
+  const restoreSize = map.getSize()
+  console.log('[maharashtra-view] restoreInitialMaharashtraFit', {
+    padding: fit.padding,
+    initialMapSize: fit.mapSize,
+    restoreMapSize: { x: restoreSize.x, y: restoreSize.y },
+  })
+
+  map.fitBounds(fit.bounds, {
+    padding: fit.padding,
+    animate: false,
+  })
+
+  const restored = map.getBounds()
+  console.log('[maharashtra-view] restored', {
+    padding: fit.padding,
+    mapSize: { x: restoreSize.x, y: restoreSize.y },
+    restoredBounds: {
+      south: restored.getSouth(),
+      west: restored.getWest(),
+      north: restored.getNorth(),
+      east: restored.getEast(),
+    },
+    restoredZoom: map.getZoom(),
+  })
 }
 
 async function toggleFullscreen() {
@@ -2495,7 +2653,7 @@ async function resetFilters() {
   if (map) {
     clearAllCentroidLayers()
     refreshDistrictCentroids()
-    fitToMaharashtra()
+    await restoreInitialMaharashtraFit()
   }
 }
 
@@ -3936,7 +4094,10 @@ onMounted(async () => {
     // More aggressive size invalidation for reliable rendering
     setTimeout(() => ensureMapReady(), 50)
     setTimeout(() => ensureMapReady(), 150)
-    setTimeout(() => ensureMapReady(), 300)
+    setTimeout(() => {
+      ensureMapReady()
+      captureInitialMaharashtraFit()
+    }, 300)
     window.addEventListener('resize', handleMapResize)
     window.addEventListener('click', closeDropdowns)
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -3985,7 +4146,13 @@ watch(houses, (val) => {
   console.log('HOUSES CHANGED:', val?.length)
 })
 
-watch(analyticsPanelOpen, async () => {
+watch(analyticsPanelOpen, async (open) => {
+  if (!open) {
+    console.log('[analytics-map] close started', performance.now())
+    beginAnalyticsPanelLeaveWait()
+    return
+  }
+  analyticsAffectedMapLayout.value = true
   await nextTick()
   handleMapResize()
 })
