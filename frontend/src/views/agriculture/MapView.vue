@@ -1844,10 +1844,23 @@ async function handleDistrictCentroidClick(d, lat, lng) {
     ? { label: String(opt.label ?? ''), value: opt.value }
     : null
   navigationLevel.value = 'taluka'
+  // Geo nav bar grows the header and shrinks the map — wait for DOM + staged invalidateSize before taluka paint.
+  await nextTick()
+  await awaitMapContainerStable()
   clearDistrictLayer()
-  await loadTalukaOptionsByDistrict(geoFilterParam(selectedDistrict.value))
+  // Taluka dropdown options load via watch(selectedDistrict); avoid duplicate fetch here.
   await refreshTalukaCentroids()
-  map.flyTo([lat, lng], 9, { duration: 0.85 })
+  await new Promise((resolve) => {
+    map.once('moveend', () => {
+      try {
+        map.invalidateSize(false)
+      } catch (e) {
+        console.warn('Map invalidateSize after district flyTo:', e.message)
+      }
+      resolve()
+    })
+    map.flyTo([lat, lng], 9, { duration: 0.85 })
+  })
 }
 
 function renderTalukaCentroids(rows) {
@@ -3271,8 +3284,22 @@ function resizeMapAfterTransition() {
   setTimeout(() => { if (map) map.invalidateSize({ animate: false }) }, 60)
   setTimeout(() => { if (map) map.invalidateSize({ animate: false }) }, 260)
 }
+
+/** After header/geo-nav layout changes: rAF paint + same staged resize as sidebars (260ms). */
+async function awaitMapContainerStable() {
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+  resizeMapAfterTransition()
+  await new Promise((resolve) => setTimeout(resolve, 260))
+}
+
 watch(alpCollapsed, resizeMapAfterTransition)
 watch(anomalyDrawerOpen, resizeMapAfterTransition)
+watch(showGeoNavBar, async () => {
+  await nextTick()
+  resizeMapAfterTransition()
+})
 
 /** Restore all household dot colors to their normal (non-anomaly) state */
 function clearAnomalyLayer() {
