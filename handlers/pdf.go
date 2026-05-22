@@ -935,9 +935,9 @@ func isValidPNG(data []byte) bool {
 		data[4] == '\r' && data[5] == '\n' && data[6] == 0x1a && data[7] == '\n'
 }
 
-// pdfFilename builds a descriptive filename like AgriTwin_Solapur_Mohol_2025-06-10.pdf
+// pdfFilename builds a descriptive filename like DigitalTwin_Report_Solapur_Mohol_2025-06-10.pdf
 func pdfFilename(req PDFRequest) string {
-	parts := []string{"AgriTwin"}
+	parts := []string{"DigitalTwin_Report"}
 	if req.DistrictName != "" {
 		parts = append(parts, strings.ReplaceAll(req.DistrictName, " ", "_"))
 	}

@@ -4875,7 +4875,7 @@ async function downloadPDF() {
     const blobUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = blobUrl
-    const stem = ['AgriTwin',
+    const stem = ['DigitalTwin_Report',
       districtName.replace(/\s+/g, '_') || '',
       talukaName.replace(/\s+/g, '_')   || '',
       villageName.replace(/\s+/g, '_')  || '',
