@@ -311,7 +311,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 	doc.SetXY(ml+2, 14)
 	doc.SetFont("Helvetica", "B", 10)
 	doc.SetTextColor(pWhite.r, pWhite.g, pWhite.b)
-	doc.CellFormat(uw-55, 8, "AgriTwin  |  Agriculture Digital Twin", "", 0, "L", false, 0, "")
+	doc.CellFormat(uw-55, 8, "Digital Twin", "", 0, "L", false, 0, "")
 
 	doc.SetFont("Helvetica", "", 8)
 	doc.CellFormat(53, 8, time.Now().Format("02 January 2006"), "", 0, "R", false, 0, "")
@@ -320,7 +320,7 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 	doc.SetXY(ml, 24)
 	doc.SetFont("Helvetica", "B", 17)
 	doc.SetTextColor(pDark.r, pDark.g, pDark.b)
-	doc.CellFormat(uw, 9, "Village Agriculture Report", "", 1, "L", false, 0, "")
+	doc.CellFormat(uw, 9, "Village Report", "", 1, "L", false, 0, "")
 
 	crumbParts := []string{}
 	if req.DistrictName != "" {
@@ -417,9 +417,11 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 		pdfSectionTitle(doc, "PROBLEM FILTER SUMMARY", ml, uw)
 		doc.Ln(3)
 
-		// Three filter boxes side by side
-		pfW := (uw - float64(len(req.ProblemFilters)-1)*4) / float64(len(req.ProblemFilters))
-		pfY := doc.GetY()
+		const pfGap = 4.0
+		const pfCols = 4
+		const pfCardH = 22.0
+		pfCardW := (uw - float64(pfCols-1)*pfGap) / float64(pfCols)
+		pfStartY := doc.GetY()
 
 		// Colour mapping for each known filter key
 		filterColors := map[string]rgbColor{
@@ -429,35 +431,38 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 		}
 
 		for i, pf := range req.ProblemFilters {
-			pfX := ml + float64(i)*(pfW+4)
-			col := filterColors[pf.Key]
-			if col == (rgbColor{}) {
-				col = pGray
+			pfCol := i % pfCols
+			pfRow := i / pfCols
+			pfX := ml + float64(pfCol)*(pfCardW+pfGap)
+			pfY := pfStartY + float64(pfRow)*(pfCardH+pfGap)
+			accentCol := filterColors[pf.Key]
+			if accentCol == (rgbColor{}) {
+				accentCol = pGray
 			}
 
 			// Box background
 			doc.SetFillColor(pLightGray.r, pLightGray.g, pLightGray.b)
-			doc.Rect(pfX, pfY, pfW, 22, "F")
+			doc.Rect(pfX, pfY, pfCardW, pfCardH, "F")
 
 			// Top accent stripe (thicker if active)
 			stripeH := 1.5
 			if pf.Active {
 				stripeH = 3.0
 			}
-			doc.SetFillColor(col.r, col.g, col.b)
-			doc.Rect(pfX, pfY, pfW, stripeH, "F")
+			doc.SetFillColor(accentCol.r, accentCol.g, accentCol.b)
+			doc.Rect(pfX, pfY, pfCardW, stripeH, "F")
 
 			// Count value
 			doc.SetXY(pfX, pfY+stripeH+2)
 			doc.SetFont("Helvetica", "B", 14)
 			doc.SetTextColor(pDark.r, pDark.g, pDark.b)
-			doc.CellFormat(pfW, 8, fmt.Sprintf("%d", pf.Count), "", 1, "C", false, 0, "")
+			doc.CellFormat(pfCardW, 8, fmt.Sprintf("%d", pf.Count), "", 1, "C", false, 0, "")
 
 			// Label
 			doc.SetX(pfX)
 			doc.SetFont("Helvetica", "B", 6.5)
 			doc.SetTextColor(pTextGray.r, pTextGray.g, pTextGray.b)
-			doc.CellFormat(pfW, 4, pf.Label, "", 1, "C", false, 0, "")
+			doc.CellFormat(pfCardW, 4, pf.Label, "", 1, "C", false, 0, "")
 
 			// Percentage note
 			pct := 0
@@ -470,10 +475,11 @@ func buildAgriPDF(req PDFRequest, houses []HouseRecord, s pdfStats) *fpdf.Fpdf {
 			}
 			doc.SetX(pfX)
 			doc.SetFont("Helvetica", "", 6)
-			doc.SetTextColor(col.r, col.g, col.b)
-			doc.CellFormat(pfW, 4, fmt.Sprintf("%d%% of total%s", pct, activeTag), "", 1, "C", false, 0, "")
+			doc.SetTextColor(accentCol.r, accentCol.g, accentCol.b)
+			doc.CellFormat(pfCardW, 4, fmt.Sprintf("%d%% of total%s", pct, activeTag), "", 1, "C", false, 0, "")
 		}
-		doc.SetY(pfY + 26)
+		pfRows := (len(req.ProblemFilters) + pfCols - 1) / pfCols
+		doc.SetY(pfStartY + float64(pfRows)*(pfCardH+pfGap) + 2)
 
 		// If multiple filters were active, show the combined match count
 		if req.ProblemMatchTotal > 0 {
