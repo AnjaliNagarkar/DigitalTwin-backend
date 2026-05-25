@@ -504,9 +504,10 @@ func (h *DashboardSummaryHandler) fetchPopulationSection(ctx context.Context, wh
 	section := defaultPopulationSummary()
 
 	populationQuery := injectWhere(`
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT fm.FAMILY_MEMBER_ID)
 		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		JOIN FAMILY f
+		ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE __WHERE_CLAUSE__
 	`, whereF)
 	householdsQuery := injectWhere(`
@@ -591,7 +592,7 @@ func (h *DashboardSummaryHandler) fetchPopulationSection(ctx context.Context, wh
 
 	if len(bplConditions) > 0 {
 		bplHouseholdQuery := injectWhere(fmt.Sprintf(`
-			SELECT COUNT(*)
+			SELECT COUNT(DISTINCT f.FAMILY_ID)
 			FROM FAMILY f
 			WHERE __WHERE_CLAUSE__
 			  AND (%s)
@@ -618,11 +619,21 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 
 	genderQuery := injectWhere(`
 		SELECT
-			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END), 0) AS male,
-			COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END), 0) AS female,
-			COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END), 0) AS other
+			COUNT(DISTINCT CASE
+				WHEN LOWER(TRIM(fm.GENDER)) = 'male'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS male,
+			COUNT(DISTINCT CASE
+				WHEN LOWER(TRIM(fm.GENDER)) = 'female'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS female,
+			COUNT(DISTINCT CASE
+				WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female')
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS other
 		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		JOIN FAMILY f
+		ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE __WHERE_CLAUSE__
 	`, whereF)
 	ageQuery := injectWhere(`
@@ -646,7 +657,7 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 	ageIncomeQuery := injectWhere(`
 		SELECT
 			age_group,
-			COUNT(*) AS families,
+			COUNT(DISTINCT EXTERNAL_FAMILY_ID) AS families,
 			AVG(income) AS avg_income
 		FROM (
 			SELECT
@@ -694,9 +705,10 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 				WHEN DISABILITY_CATEGORY LIKE '%%Parkinson%%' OR DISABILITY_CATEGORY LIKE '%%Sclerosis%%' OR DISABILITY_CATEGORY LIKE '%%Sickle%%' OR DISABILITY_CATEGORY LIKE '%%Thalassemia%%' THEN 'Chronic Conditions'
 				ELSE 'Other'
 			END AS disability_group,
-			COUNT(*) AS total
+			COUNT(DISTINCT fm.FAMILY_MEMBER_ID) AS total
 		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+		JOIN FAMILY f
+		ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
 		WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
 		  AND __WHERE_CLAUSE__
 		GROUP BY disability_group
@@ -842,20 +854,52 @@ func (h *DashboardSummaryHandler) fetchDemographicsSection(ctx context.Context, 
 func (h *DashboardSummaryHandler) fetchEducationSection(ctx context.Context, whereF string, args []interface{}) (gin.H, error) {
 	section := defaultEducationSummary()
 
+	// below_10th: NULL or empty QUALIFICATION only (UI label: "Qualification Not Available") — DB stores 10th, 12th, Graduation & Above only.
 	query := injectWhere(`
 		SELECT
-			COUNT(*) AS total_population,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' THEN 1 ELSE 0 END) AS literate_population,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO' OR fm.EVER_ATTENDED_SCHOOL IS NULL THEN 1 ELSE 0 END) AS illiterate_population,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES' THEN 1 ELSE 0 END) AS students_count,
-			SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'YES' AND fm.DROP_OUT IS NOT NULL AND TRIM(fm.DROP_OUT) != '' THEN 1 ELSE 0 END) AS dropout_count,
-			SUM(CASE WHEN TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_population,
-			SUM(CASE WHEN fm.QUALIFICATION IS NULL OR TRIM(fm.QUALIFICATION) = '' THEN 1 ELSE 0 END) AS below_10th,
-			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '10th' THEN 1 ELSE 0 END) AS tenth,
-			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '12th' THEN 1 ELSE 0 END) AS twelfth,
-			SUM(CASE WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_above
+			COUNT(DISTINCT fm.FAMILY_MEMBER_ID) AS total_population,
+			COUNT(DISTINCT CASE
+				WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS literate_population,
+			COUNT(DISTINCT CASE
+				WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO'
+					OR fm.EVER_ATTENDED_SCHOOL IS NULL
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS illiterate_population,
+			COUNT(DISTINCT CASE
+				WHEN UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS students_count,
+			COUNT(DISTINCT CASE
+				WHEN fm.DROP_OUT IS NOT NULL
+					AND TRIM(fm.DROP_OUT) != ''
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS dropout_count,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS graduate_population,
+			COUNT(DISTINCT CASE
+				WHEN fm.QUALIFICATION IS NULL
+					OR TRIM(fm.QUALIFICATION) = ''
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS below_10th,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(fm.QUALIFICATION) = '10th'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS tenth,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(fm.QUALIFICATION) = '12th'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS twelfth,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS graduate_above
 		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+		JOIN FAMILY f
+		ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE __WHERE_CLAUSE__
 	`, whereF)
 
@@ -885,19 +929,58 @@ func (h *DashboardSummaryHandler) fetchEmploymentSection(ctx context.Context, wh
 
 	query := injectWhere(`
 		SELECT
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Salaried Job','Self Employed - Farm based','Self Employed- Non-farm based','Self Employed-Agri allied','Wage Work') THEN 1 ELSE 0 END) AS employed_members,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Unemployed','Not Applicable') THEN 1 ELSE 0 END) AS unemployed_members,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' OR fm.NATURE_WAGE_WORK IS NOT NULL THEN 1 ELSE 0 END) AS daily_wage_workers,
-			SUM(CASE WHEN LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%driver%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%electric%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%mechanic%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%tailor%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%carpenter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%computer%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%bank%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%shop%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%company worker%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%security%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%painter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%civil%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%technician%%' THEN 1 ELSE 0 END) AS skilled_workers,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed - Farm based' THEN 1 ELSE 0 END) AS farm_based,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed-Agri allied' THEN 1 ELSE 0 END) AS agri_allied,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed- Non-farm based' THEN 1 ELSE 0 END) AS non_farm,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Salaried Job' THEN 1 ELSE 0 END) AS salaried,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' THEN 1 ELSE 0 END) AS wage_workers,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Housewife' THEN 1 ELSE 0 END) AS housewife,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Studying' THEN 1 ELSE 0 END) AS students,
-			SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Unemployed' THEN 1 ELSE 0 END) AS unemployed,
-			SUM(CASE WHEN fm.OCCUPATION IS NULL OR TRIM(COALESCE(fm.OCCUPATION, '')) = '' THEN 1 ELSE 0 END) AS other
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Salaried Job','Self Employed - Farm based','Self Employed- Non-farm based','Self Employed-Agri allied','Wage Work')
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS employed_members,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Unemployed','Not Applicable')
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS unemployed_members,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' OR fm.NATURE_WAGE_WORK IS NOT NULL
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS daily_wage_workers,
+			COUNT(DISTINCT CASE
+				WHEN LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%driver%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%electric%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%mechanic%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%tailor%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%carpenter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%computer%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%bank%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%shop%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%company worker%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%security%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%painter%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%civil%%' OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%%technician%%'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS skilled_workers,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed - Farm based'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS farm_based,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed-Agri allied'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS agri_allied,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed- Non-farm based'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS non_farm,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Salaried Job'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS salaried,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS wage_workers,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Housewife'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS housewife,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Studying'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS students,
+			COUNT(DISTINCT CASE
+				WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Unemployed'
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS unemployed,
+			COUNT(DISTINCT CASE
+				WHEN fm.OCCUPATION IS NULL OR TRIM(COALESCE(fm.OCCUPATION, '')) = ''
+				THEN fm.FAMILY_MEMBER_ID
+			END) AS other
 		FROM FAMILY_MEMBER fm
 		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 		WHERE __WHERE_CLAUSE__

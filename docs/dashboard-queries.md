@@ -365,11 +365,21 @@ WHERE __WHERE_CLAUSE__
 
 ```sql
 SELECT
-  COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'male' THEN 1 ELSE 0 END), 0) AS male,
-  COALESCE(SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) = 'female' THEN 1 ELSE 0 END), 0) AS female,
-  COALESCE(SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female') THEN 1 ELSE 0 END), 0) AS other
+  COUNT(DISTINCT CASE
+    WHEN LOWER(TRIM(fm.GENDER)) = 'male'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS male,
+  COUNT(DISTINCT CASE
+    WHEN LOWER(TRIM(fm.GENDER)) = 'female'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS female,
+  COUNT(DISTINCT CASE
+    WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female')
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS other
 FROM FAMILY_MEMBER fm
-JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+JOIN FAMILY f
+ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 WHERE __WHERE_CLAUSE__
 ```
 
@@ -380,6 +390,8 @@ WHERE __WHERE_CLAUSE__
 
 ### Notes
 
+- **Previous issue:** `FAMILY` can contain multiple rows with the same `EXTERNAL_FAMILY_ID`. The join to `FAMILY` duplicated each `FAMILY_MEMBER` row once per matching family row. `SUM(CASE … THEN 1 …)` counted those duplicate joined rows, inflating male/female/other totals.
+- **Fix:** `COUNT(DISTINCT CASE … THEN fm.FAMILY_MEMBER_ID END)` counts each person once, regardless of how many `FAMILY` rows share the same `EXTERNAL_FAMILY_ID`.
 - Rendered as CSS `conic-gradient` donut (not Chart.js).
 - Total in header = sum of male + female + other.
 
@@ -418,26 +430,52 @@ WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
 ```sql
 SELECT
   CASE
-    WHEN DISABILITY_CATEGORY LIKE '%Blind%' OR DISABILITY_CATEGORY LIKE '%Low vision%' THEN 'Visual Disability'
-    WHEN DISABILITY_CATEGORY LIKE '%Locomotor%' OR DISABILITY_CATEGORY LIKE '%Cerebral%'
-      OR DISABILITY_CATEGORY LIKE '%Muscular%' OR DISABILITY_CATEGORY LIKE '%Dwarf%' THEN 'Locomotor Disability'
-    WHEN DISABILITY_CATEGORY LIKE '%Mental%' OR DISABILITY_CATEGORY LIKE '%Autism%'
-      OR DISABILITY_CATEGORY LIKE '%Intellectual%' OR DISABILITY_CATEGORY LIKE '%Learning%' THEN 'Intellectual Disability'
-    WHEN DISABILITY_CATEGORY LIKE '%Hearing%' THEN 'Hearing Disability'
-    WHEN DISABILITY_CATEGORY LIKE '%Speech%' THEN 'Speech Disability'
-    WHEN DISABILITY_CATEGORY LIKE '%Multiple%' THEN 'Multiple Disabilities'
-    WHEN DISABILITY_CATEGORY LIKE '%Parkinson%' OR DISABILITY_CATEGORY LIKE '%Sclerosis%'
-      OR DISABILITY_CATEGORY LIKE '%Sickle%' OR DISABILITY_CATEGORY LIKE '%Thalassemia%' THEN 'Chronic Conditions'
+    WHEN DISABILITY_CATEGORY LIKE '%Blind%'
+      OR DISABILITY_CATEGORY LIKE '%Low vision%'
+    THEN 'Visual Disability'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Locomotor%'
+      OR DISABILITY_CATEGORY LIKE '%Cerebral%'
+      OR DISABILITY_CATEGORY LIKE '%Muscular%'
+      OR DISABILITY_CATEGORY LIKE '%Dwarf%'
+    THEN 'Locomotor Disability'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Mental%'
+      OR DISABILITY_CATEGORY LIKE '%Autism%'
+      OR DISABILITY_CATEGORY LIKE '%Intellectual%'
+      OR DISABILITY_CATEGORY LIKE '%Learning%'
+    THEN 'Intellectual Disability'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Hearing%'
+    THEN 'Hearing Disability'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Speech%'
+    THEN 'Speech Disability'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Multiple%'
+    THEN 'Multiple Disabilities'
+
+    WHEN DISABILITY_CATEGORY LIKE '%Parkinson%'
+      OR DISABILITY_CATEGORY LIKE '%Sclerosis%'
+      OR DISABILITY_CATEGORY LIKE '%Sickle%'
+      OR DISABILITY_CATEGORY LIKE '%Thalassemia%'
+    THEN 'Chronic Conditions'
+
     ELSE 'Other'
   END AS disability_group,
-  COUNT(*) AS total
+
+  COUNT(DISTINCT fm.FAMILY_MEMBER_ID) AS total
+
 FROM FAMILY_MEMBER fm
-JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+JOIN FAMILY f
+ON fm.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+
 WHERE UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES'
   AND __WHERE_CLAUSE__
+
 GROUP BY disability_group
 ORDER BY total DESC
-LIMIT 8
+LIMIT 8;
 ```
 
 ### Tables used
@@ -447,6 +485,9 @@ LIMIT 8
 
 ### Notes
 
+- **Previous issue:** `FAMILY` can contain multiple rows with the same `EXTERNAL_FAMILY_ID`. Joining `FAMILY_MEMBER` to `FAMILY` on that key duplicated each member row once per matching family row. `COUNT(*) AS total` in the grouped breakdown counted those duplicate joined rows, inflating per-category Divyang counts in the donut chart.
+- **Fix:** `COUNT(DISTINCT fm.FAMILY_MEMBER_ID) AS total` counts each divyang person once per `disability_group`, regardless of duplicate `FAMILY` rows.
+- Category `CASE` mapping (`Visual Disability`, `Locomotor Disability`, etc.) is unchanged.
 - Frontend maps API labels to i18n keys via `DISABILITY_AGGREGATE_LABELS` / `mapDisabilityGroup`.
 - `divyangTotal` prefers `total_divyang` from API; else sums segment values.
 - Unmatched disability names shown as raw API `name`.
@@ -473,16 +514,16 @@ LIMIT 8
 
 ### Database
 
-Only runs if `ColumnChecker` reports `FAMILY_BELONG_BPL_CATEGORY` and/or `RATION_CARD_TYPE` exist:
+Only runs if `ColumnChecker` reports `FAMILY_BELONG_BPL_CATEGORY` and/or `RATION_CARD_TYPE` exist. The `AND (...)` clause is built from whichever of those columns exist (same OR logic as before):
 
 ```sql
-SELECT COUNT(*)
+SELECT COUNT(DISTINCT f.FAMILY_ID) AS bpl_households
 FROM FAMILY f
 WHERE __WHERE_CLAUSE__
   AND (
     UPPER(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, ''))) = 'YES'
     OR UPPER(TRIM(COALESCE(f.RATION_CARD_TYPE, ''))) IN ('BPL', 'AAY')
-  )
+  );
 ```
 
 ### Tables used
@@ -491,9 +532,12 @@ WHERE __WHERE_CLAUSE__
 
 ### Notes
 
-- `non_bpl` = `total_households - bpl` (computed in Go, not SQL).
+- **Previous issue:** `FAMILY` can contain multiple rows per household (duplicate `EXTERNAL_FAMILY_ID` / repeated `FAMILY_ID` keys). `COUNT(*)` counted every matching row, inflating BPL household totals in the dashboard donut.
+- **Fix:** `COUNT(DISTINCT f.FAMILY_ID)` counts each household once for BPL eligibility, regardless of duplicate family rows.
+- `non_bpl` = `total_households - bpl` (computed in Go, not SQL) — unchanged.
 - `bpl_distribution` is stored under `population` in API response (not `demographics`).
 - Donut shows BPL vs Non-BPL families.
+- **2D Map:** BPL Status coloring and analytics use client-side logic on loaded `houses` data (`getBplStatus`); this SQL applies to the **Dashboard** `GET /dashboard/summary` BPL donut only.
 
 ---
 
@@ -520,41 +564,75 @@ WHERE __WHERE_CLAUSE__
 ```sql
 SELECT
   age_group,
-  COUNT(*) AS families,
+  COUNT(DISTINCT EXTERNAL_FAMILY_ID) AS families,
   AVG(income) AS avg_income
 FROM (
   SELECT
     f.EXTERNAL_FAMILY_ID,
-    CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) AS income,
+
+    CAST(
+      NULLIF(TRIM(f.ANNUAL_INCOME), '')
+      AS DECIMAL(15,2)
+    ) AS income,
+
     CASE
-      WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 18 AND 30 THEN '18-30'
-      WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
-      WHEN TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
+      WHEN TIMESTAMPDIFF(
+        YEAR,
+        m.selected_dob,
+        CURDATE()
+      ) BETWEEN 18 AND 30 THEN '18-30'
+
+      WHEN TIMESTAMPDIFF(
+        YEAR,
+        m.selected_dob,
+        CURDATE()
+      ) BETWEEN 31 AND 45 THEN '31-45'
+
+      WHEN TIMESTAMPDIFF(
+        YEAR,
+        m.selected_dob,
+        CURDATE()
+      ) BETWEEN 46 AND 60 THEN '46-60'
+
       ELSE '60+'
     END AS age_group
+
   FROM FAMILY f
+
   JOIN (
     SELECT
       fm.EXTERNAL_FAMILY_ID,
+
       COALESCE(
-        MIN(CASE
-          WHEN LOWER(TRIM(COALESCE(fm.RELATION_FAMILY_HEAD, ''))) IN ('head', 'self', 'head of family')
-          THEN STR_TO_DATE(fm.DOB, '%d-%m-%Y')
-        END),
+        MIN(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(fm.RELATION_FAMILY_HEAD, '')))
+                 IN ('head', 'self', 'head of family')
+            THEN STR_TO_DATE(fm.DOB, '%d-%m-%Y')
+          END
+        ),
         MIN(STR_TO_DATE(fm.DOB, '%d-%m-%Y'))
       ) AS selected_dob
+
     FROM FAMILY_MEMBER fm
+
     WHERE fm.DOB IS NOT NULL
       AND TRIM(fm.DOB) != ''
       AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL
+
     GROUP BY fm.EXTERNAL_FAMILY_ID
-  ) m ON m.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+
+  ) m
+  ON m.EXTERNAL_FAMILY_ID = f.EXTERNAL_FAMILY_ID
+
   WHERE NULLIF(TRIM(f.ANNUAL_INCOME), '') IS NOT NULL
     AND CAST(NULLIF(TRIM(f.ANNUAL_INCOME), '') AS DECIMAL(15,2)) IS NOT NULL
     AND TIMESTAMPDIFF(YEAR, m.selected_dob, CURDATE()) >= 18
     AND __WHERE_CLAUSE__
+
 ) t
-GROUP BY age_group
+
+GROUP BY age_group;
 ```
 
 ### Tables used
@@ -564,6 +642,8 @@ GROUP BY age_group
 
 ### Notes
 
+- **Previous issue:** `FAMILY` can contain multiple rows with the same `EXTERNAL_FAMILY_ID`. The inner query joins each member’s selected DOB to every matching family row, so one household can appear more than once in subquery `t`. `COUNT(*) AS families` counted those duplicate rows and inflated bar heights in the age–income chart.
+- **Fix:** `COUNT(DISTINCT EXTERNAL_FAMILY_ID) AS families` counts each household once per `age_group`, regardless of duplicate `FAMILY` rows.
 - Backend normalizes to age groups: `18-30`, `31-45`, `46-60`, `60+`.
 - Chart: bar height = `families`; data label = average income (₹).
 - Head-of-household DOB preferred for age; else earliest member DOB.
@@ -593,20 +673,59 @@ GROUP BY age_group
 
 ```sql
 SELECT
-  COUNT(*) AS total_population,
-  SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES' THEN 1 ELSE 0 END) AS literate_population,
-  SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO' OR fm.EVER_ATTENDED_SCHOOL IS NULL THEN 1 ELSE 0 END) AS illiterate_population,
-  SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES' THEN 1 ELSE 0 END) AS students_count,
-  SUM(CASE WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
-    AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'YES'
-    AND fm.DROP_OUT IS NOT NULL AND TRIM(fm.DROP_OUT) != '' THEN 1 ELSE 0 END) AS dropout_count,
-  SUM(CASE WHEN TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_population,
-  SUM(CASE WHEN fm.QUALIFICATION IS NULL OR TRIM(fm.QUALIFICATION) = '' THEN 1 ELSE 0 END) AS below_10th,
-  SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '10th' THEN 1 ELSE 0 END) AS tenth,
-  SUM(CASE WHEN TRIM(fm.QUALIFICATION) = '12th' THEN 1 ELSE 0 END) AS twelfth,
-  SUM(CASE WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above' THEN 1 ELSE 0 END) AS graduate_above
+  COUNT(DISTINCT fm.FAMILY_MEMBER_ID) AS total_population,
+
+  COUNT(DISTINCT CASE
+    WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'YES'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS literate_population,
+
+  COUNT(DISTINCT CASE
+    WHEN UPPER(TRIM(COALESCE(fm.EVER_ATTENDED_SCHOOL, ''))) = 'NO'
+      OR fm.EVER_ATTENDED_SCHOOL IS NULL
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS illiterate_population,
+
+  COUNT(DISTINCT CASE
+    WHEN UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS students_count,
+
+  COUNT(DISTINCT CASE
+    WHEN fm.DROP_OUT IS NOT NULL
+      AND TRIM(fm.DROP_OUT) != ''
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS dropout_count,
+
+  COUNT(DISTINCT CASE
+    WHEN TRIM(COALESCE(fm.QUALIFICATION, '')) = 'Graduation & Above'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS graduate_population,
+
+  COUNT(DISTINCT CASE
+    WHEN fm.QUALIFICATION IS NULL
+      OR TRIM(fm.QUALIFICATION) = ''
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS qualification_not_available,
+
+  COUNT(DISTINCT CASE
+    WHEN TRIM(fm.QUALIFICATION) = '10th'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS tenth,
+
+  COUNT(DISTINCT CASE
+    WHEN TRIM(fm.QUALIFICATION) = '12th'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS twelfth,
+
+  COUNT(DISTINCT CASE
+    WHEN TRIM(fm.QUALIFICATION) = 'Graduation & Above'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS graduate_above
+
 FROM FAMILY_MEMBER fm
-JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+JOIN FAMILY f
+ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 WHERE __WHERE_CLAUSE__
 ```
 
@@ -617,6 +736,11 @@ WHERE __WHERE_CLAUSE__
 
 ### Notes
 
+- **Previous issue:** `FAMILY` contains duplicate rows for the same `EXTERNAL_FAMILY_ID`. Joining `FAMILY_MEMBER` to `FAMILY` duplicated member rows. `COUNT(*)` and `SUM(CASE … THEN 1 …)` counted those duplicates, inflating education metrics.
+- **Verification (unfiltered scope):** dashboard total was **69,611** vs actual distinct members **69,598** — **13** duplicate join rows.
+- **Fix:** `COUNT(DISTINCT fm.FAMILY_MEMBER_ID)` and `COUNT(DISTINCT CASE … THEN fm.FAMILY_MEMBER_ID END)` count each person once. Qualification buckets (`below_10th`, `tenth`, `twelfth`, `graduate_above`) use the same DISTINCT pattern in this single query.
+- **`dropout_count`:** `FAMILY_MEMBER.DROP_OUT` stores the dropout class/standard (numeric values such as 1–10), not YES/NO. A non-empty `DROP_OUT` means the member is a school dropout. Count uses `COUNT(DISTINCT CASE WHEN fm.DROP_OUT IS NOT NULL AND TRIM(fm.DROP_OUT) != '' THEN fm.FAMILY_MEMBER_ID END)` — no `EVER_ATTENDED_SCHOOL` or `CURRENTLY_PURSUING_EDUCATION` guards (those could exclude valid dropout rows).
+- **`below_10th` (display label: Qualification Not Available):** Qualification Not Available includes records where `QUALIFICATION` is NULL or empty because the source database does not contain an explicit “Below 10th” value. Stored values are only `10th`, `12th`, and `Graduation & Above`. SQL bucket: `COUNT(DISTINCT CASE WHEN fm.QUALIFICATION IS NULL OR TRIM(fm.QUALIFICATION) = '' THEN fm.FAMILY_MEMBER_ID END)`. Do not match `TRIM(fm.QUALIFICATION) = 'Below 10th'` — that value does not exist in the database. API key remains `below_10th`; frontend label via `agriDashboard.below10th` in `en.json` / `mr.json`.
 - One query powers both Education Intelligence cards and Qualification Distribution.
 
 ---
@@ -649,8 +773,10 @@ Same SQL as **Education Intelligence** — fields `below_10th`, `tenth`, `twelft
 
 ### Notes
 
+- Uses the same duplicate-safe `COUNT(DISTINCT fm.FAMILY_MEMBER_ID)` query as **Education Intelligence** (see above).
+- **Qualification Not Available** (`below_10th` key): includes records where `QUALIFICATION` is NULL or empty because the source database does not contain an explicit “Below 10th” value. Stored values are only `10th`, `12th`, and `Graduation & Above`.
 - Horizontal bar chart; sorted descending by count in frontend.
-- Labels: Below 10th, 10th, 12th, Graduation & Above.
+- Labels: Qualification Not Available, 10th, 12th, Graduation & Above (`t('agriDashboard.below10th')`, etc.).
 
 ---
 
@@ -682,7 +808,8 @@ No separate SQL — derived from Education Intelligence query aggregates.
 
 ### Notes
 
-- Footer text also shows literate count vs `population.total_population` from population section.
+- `literacy_rate` = `(literate_population / total_population) * 100` where both values come from the duplicate-safe education query (`COUNT(DISTINCT fm.FAMILY_MEMBER_ID)`).
+- Footer text also shows literate count vs `population.total_population` from population section (separate query; population section uses its own DISTINCT fix).
 
 ---
 
@@ -708,34 +835,50 @@ No separate SQL — derived from Education Intelligence query aggregates.
 
 ```sql
 SELECT
-  SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN (
-    'Salaried Job','Self Employed - Farm based','Self Employed- Non-farm based',
-    'Self Employed-Agri allied','Wage Work'
-  ) THEN 1 ELSE 0 END) AS employed_members,
-  SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Unemployed','Not Applicable') THEN 1 ELSE 0 END) AS unemployed_members,
-  SUM(CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' OR fm.NATURE_WAGE_WORK IS NOT NULL THEN 1 ELSE 0 END) AS daily_wage_workers,
-  SUM(CASE WHEN LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%driver%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%electric%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%mechanic%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%tailor%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%carpenter%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%computer%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%bank%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%shop%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%company worker%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%security%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%painter%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%civil%'
-    OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%technician%' THEN 1 ELSE 0 END) AS skilled_workers,
-  -- occupation_distribution buckets: farm_based, agri_allied, non_farm, salaried,
-  -- wage_workers, housewife, students, unemployed, other
-  ...
+  COUNT(DISTINCT CASE
+    WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN (
+      'Salaried Job','Self Employed - Farm based','Self Employed- Non-farm based',
+      'Self Employed-Agri allied','Wage Work'
+    )
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS employed_members,
+  COUNT(DISTINCT CASE
+    WHEN TRIM(COALESCE(fm.OCCUPATION, '')) IN ('Unemployed','Not Applicable')
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS unemployed_members,
+  COUNT(DISTINCT CASE
+    WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' OR fm.NATURE_WAGE_WORK IS NOT NULL
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS daily_wage_workers,
+  COUNT(DISTINCT CASE
+    WHEN LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%driver%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%electric%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%mechanic%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%tailor%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%carpenter%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%computer%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%bank%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%shop%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%company worker%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%security%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%painter%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%civil%'
+      OR LOWER(COALESCE(fm.NATURE_WAGE_WORK, '')) LIKE '%technician%'
+    THEN fm.FAMILY_MEMBER_ID
+  END) AS skilled_workers,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed - Farm based' THEN fm.FAMILY_MEMBER_ID END) AS farm_based,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed-Agri allied' THEN fm.FAMILY_MEMBER_ID END) AS agri_allied,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Self Employed- Non-farm based' THEN fm.FAMILY_MEMBER_ID END) AS non_farm,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Salaried Job' THEN fm.FAMILY_MEMBER_ID END) AS salaried,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Wage Work' THEN fm.FAMILY_MEMBER_ID END) AS wage_workers,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Housewife' THEN fm.FAMILY_MEMBER_ID END) AS housewife,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Studying' THEN fm.FAMILY_MEMBER_ID END) AS students,
+  COUNT(DISTINCT CASE WHEN TRIM(COALESCE(fm.OCCUPATION, '')) = 'Unemployed' THEN fm.FAMILY_MEMBER_ID END) AS unemployed,
+  COUNT(DISTINCT CASE WHEN fm.OCCUPATION IS NULL OR TRIM(COALESCE(fm.OCCUPATION, '')) = '' THEN fm.FAMILY_MEMBER_ID END) AS other
 FROM FAMILY_MEMBER fm
 JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
 WHERE __WHERE_CLAUSE__
 ```
-
-(Full SELECT includes all `occupation_distribution` SUM cases — see `handlers/dashboard_summary.go` lines 886–904.)
 
 ### Tables used
 
@@ -744,6 +887,8 @@ WHERE __WHERE_CLAUSE__
 
 ### Notes
 
+- **Previous issue:** Duplicate `FAMILY` rows for the same `EXTERNAL_FAMILY_ID` inflated people counts when using `SUM(CASE … THEN 1 …)` after `JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID`. DB verification showed inflation (e.g. `employed_members` +4, `unemployed_members` +4).
+- **Fix:** Employment Insights uses `COUNT(DISTINCT CASE WHEN condition THEN fm.FAMILY_MEMBER_ID END)` style aggregation to avoid duplicate inflation caused by duplicate FAMILY rows during JOIN operations. Category conditions are unchanged.
 - Same query also feeds Occupation Distribution.
 
 ---
@@ -776,6 +921,7 @@ Same single query as **Employment Insights**.
 
 ### Notes
 
+- Uses the same duplicate-safe `COUNT(DISTINCT fm.FAMILY_MEMBER_ID)` employment query as **Employment Insights** (see above).
 - Buckets: farm_based, agri_allied, non_farm, salaried, wage_workers, housewife, students, unemployed, other.
 - Sorted descending by value in frontend.
 
@@ -1185,7 +1331,7 @@ Observations only — no optimization recommendations implemented.
 | **Heavy queries** | `disabilityQuery` — `LIKE` patterns on `DISABILITY_CATEGORY`, `GROUP BY`, `LIMIT 8` |
 | **Heavy queries** | `cropQuery` — `UNION ALL` of two grouped scans on `FAMILY` |
 | **Heavy queries** | `landUtilQuery` / `landDistributionQuery` — `CAST`, `REGEXP`, `DECIMAL` on text acreage fields |
-| **Aggregation-heavy** | `fetchEducationSection`, `fetchEmploymentSection` — full member scan with many `SUM(CASE...)` |
+| **Aggregation-heavy** | `fetchEducationSection`, `fetchEmploymentSection` — full member scan with many `COUNT(DISTINCT CASE...)` |
 | **Joins** | Almost all member metrics: `FAMILY_MEMBER` ⋈ `FAMILY` on `EXTERNAL_FAMILY_ID` |
 | **Large scans** | Unfiltered dashboard (no location params) scans all families/members in scope |
 | **Parallelism** | 5 section goroutines reduce latency but increase concurrent DB load |
