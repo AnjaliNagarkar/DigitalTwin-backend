@@ -41,37 +41,41 @@ func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
 		where = "UPPER(TRIM(COALESCE(f.FAMILY_BELONG_BPL_CATEGORY, ''))) = 'YES'"
 	case "student":
 		where = `(
-			(
-				UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
-				OR NULLIF(TRIM(COALESCE(fm.STANDARD_WHICH_STUDYING, '')), '') IS NOT NULL
-				OR NULLIF(TRIM(COALESCE(fm.TYPE_INSTITUTION, '')), '') IS NOT NULL
-			)
-			AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'NO'
-		)`
+            (
+                UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) = 'YES'
+                OR NULLIF(TRIM(COALESCE(fm.STANDARD_WHICH_STUDYING, '')), '') IS NOT NULL
+                OR NULLIF(TRIM(COALESCE(fm.TYPE_INSTITUTION, '')), '') IS NOT NULL
+            )
+            AND UPPER(TRIM(COALESCE(fm.CURRENTLY_PURSUING_EDUCATION, ''))) != 'NO'
+        )`
 	case "divyang":
 		where = "UPPER(TRIM(COALESCE(fm.DIVYANG, ''))) = 'YES' OR UPPER(TRIM(COALESCE(fm.DISABILITY, ''))) = 'YES'"
 	}
 
 	query := fmt.Sprintf(`
-		SELECT
-			COALESCE(TRIM(CONCAT(
-				COALESCE(fm.FIRST_NAME, ''), ' ',
-				COALESCE(fm.LAST_NAME, '')
-			)), '') AS name,
-			COALESCE(fm.GENDER, '') AS gender,
-			CASE
-				WHEN STR_TO_DATE(%[1]s, '%%Y-%%m-%%d') IS NOT NULL THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%Y-%%m-%%d'), CURDATE())
-				WHEN STR_TO_DATE(%[1]s, '%%d-%%m-%%Y') IS NOT NULL THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%d-%%m-%%Y'), CURDATE())
-				ELSE NULL
-			END AS age,
-			COALESCE(NULLIF(TRIM(COALESCE(fm.QUALIFICATION, '')), ''), NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS, '')), ''), 'Not Available') AS education,
-			COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working') AS occupation,
-			COALESCE(NULLIF(TRIM(COALESCE(fm.DISABILITY_CATEGORY, '')), ''), '') AS disability_type
-		FROM FAMILY_MEMBER fm
-		LEFT JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
-		WHERE %[2]s
-		ORDER BY fm.FIRST_NAME, fm.LAST_NAME
-	`, dobExpr, where)
+        SELECT
+            COALESCE(TRIM(CONCAT(
+                COALESCE(fm.FIRST_NAME, ''), ' ',
+                COALESCE(fm.LAST_NAME, '')
+            )), '') AS name,
+            COALESCE(fm.GENDER, '') AS gender,
+            CASE
+                -- DD-MM-YYYY format handling
+                WHEN %[1]s LIKE '__-%%' AND STR_TO_DATE(%[1]s, '%%d-%%m-%%Y') IS NOT NULL 
+                    THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%d-%%m-%%Y'), CURDATE())
+                -- YYYY-MM-DD format handling
+                WHEN %[1]s LIKE '____-%%' AND STR_TO_DATE(%[1]s, '%%Y-%%m-%%d') IS NOT NULL 
+                    THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(%[1]s, '%%Y-%%m-%%d'), CURDATE())
+                ELSE NULL
+            END AS age,
+            COALESCE(NULLIF(TRIM(COALESCE(fm.QUALIFICATION, '')), ''), NULLIF(TRIM(COALESCE(fm.EDUCATION_STATUS, '')), ''), 'Not Available') AS education,
+            COALESCE(NULLIF(TRIM(COALESCE(fm.OCCUPATION, '')), ''), 'Not Working') AS occupation,
+            COALESCE(NULLIF(TRIM(COALESCE(fm.DISABILITY_CATEGORY, '')), ''), '') AS disability_type
+        FROM FAMILY_MEMBER fm
+        LEFT JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+        WHERE %[2]s
+        ORDER BY fm.FIRST_NAME, fm.LAST_NAME
+    `, dobExpr, where)
 
 	rows, err := h.DB.Query(query)
 	if err != nil {
@@ -119,7 +123,6 @@ func (h *PopulationHandler) GetPopulationRegistry(c *gin.Context) {
 
 	c.JSON(http.StatusOK, records)
 }
-
 func (h *PopulationHandler) populationMemberDateColumn() string {
 	for _, column := range []string{"DOB", "D_O_B"} {
 		var count int
