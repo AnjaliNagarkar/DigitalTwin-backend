@@ -106,7 +106,6 @@ func (h *DistrictCentroidsHandler) GetDistrictCentroids(c *gin.Context) {
 
 	c.JSON(http.StatusOK, centroids)
 }
-
 func (h *DistrictCentroidsHandler) detectDistrictMasterColumns() (string, string, string, error) {
 	cols := []string{}
 	rows, err := h.DB.Query(`
@@ -148,3 +147,4 @@ func (h *DistrictCentroidsHandler) detectDistrictMasterColumns() (string, string
 
 	return idCol, latCol, lngCol, nil
 }
+

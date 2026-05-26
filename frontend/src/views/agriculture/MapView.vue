@@ -2591,6 +2591,8 @@ function applyFilters(autoZoomToResults = true) {
     clearMarkers()
     clearAllCentroidLayers()
     refreshDistrictCentroids()
+    // No filter active → smoothly return to the full Maharashtra overview
+    if (map) fitToMaharashtra({ animate: true })
     console.log('AFTER APPLY:', houses.value.length)
     return
   }
@@ -3700,10 +3702,39 @@ async function addMaharashtraHighlight(mapInstance) {
   }
 }
 
+/**
+ * Shared zoom helper used by plotMarkers (after full render) and the
+ * same-signature fast path in loadLiveHouseData.
+ * Filters out null / zero / non-finite coordinates before computing bounds.
+ */
+function zoomToFilteredPoints(validPoints) {
+  if (!map || !validPoints || !validPoints.length) return
+  if (validPoints.length === 1) {
+    map.flyTo([validPoints[0].latitude, validPoints[0].longitude], 14, { duration: 1 })
+  } else {
+    const bounds = L.latLngBounds(validPoints.map(h => [h.latitude, h.longitude]))
+    if (bounds.isValid()) {
+      map.flyToBounds(bounds, {
+        padding: [60, 60],
+        maxZoom: 14,
+        duration: 1.2,
+      })
+    }
+  }
+}
+
 function addHouseMarker(house) {
+  const lat = house.latitude
+  const lng = house.longitude
+  // Skip houses with missing or obviously invalid GPS data rather than
+  // letting Leaflet place them at (0,0) or throw an internal error.
+  if (
+    typeof lat !== 'number' || !Number.isFinite(lat) || lat === 0 ||
+    typeof lng !== 'number' || !Number.isFinite(lng) || lng === 0
+  ) return
   const color  = getMarkerColor(house)
   const target = householdLayer || map
-  const marker = L.circleMarker([house.latitude, house.longitude], {
+  const marker = L.circleMarker([lat, lng], {
     radius: 5, fillColor: color, color: '#fff',
     weight: 1.5, opacity: 1, fillOpacity: 0.88,
   }).addTo(target)
@@ -3915,6 +3946,18 @@ function plotMarkers(data, profileRequestToken = null) {
   const renderToken = markerRenderToken
   let index = 0
 
+  // Capture zoom intent up-front so it cannot be lost or double-triggered:
+  //   • consume fitAfterLoad immediately (before any async gap)
+  //   • build the valid-point list once from all data rows
+  //   • skip lat/lng that are zero, NaN, or non-numeric (bad DB values)
+  const pendingZoomPoints = (fitAfterLoad && data.length > 0 && map)
+    ? data.filter(
+        h => typeof h.latitude  === 'number' && Number.isFinite(h.latitude)  && h.latitude  !== 0 &&
+             typeof h.longitude === 'number' && Number.isFinite(h.longitude) && h.longitude !== 0
+      )
+    : []
+  fitAfterLoad = false   // always reset — plotMarkers is the sole consumer
+
   const finishPlotMarkersTiming = (withSummary) => {
     console.timeEnd('plotMarkers')
     if (
@@ -3945,34 +3988,17 @@ function plotMarkers(data, profileRequestToken = null) {
     if (index < data.length) {
       markerRenderFrame = requestAnimationFrame(renderChunk)
     } else {
+      // All markers are now in the DOM — safe to animate the viewport.
+      // Firing here (rather than synchronously after renderChunk() below)
+      // ensures Leaflet's layout is fully settled and avoids fighting with
+      // ongoing marker-add operations.
       markerRenderFrame = null
       finishPlotMarkersTiming(true)
+      zoomToFilteredPoints(pendingZoomPoints)
     }
   }
 
   renderChunk()
-
-  // Auto-zoom to the filtered results when triggered by applyFilters()
-  if (fitAfterLoad && data.length > 0 && map) {
-    fitAfterLoad = false
-    const validPoints = data.filter(
-      h => typeof h.latitude === 'number' && typeof h.longitude === 'number'
-    )
-    if (validPoints.length === 1) {
-      // Single point — fly to it at street level
-      map.flyTo([validPoints[0].latitude, validPoints[0].longitude], 14, { duration: 1 })
-    } else if (validPoints.length > 1) {
-      const bounds = L.latLngBounds(validPoints.map(h => [h.latitude, h.longitude]))
-      map.flyToBounds(bounds, {
-        padding: [60, 60],
-        maxZoom: 14,      // never zoom past street level even for a tiny village
-        duration: 1.2,
-      })
-    }
-    // Ensure map renders properly after zoom operations
-    setTimeout(() => ensureMapReady(), 100)
-    setTimeout(() => ensureMapReady(), 200)
-  }
 }
 
 function clearRetryTimer() {
@@ -4007,6 +4033,15 @@ async function loadLiveHouseData(requestToken = activeHouseLoadToken) {
       if (!nextSig || nextSig !== lastRenderedHouseSignature || markerRefs.length !== real.length) {
         lastRenderedHouseSignature = nextSig
         plotMarkers(real, profile ? requestToken : null)
+      } else if (fitAfterLoad && map) {
+        // Same data already rendered (signature match) — markers are already on the
+        // map, so skip re-plotting but still honour the zoom request from applyFilters.
+        fitAfterLoad = false
+        const zoomPoints = real.filter(
+          h => typeof h.latitude  === 'number' && Number.isFinite(h.latitude)  && h.latitude  !== 0 &&
+               typeof h.longitude === 'number' && Number.isFinite(h.longitude) && h.longitude !== 0
+        )
+        zoomToFilteredPoints(zoomPoints)
       }
       if (viewMode.value === 'villages') {
         drawClusters(buildVillageClusters(real))
