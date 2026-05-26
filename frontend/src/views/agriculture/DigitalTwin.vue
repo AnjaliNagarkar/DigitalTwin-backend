@@ -591,8 +591,8 @@
               <div class="vs-stat-lbl">{{ t('common.population') }}</div>
             </div>
             <div class="vs-stat">
-              <div class="vs-stat-val">{{ (stats?.farmers || farmersOwnLandCount).toLocaleString() }}</div>
-              <div class="vs-stat-lbl">{{ t('twin.farmers') }}</div>
+              <div class="vs-stat-val">{{ farmersOwnLandCount.toLocaleString() }}</div>
+              <div class="vs-stat-lbl">{{ t('twin.farmerHouseholds') }}</div>
             </div>
           </div>
 

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -217,17 +216,8 @@ func (h *UnifiedRegistryHandler) buildQuery() string {
 // Supports ?limit=N&offset=M for pagination (default: limit=2000, offset=0).
 // This prevents a full FAMILY_MEMBER table scan on every Citizens page load.
 func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
-	limit := 2000
-	offset := 0
-	if l, err := strconv.Atoi(c.DefaultQuery("limit", "2000")); err == nil && l > 0 && l <= 10000 {
-		limit = l
-	}
-	if o, err := strconv.Atoi(c.DefaultQuery("offset", "0")); err == nil && o >= 0 {
-		offset = o
-	}
 
-	query := h.query + fmt.Sprintf(" ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID LIMIT %d OFFSET %d", limit, offset)
-
+	query := h.query + " ORDER BY fm.EXTERNAL_FAMILY_ID, fm.FAMILY_MEMBER_ID"
 	rows, err := h.DB.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch unified registry", "detail": err.Error()})
@@ -324,6 +314,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 
 		// ── Source of Income: keyword-derived from occupation ─────────────────
 		sourceOfIncome := deriveSourceOfIncome(strings.TrimSpace(occupation))
+		isActualFarmer := strings.Contains(occLower, "farm") || strings.Contains(occLower, "agri")
 
 		out = append(out, UnifiedRecord{
 			FullName:  capitalizeFullName(firstName, lastName),
@@ -344,7 +335,7 @@ func (h *UnifiedRegistryHandler) GetUnifiedRegistry(c *gin.Context) {
 			ChildrenCount:    children,
 			SanitationStatus: strings.TrimSpace(sanitation),
 
-			IsFarmer:    hasLand,
+			IsFarmer:    isActualFarmer,
 			IsStudent:   isStudent,
 			IsDivyang:   isDivyang,
 			IsHousewife: isHousewife,

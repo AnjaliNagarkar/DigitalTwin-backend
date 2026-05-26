@@ -57,30 +57,30 @@ type PopulationEmploymentResponse struct {
 }
 
 type PopulationMapMarker struct {
-	ExternalFamilyID        string   `json:"external_family_id"`
-	HouseNo                 string   `json:"house_no"`
-	HeadName                string   `json:"head_name"`
-	VillageID               string   `json:"village_id"`
-	VillageName             string   `json:"village_name"`
-	Lat                     float64  `json:"lat"`
-	Lng                     float64  `json:"lng"`
-	TotalMembers            int      `json:"total_members"`
-	LiterateMembers         int      `json:"literate_members"`
-	IlliterateMembers       int      `json:"illiterate_members"`
-	VillageWorkingMembers   int      `json:"village_working_members"`
-	UnemployedMembers       int      `json:"unemployed_members"`
-	DivyangMembers          int      `json:"divyang_members"`
-	MaleMembers             int      `json:"male_members"`
-	FemaleMembers           int      `json:"female_members"`
-	WorkingMembers          int      `json:"working_members"`
-	NonWorkingMembers       int      `json:"non_working_members"`
-	WorkingOccupations      string   `json:"working_occupations"`
-	OccupationListRaw       string   `json:"occupation_list"`
-	OccupationList          []string `json:"occupation_list_array"`
-	HasDisability           int      `json:"has_disability"`
-	FamilyBelongBPLCategory string   `json:"FAMILY_BELONG_BPL_CATEGORY"`
-	RationCardType          string   `json:"RATION_CARD_TYPE"`
-	AnnualIncome            string   `json:"ANNUAL_INCOME"`
+	ExternalFamilyID               string   `json:"external_family_id"`
+	HouseNo                        string   `json:"house_no"`
+	HeadName                       string   `json:"head_name"`
+	VillageID                      string   `json:"village_id"`
+	VillageName                    string   `json:"village_name"`
+	Lat                            float64  `json:"lat"`
+	Lng                            float64  `json:"lng"`
+	TotalMembers                   int      `json:"total_members"`
+	LiterateMembers                int      `json:"literate_members"`
+	IlliterateMembers              int      `json:"illiterate_members"`
+	VillageWorkingMembers          int      `json:"village_working_members"`
+	UnemployedMembers              int      `json:"unemployed_members"`
+	DivyangMembers                 int      `json:"divyang_members"`
+	MaleMembers                    int      `json:"male_members"`
+	FemaleMembers                  int      `json:"female_members"`
+	WorkingMembers                 int      `json:"working_members"`
+	NonWorkingMembers              int      `json:"non_working_members"`
+	WorkingOccupations             string   `json:"working_occupations"`
+	OccupationListRaw              string   `json:"occupation_list"`
+	OccupationList                 []string `json:"occupation_list_array"`
+	HasDisability                  int      `json:"has_disability"`
+	FamilyBelongBPLCategory        string   `json:"FAMILY_BELONG_BPL_CATEGORY"`
+	RationCardType                 string   `json:"RATION_CARD_TYPE"`
+	AnnualIncome                   string   `json:"ANNUAL_INCOME"`
 	AadhaarCoverageStatus          string   `json:"aadhaarCoverageStatus"`
 	CasteCertificateCoverageStatus string   `json:"casteCertificateCoverageStatus"`
 	LocationQuality                string   `json:"location_quality"`
@@ -134,13 +134,13 @@ func (h *PopulationHandler) GetPopulationDashboard(c *gin.Context) {
 	var dependentPopulation int
 
 	h.DB.QueryRow(fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		WHERE %s
-	`, where), args...).Scan(&totalPopulation)
+        SELECT COUNT(DISTINCT fm.FAMILY_MEMBER_ID)
+        FROM FAMILY_MEMBER fm
+        JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+        WHERE %s
+    `, where), args...).Scan(&totalPopulation)
 	h.DB.QueryRow(fmt.Sprintf(`
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT f.EXTERNAL_FAMILY_ID)
 		FROM FAMILY f
 		WHERE %s
 	`, where), args...).Scan(&totalHouseholds)
@@ -161,29 +161,28 @@ func (h *PopulationHandler) GetPopulationDashboard(c *gin.Context) {
 		  AND %s
 	`, where), args...).Scan(&workingPopulation)
 	h.DB.QueryRow(fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		WHERE (
-			STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL
-			AND (
-				TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) < 18
-				OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) > 60
-			)
-		  )
-		   OR (
-			STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL
-			AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE()) BETWEEN 18 AND 60
-			AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN (
-				'HOUSEWIFE',
-				'STUDYING',
-				'STUDENT',
-				'UNEMPLOYED',
-				'NOT APPLICABLE'
-			)
-		  ))
-		  AND %s
-	`, where), args...).Scan(&dependentPopulation)
+        SELECT COUNT(*)
+        FROM (
+            SELECT 
+                fm.OCCUPATION AS occupation,
+                CASE
+                    WHEN fm.DOB LIKE '__-%%' AND STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE())
+                    WHEN fm.DOB LIKE '____-%%' AND STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE())
+                    ELSE NULL
+                END AS age
+            FROM FAMILY_MEMBER fm
+            JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+            WHERE %s
+        ) AS calc
+        WHERE calc.age IS NOT NULL 
+          AND (
+              calc.age < 18 
+              OR calc.age > 60 
+              OR (calc.age BETWEEN 18 AND 60 AND UPPER(TRIM(COALESCE(calc.occupation, ''))) IN ('HOUSEWIFE', 'STUDYING', 'STUDENT', 'UNEMPLOYED', 'NOT APPLICABLE', 'NA'))
+          )
+    `, where), args...).Scan(&dependentPopulation)
 
 	result := gin.H{
 		"total_population":     totalPopulation,
@@ -232,17 +231,27 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 	var age60Plus int
 
 	h.DB.QueryRow(fmt.Sprintf(`
-		SELECT
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) AS age_0_5,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 6 AND 18 THEN 1 ELSE 0 END) AS age_6_18,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 19 AND 35 THEN 1 ELSE 0 END) AS age_19_35,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 36 AND 60 THEN 1 ELSE 0 END) AS age_36_60,
-			SUM(CASE WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60 THEN 1 ELSE 0 END) AS age_60_plus
-		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		WHERE %s
-	`, where), args...).Scan(&age0To5, &age6To18, &age19To35, &age36To60, &age60Plus)
-
+        SELECT
+            SUM(CASE WHEN calc.age BETWEEN 0 AND 5  THEN 1 ELSE 0 END) AS age_0_5,
+            SUM(CASE WHEN calc.age BETWEEN 6 AND 18 THEN 1 ELSE 0 END) AS age_6_18,
+            SUM(CASE WHEN calc.age BETWEEN 19 AND 35 THEN 1 ELSE 0 END) AS age_19_35,
+            SUM(CASE WHEN calc.age BETWEEN 36 AND 60 THEN 1 ELSE 0 END) AS age_36_60,
+            SUM(CASE WHEN calc.age > 60 THEN 1 ELSE 0 END) AS age_60_plus
+        FROM (
+            SELECT
+                CASE
+                    WHEN fm.DOB LIKE '__-%%' AND STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE())
+                    WHEN fm.DOB LIKE '____-%%' AND STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE())
+                    ELSE NULL
+                END AS age
+            FROM FAMILY_MEMBER fm
+            JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+            WHERE %s
+        ) AS calc
+        WHERE calc.age IS NOT NULL
+    `, where), args...).Scan(&age0To5, &age6To18, &age19To35, &age36To60, &age60Plus)
 	var totalDivyang int
 	h.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*) AS total_divyang
@@ -260,23 +269,36 @@ func (h *PopulationHandler) GetPopulationDemographics(c *gin.Context) {
 	ageIncomeGenderMap := make(map[string]AgeIncomeGenderItem, len(ageGroupOrder))
 
 	ageGenderQuery := `
-		SELECT
-			CASE
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) <= 18 THEN '0-18'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 19 AND 30 THEN '19-30'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 31 AND 45 THEN '31-45'
-				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE()) BETWEEN 46 AND 60 THEN '46-60'
-				ELSE '60+'
-			END AS age_group,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) IN ('male','m') THEN 1 ELSE 0 END) AS male,
-			SUM(CASE WHEN LOWER(TRIM(fm.GENDER)) IN ('female','f') THEN 1 ELSE 0 END) AS female,
-			SUM(CASE WHEN LOWER(TRIM(COALESCE(fm.GENDER, ''))) NOT IN ('male', 'female', 'm', 'f') THEN 1 ELSE 0 END) AS other,
-			SUM(IFNULL(f.ANNUAL_INCOME, 0)) AS total_income
-		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
-		WHERE fm.DOB IS NOT NULL AND fm.DOB != ''
-		  AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL
-		GROUP BY age_group
+        SELECT
+            CASE
+                WHEN calc.age <= 18 THEN '0-18'
+                WHEN calc.age BETWEEN 19 AND 30 THEN '19-30'
+                WHEN calc.age BETWEEN 31 AND 45 THEN '31-45'
+                WHEN calc.age BETWEEN 46 AND 60 THEN '46-60'
+                ELSE '60+'
+            END AS age_group,
+            SUM(CASE WHEN LOWER(TRIM(calc.gender)) IN ('male','m') THEN 1 ELSE 0 END) AS male,
+            SUM(CASE WHEN LOWER(TRIM(calc.gender)) IN ('female','f') THEN 1 ELSE 0 END) AS female,
+            SUM(CASE WHEN LOWER(TRIM(COALESCE(calc.gender, ''))) NOT IN ('male', 'female', 'm', 'f') THEN 1 ELSE 0 END) AS other,
+            SUM(calc.income) AS total_income
+        FROM (
+            SELECT 
+                fm.GENDER AS gender,
+                IFNULL(f.ANNUAL_INCOME, 0) AS income,
+                CASE
+                    WHEN fm.DOB LIKE '__-%' AND STR_TO_DATE(fm.DOB, '%d-%m-%Y') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%d-%m-%Y'), CURDATE())
+                    WHEN fm.DOB LIKE '____-%' AND STR_TO_DATE(fm.DOB, '%Y-%m-%d') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%Y-%m-%d'), CURDATE())
+                    ELSE NULL
+                END AS age
+            FROM FAMILY_MEMBER fm
+            JOIN FAMILY f ON fm.EXTERNAL_FAMILY_ID = f.FAMILY_ID
+            WHERE fm.DOB IS NOT NULL AND fm.DOB != ''
+        ) AS calc
+        WHERE calc.age IS NOT NULL
+        GROUP BY age_group
+    
 	`
 	log.Println("AGE-GENDER QUERY:", ageGenderQuery)
 
@@ -1233,31 +1255,28 @@ func (h *PopulationHandler) GetPopulationMapInsights(c *gin.Context) {
 		  )
 	`, where), args...).Scan(&working)
 	h.DB.QueryRow(fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM FAMILY_MEMBER fm
-		JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
-		WHERE %s
-		  AND (
-			(
-				STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL
-				AND (
-					TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) < 18
-					OR TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) > 60
-				)
-			)
-			OR (
-				STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL
-				AND TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE()) BETWEEN 18 AND 60
-				AND UPPER(TRIM(COALESCE(fm.OCCUPATION, ''))) IN (
-					'STUDENT',
-					'STUDYING',
-					'HOUSEWIFE',
-					'UNEMPLOYED',
-					'NOT APPLICABLE'
-				)
-			)
-		  )
-	`, where), args...).Scan(&dependent)
+        SELECT COUNT(*)
+        FROM (
+            SELECT 
+                fm.OCCUPATION AS occupation,
+                CASE
+                    WHEN fm.DOB LIKE '__-%%' AND STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%d-%%m-%%Y'), CURDATE())
+                    WHEN fm.DOB LIKE '____-%%' AND STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d') IS NOT NULL 
+                        THEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(fm.DOB, '%%Y-%%m-%%d'), CURDATE())
+                    ELSE NULL
+                END AS age
+            FROM FAMILY_MEMBER fm
+            JOIN FAMILY f ON f.EXTERNAL_FAMILY_ID = fm.EXTERNAL_FAMILY_ID
+            WHERE %s
+        ) AS calc
+        WHERE calc.age IS NOT NULL 
+          AND (
+              calc.age < 18 
+              OR calc.age > 60 
+              OR (calc.age BETWEEN 18 AND 60 AND UPPER(TRIM(COALESCE(calc.occupation, ''))) IN ('HOUSEWIFE', 'STUDYING', 'STUDENT', 'UNEMPLOYED', 'NOT APPLICABLE', 'NA'))
+          )
+    `, where), args...).Scan(&dependent)
 
 	response := PopulationMapInsightsResponse{}
 	response.BPLDistribution.BPL = bplHouseholds
