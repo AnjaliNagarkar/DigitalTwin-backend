@@ -18,28 +18,60 @@ type dashboardCacheItem struct {
 	ExpiresAt time.Time
 }
 
+// sectionCacheItem holds the last successful result for one dashboard section.
+// It has no TTL — it is used only as a stale-value fallback when the live query
+// times out or errors, preventing zero-filled responses.
+type sectionCacheItem struct {
+	Data gin.H
+}
+
 const dashboardSummaryCacheTTL = 5 * time.Minute
+
+// Per-section query timeout budgets.
+// Education and Employment run a single heavy aggregation query each; other
+// sections are lighter or parallelise several smaller queries internally.
+const (
+	timeoutPopulation   = 5 * time.Second
+	timeoutDemographics = 8 * time.Second
+	timeoutAgriculture  = 8 * time.Second
+	timeoutEducation    = 12 * time.Second
+	timeoutEmployment   = 12 * time.Second
+)
 
 var dashboardSummaryIndexInit sync.Once
 
 type DashboardSummaryHandler struct {
-	DB       *sql.DB
-	CC       *ColumnChecker
+	DB *sql.DB
+	CC *ColumnChecker
+
+	// Full-response cache (TTL-based; keyed by location filter params).
 	cache    map[string]dashboardCacheItem
 	cacheMux sync.RWMutex
+
+	// Per-section stale cache: key = "<cacheKey>:<sectionName>".
+	// Updated on every successful section fetch; never expires.
+	// Used to return last-good data instead of zeros when a live query times out.
+	sectionCache    map[string]sectionCacheItem
+	sectionCacheMux sync.RWMutex
+
+	// Stampede prevention: tracks in-flight full-response fetches per cache key.
+	// Concurrent requests for the same key wait for the first fetch to complete
+	// instead of all hammering the DB simultaneously.
+	inflightMu sync.Mutex
+	inflight   map[string]chan struct{}
 }
 
 func NewDashboardSummaryHandler(db *sql.DB, cc *ColumnChecker) *DashboardSummaryHandler {
 	h := &DashboardSummaryHandler{
-		DB:    db,
-		CC:    cc,
-		cache: map[string]dashboardCacheItem{},
+		DB:           db,
+		CC:           cc,
+		cache:        map[string]dashboardCacheItem{},
+		sectionCache: map[string]sectionCacheItem{},
+		inflight:     map[string]chan struct{}{},
 	}
-
 	dashboardSummaryIndexInit.Do(func() {
 		h.ensureSummaryIndexes()
 	})
-
 	return h
 }
 
@@ -94,14 +126,14 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	started := time.Now()
 
 	// Support both singular and plural parameter names
-	districtID := normalizeFilterValue(c.Query("district_id"))
+	districtID  := normalizeFilterValue(c.Query("district_id"))
 	districtIDs := c.Query("district_ids")
-	talukaID := normalizeFilterValue(c.Query("taluka_id"))
-	talukaIDs := c.Query("taluka_ids")
-	villageID := normalizeFilterValue(c.Query("village_id"))
-	villageIDs := c.Query("village_ids")
+	talukaID    := normalizeFilterValue(c.Query("taluka_id"))
+	talukaIDs   := c.Query("taluka_ids")
+	villageID   := normalizeFilterValue(c.Query("village_id"))
+	villageIDs  := c.Query("village_ids")
 
-	log.Printf("[dashboard/summary] request district=%q districts=%q taluka=%q talukas=%q village=%q villages=%q",
+	log.Printf("[dashboard] request district=%q districts=%q taluka=%q talukas=%q village=%q villages=%q",
 		districtID, districtIDs, talukaID, talukaIDs, villageID, villageIDs)
 
 	districtCacheKey := nonEmpty(districtID, districtIDs)
@@ -116,19 +148,56 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	if villageCacheKey == "" {
 		villageCacheKey = "all"
 	}
-
 	cacheKey := fmt.Sprintf("dashboard_%s_%s_%s", districtCacheKey, talukaCacheKey, villageCacheKey)
 
+	// ── 1. Full-response cache fast path ─────────────────────────────────────
 	h.cacheMux.RLock()
 	if item, ok := h.cache[cacheKey]; ok && time.Now().Before(item.ExpiresAt) {
 		h.cacheMux.RUnlock()
-		log.Printf("[dashboard/summary] cache hit key=%s served_in=%s", cacheKey, time.Since(started))
+		log.Printf("[dashboard] cache-HIT key=%s elapsed=%s", cacheKey, time.Since(started))
 		c.JSON(http.StatusOK, item.Data)
 		return
 	}
 	h.cacheMux.RUnlock()
-	log.Printf("[dashboard/summary] cache miss key=%s", cacheKey)
+	log.Printf("[dashboard] cache-MISS key=%s", cacheKey)
 
+	// ── 2. Stampede prevention ───────────────────────────────────────────────
+	// Only one goroutine fetches from DB per cache key; all others wait and
+	// reuse the result, avoiding concurrent identical queries under burst load.
+	h.inflightMu.Lock()
+	if ch, exists := h.inflight[cacheKey]; exists {
+		h.inflightMu.Unlock()
+		log.Printf("[dashboard] in-flight wait key=%s", cacheKey)
+		select {
+		case <-ch:
+		case <-time.After(32 * time.Second):
+			log.Printf("[dashboard] in-flight wait timeout key=%s", cacheKey)
+		}
+		// Serve from cache if the lead goroutine populated it
+		h.cacheMux.RLock()
+		if item, ok := h.cache[cacheKey]; ok && time.Now().Before(item.ExpiresAt) {
+			h.cacheMux.RUnlock()
+			log.Printf("[dashboard] served after wait key=%s elapsed=%s", cacheKey, time.Since(started))
+			c.JSON(http.StatusOK, item.Data)
+			return
+		}
+		h.cacheMux.RUnlock()
+		// Lead fetch did not produce a usable cache entry; serve stale/defaults
+		c.JSON(http.StatusOK, h.buildStaleOrDefaultResponse(cacheKey))
+		return
+	}
+	// Register this goroutine as the sole in-flight fetcher for this key
+	done := make(chan struct{})
+	h.inflight[cacheKey] = done
+	h.inflightMu.Unlock()
+	defer func() {
+		h.inflightMu.Lock()
+		delete(h.inflight, cacheKey)
+		h.inflightMu.Unlock()
+		close(done)
+	}()
+
+	// ── 3. DB health check ───────────────────────────────────────────────────
 	_, pingCancel, ok := ensureDBReady(c, h.DB, "/dashboard/summary")
 	if !ok {
 		result := defaultDashboardSummaryResponse()
@@ -138,94 +207,120 @@ func (h *DashboardSummaryHandler) GetDashboardSummary(c *gin.Context) {
 	}
 	defer pingCancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	whereF, args := buildOptionalLocationFilterWithArrays("f", districtID, districtIDs, talukaID, talukaIDs, villageID, villageIDs)
 
-	result := defaultDashboardSummaryResponse()
-	resultMux := sync.Mutex{}
+	// ── 4. Fetch all sections concurrently with independent per-section timeouts
+	// Each section owns its context so a slow section cannot cancel others.
+	type sectionResult struct {
+		name    string
+		data    gin.H
+		err     error
+		elapsed time.Duration
+	}
+	type sectionTask struct {
+		name    string
+		timeout time.Duration
+		fetch   func(context.Context) (gin.H, error)
+	}
 
+	tasks := []sectionTask{
+		{"population", timeoutPopulation, func(ctx context.Context) (gin.H, error) {
+			return h.fetchPopulationSection(ctx, whereF, args)
+		}},
+		{"demographics", timeoutDemographics, func(ctx context.Context) (gin.H, error) {
+			return h.fetchDemographicsSection(ctx, whereF, args)
+		}},
+		{"education", timeoutEducation, func(ctx context.Context) (gin.H, error) {
+			return h.fetchEducationSection(ctx, whereF, args)
+		}},
+		{"employment", timeoutEmployment, func(ctx context.Context) (gin.H, error) {
+			return h.fetchEmploymentSection(ctx, whereF, args)
+		}},
+		{"agriculture", timeoutAgriculture, func(ctx context.Context) (gin.H, error) {
+			return h.fetchAgricultureSection(ctx, whereF, args)
+		}},
+	}
+
+	ch := make(chan sectionResult, len(tasks))
+	for _, t := range tasks {
+		t := t
+		go func() {
+			t0 := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), t.timeout)
+			defer cancel()
+			data, err := t.fetch(ctx)
+			ch <- sectionResult{name: t.name, data: data, err: err, elapsed: time.Since(t0)}
+		}()
+	}
+
+	// ── 5. Collect results; apply stale fallback on timeout/error ────────────
+	final := defaultDashboardSummaryResponse()
 	errorsBySection := map[string]string{}
-	errMux := sync.Mutex{}
 
-	setSectionError := func(section string, err error) {
-		if err == nil {
-			return
+	for range tasks {
+		sr := <-ch
+		if sr.err != nil {
+			isTimeout := strings.Contains(sr.err.Error(), "context deadline exceeded") ||
+				strings.Contains(sr.err.Error(), "context canceled")
+			tag := ""
+			if isTimeout {
+				tag = " [timeout]"
+			}
+			log.Printf("[dashboard] section=%s error%s elapsed=%s: %v", sr.name, tag, sr.elapsed, sr.err)
+
+			// Prefer last-good stale value over default zeros
+			sectionKey := cacheKey + ":" + sr.name
+			h.sectionCacheMux.RLock()
+			stale, hasStale := h.sectionCache[sectionKey]
+			h.sectionCacheMux.RUnlock()
+			if hasStale {
+				log.Printf("[dashboard] section=%s stale-fallback used", sr.name)
+				final[sr.name] = stale.Data
+				// Stale data is real — do not add to partial_errors
+			} else {
+				final[sr.name] = sr.data // section default (zeros)
+				errorsBySection[sr.name] = sr.err.Error()
+			}
+		} else {
+			log.Printf("[dashboard] section=%s ok elapsed=%s", sr.name, sr.elapsed)
+			final[sr.name] = sr.data
+			// Persist successful result for future stale-fallback use
+			sectionKey := cacheKey + ":" + sr.name
+			h.sectionCacheMux.Lock()
+			h.sectionCache[sectionKey] = sectionCacheItem{Data: sr.data}
+			h.sectionCacheMux.Unlock()
 		}
-		errMux.Lock()
-		errorsBySection[section] = err.Error()
-		errMux.Unlock()
-		log.Printf("[dashboard/summary] %s failed: %v", section, err)
 	}
-
-	setSectionResult := func(section string, data gin.H) {
-		resultMux.Lock()
-		result[section] = data
-		resultMux.Unlock()
-		log.Printf("[dashboard/summary] %s done", section)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(5)
-
-	go func() {
-		defer wg.Done()
-		section, err := h.fetchPopulationSection(ctx, whereF, args)
-		setSectionResult("population", section)
-		if err != nil {
-			setSectionError("population", err)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		section, err := h.fetchDemographicsSection(ctx, whereF, args)
-		setSectionResult("demographics", section)
-		if err != nil {
-			setSectionError("demographics", err)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		section, err := h.fetchEducationSection(ctx, whereF, args)
-		setSectionResult("education", section)
-		if err != nil {
-			setSectionError("education", err)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		section, err := h.fetchEmploymentSection(ctx, whereF, args)
-		setSectionResult("employment", section)
-		if err != nil {
-			setSectionError("employment", err)
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		section, err := h.fetchAgricultureSection(ctx, whereF, args)
-		setSectionResult("agriculture", section)
-		if err != nil {
-			setSectionError("agriculture", err)
-		}
-	}()
-
-	wg.Wait()
 
 	if len(errorsBySection) > 0 {
-		result["partial_errors"] = errorsBySection
+		final["partial_errors"] = errorsBySection
 	}
 
+	// Write to full-response cache even if some sections used stale fallbacks.
+	// The TTL ensures a fresh DB round-trip will be attempted after expiry,
+	// and all requests within the TTL window benefit from the fast path.
 	h.cacheMux.Lock()
-	h.cache[cacheKey] = dashboardCacheItem{Data: result, ExpiresAt: time.Now().Add(dashboardSummaryCacheTTL)}
+	h.cache[cacheKey] = dashboardCacheItem{Data: final, ExpiresAt: time.Now().Add(dashboardSummaryCacheTTL)}
 	h.cacheMux.Unlock()
-	log.Printf("[dashboard/summary] complete in=%s", time.Since(started))
 
-	c.JSON(http.StatusOK, result)
+	log.Printf("[dashboard] complete key=%s errors=%d elapsed=%s", cacheKey, len(errorsBySection), time.Since(started))
+	c.JSON(http.StatusOK, final)
+}
+
+// buildStaleOrDefaultResponse returns the best available data per section from
+// the per-section stale cache, falling back to zeros for sections not yet seen.
+// Called when a concurrent in-flight fetch did not populate the full-response cache.
+func (h *DashboardSummaryHandler) buildStaleOrDefaultResponse(cacheKey string) gin.H {
+	result := defaultDashboardSummaryResponse()
+	sections := []string{"population", "demographics", "education", "employment", "agriculture"}
+	h.sectionCacheMux.RLock()
+	defer h.sectionCacheMux.RUnlock()
+	for _, name := range sections {
+		if stale, ok := h.sectionCache[cacheKey+":"+name]; ok {
+			result[name] = stale.Data
+		}
+	}
+	return result
 }
 
 func buildOptionalLocationFilter(alias, districtID, talukaID, villageID string) (string, []interface{}) {
