@@ -99,7 +99,7 @@
     "title": "डॅशबोर्ड",
     "overview": "आढावा",
     "totalHouseholds": "एकूण कुटुंबे",
-    "totalFarmers": "एकूण शेतकरी",
+    "totalFarmers": "एकूण शेतकरी कुटुंबे",
     "totalArea": "एकूण क्षेत्र",
     "crops": "पिके",
     "loading": "डॅशबोर्ड लोड होत आहे…"
@@ -367,7 +367,7 @@
     "totalGender": "एकूण लिंग",
     "totalDivyang": "एकूण दिव्यांग",
     "totalFamilies": "एकूण कुटुंबे",
-    "totalFarmers": "एकूण शेतकरी",
+    "totalFarmers": "एकूण शेतकरी कुटुंबे",
     "noIrrigation": "सिंचन नाही",
     "kharifActive": "खरीप सक्रिय",
     "rabiActive": "रब्बी सक्रिय",

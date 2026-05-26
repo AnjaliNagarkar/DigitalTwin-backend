@@ -1,6 +1,6 @@
 # 2D Geo-Intelligence Map — Query & API Documentation
 
-Read-only technical reference for every backend query, API endpoint, and data flow used by the **Geo-Intelligence Map** (2D Map) module.
+> **Read-only technical reference** for every backend query, API endpoint, and data flow used by the **Geo-Intelligence Map** (2D Map) module.
 
 | Item | Value |
 |------|-------|
@@ -11,59 +11,59 @@ Read-only technical reference for every backend query, API endpoint, and data fl
 | **Backend entry** | `main.go` (Gin router, port `:8081`) |
 | **Auth** | All data routes use `handlers.AuthMiddleware()` (Bearer token) |
 
-There is **no** `frontend/src/services/*` or map-specific composable; all logic lives in `MapView.vue` plus shared API helpers.
+> There is **no** `frontend/src/services/*` or map-specific composable — all logic lives in `MapView.vue` plus shared API helpers.
 
 ---
 
-## Table of contents
+## Table of Contents
 
-1. [Architecture overview](#1-architecture-overview)
-2. [API inventory (MapView only)](#2-api-inventory-mapview-only)
-3. [APIs defined but not used by MapView](#3-apis-defined-but-not-used-by-mapview)
-4. [Initial Maharashtra map load](#4-initial-maharashtra-map-load)
-5. [District marker click → taluka drill-down](#5-district-marker-click--taluka-drill-down)
-6. [Taluka marker click → village drill-down](#6-taluka-marker-click--village-drill-down)
-7. [Village marker click → household markers](#7-village-marker-click--household-markers)
-8. [Location filters (dropdowns, Apply, Reset)](#8-location-filters-dropdowns-apply-reset)
-9. [View By dropdown (color modes)](#9-view-by-dropdown-color-modes)
-10. [View Analytics panel](#10-view-analytics-panel)
-11. [GPS mismatch detection](#11-gps-mismatch-detection)
-12. [Cluster / marker counts](#12-cluster--marker-counts)
-13. [GeoJSON & boundary loading](#13-geojson--boundary-loading)
-14. [Household detail panel](#14-household-detail-panel)
-15. [Villages view mode (client clusters)](#15-villages-view-mode-client-clusters)
-16. [Dynamic filter helpers](#16-dynamic-filter-helpers)
-17. [Database tables reference](#17-database-tables-reference)
-18. [Startup cache (houses)](#18-startup-cache-houses)
+1. [Architecture Overview](#1-architecture-overview)
+2. [API Inventory (MapView only)](#2-api-inventory-mapview-only)
+3. [APIs Defined but Not Used by MapView](#3-apis-defined-but-not-used-by-mapview)
+4. [Initial Maharashtra Map Load](#4-initial-maharashtra-map-load)
+5. [District Marker Click → Taluka Drill-down](#5-district-marker-click--taluka-drill-down)
+6. [Taluka Marker Click → Village Drill-down](#6-taluka-marker-click--village-drill-down)
+7. [Village Marker Click → Household Markers](#7-village-marker-click--household-markers)
+8. [Location Filters (Dropdowns, Apply, Reset)](#8-location-filters-dropdowns-apply-reset)
+9. [View By Dropdown (Color Modes)](#9-view-by-dropdown-color-modes)
+10. [View Analytics Panel](#10-view-analytics-panel)
+11. [GPS Mismatch Detection](#11-gps-mismatch-detection)
+12. [Cluster / Marker Counts](#12-cluster--marker-counts)
+13. [GeoJSON & Boundary Loading](#13-geojson--boundary-loading)
+14. [Household Detail Panel](#14-household-detail-panel)
+15. [Villages View Mode (Client Clusters)](#15-villages-view-mode-client-clusters)
+16. [Dynamic Filter Helpers](#16-dynamic-filter-helpers)
+17. [Database Tables Reference](#17-database-tables-reference)
+18. [Startup Cache (Houses)](#18-startup-cache-houses)
 
 ---
 
-## 1. Architecture overview
+## 1. Architecture Overview
 
-### End-to-end flow
+### End-to-End Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Browser: MapView.vue (Geo-Intelligence Map)                                  │
+│  Browser: MapView.vue (Geo-Intelligence Map)                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  onMounted                                                                  │
 │    ├─ loadDistrictOptionsOnce()     → GET /api/districts                    │
 │    ├─ Leaflet map init + OSM tiles    (no backend)                          │
 │    ├─ addDistrictBorders()          → external GeoJSON (GitHub)             │
-│    ├─ addMaharashtraHighlight()     → external GeoJSON (GitHub)           │
+│    ├─ addMaharashtraHighlight()     → external GeoJSON (GitHub)             │
 │    ├─ refreshDistrictCentroids()    → GET /api/map/district-centroids       │
 │    └─ loadFamilyMembers()           → GET /api/population/map-data          │
 │                                                                             │
 │  Drill-down (centroid markers)                                              │
-│    District click → getTalukaCentroids → render taluka markers               │
+│    District click → getTalukaCentroids → render taluka markers              │
 │    Taluka click   → getVillageCentroids → render village cluster markers    │
 │    Village click  → getHouses (filtered) → plot household circle markers    │
 │                                                                             │
 │  Apply (location filters)                                                   │
-│    applyFilters() → getHouses(district/taluka/village) → plotMarkers()       │
+│    applyFilters() → getHouses(district/taluka/village) → plotMarkers()      │
 │                                                                             │
 │  View By / Analytics / GPS mismatch                                         │
-│    Client-side only on `houses` + population enrichment maps                 │
+│    Client-side only on `houses` + population enrichment maps                │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -80,28 +80,40 @@ There is **no** `frontend/src/services/*` or map-specific composable; all logic 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Navigation levels
+### Quick Reference
 
-| `navigationLevel` | Map layers | Primary data source |
+| Component | Detail |
+|-----------|--------|
+| **Frontend** | `frontend/src/views/agriculture/MapView.vue` |
+| **API client** | `frontend/src/api/index.js` |
+| **Backend handlers** | `houses.go`, `district_centroids.go`, `taluka_village_centroids.go`, `location_options.go`, `population.go` |
+| **Total backend APIs used** | 8 (see §2) |
+| **External GeoJSON** | 2 (district polygons + state boundary, from GitHub) |
+| **Client-side-only features** | View Analytics, GPS Mismatch Detection, Village Clusters, View By coloring |
+| **Auth** | Bearer token on all data routes |
+
+### Navigation Levels
+
+| `navigationLevel` | Map Layers | Primary Data Source |
 |-------------------|------------|---------------------|
-| `district` | Maharashtra mask + district polygons + **district centroid markers** | `GET /map/district-centroids` |
+| `district` | Maharashtra mask + district polygons + district centroid markers | `GET /map/district-centroids` |
 | `taluka` | Taluka centroid markers | `GET /map/taluka-centroids?district_id=` |
 | `village` | Village markers (`L.markerClusterGroup`) | `GET /map/village-centroids?district_id=&taluka_id=` |
 | `household` | Circle markers per house | `GET /houses?…` (Apply or village click) |
 
-### View modes (header toggle)
+### View Modes
 
-| `viewMode` | UI label | Behavior |
+| `viewMode` | UI Label | Behavior |
 |------------|----------|----------|
 | `points` | Households | Individual `L.circleMarker` per loaded house |
-| `villages` | Villages | Client-side `buildVillageClusters()` circles (no extra API) |
+| `villages` | Villages | Client-side `buildVillageClusters()` circles (no extra API call) |
 
 ---
 
-## 2. API inventory (MapView only)
+## 2. API Inventory (MapView only)
 
-| # | Frontend function | HTTP | Backend handler | Used when |
-|---|-------------------|------|-----------------|-----------|
+| # | Frontend Function | HTTP Endpoint | Backend Handler | Triggered When |
+|---|-------------------|---------------|-----------------|----------------|
 | 1 | `getDistricts()` | `GET /api/districts` | `LocationHandler.GetDistricts` | Mount: district dropdown |
 | 2 | `getLocationOptions({ district_id })` | `GET /api/location-options?district_id=` | `LocationHandler.GetLocationOptions` | `watch(selectedDistrict)` → taluka list |
 | 3 | `getLocationOptions({ district_id, taluka_id })` | `GET /api/location-options?…` | same | `watch(selectedTaluka)` → village list |
@@ -111,16 +123,16 @@ There is **no** `frontend/src/services/*` or map-specific composable; all logic 
 | 7 | `getHouses(params)` | `GET /api/houses?…` | `HouseHandler.GetHouses` | Apply (district selected), village centroid click |
 | 8 | `getPopulationMapData({})` | `GET /api/population/map-data` | `PopulationHandler.GetPopulationMapData` | Mount: global member stats enrichment |
 
-**External (not backend):**
+### External Sources (Not Backend)
 
 | Source | URL | Purpose |
 |--------|-----|---------|
-| District polygons | `https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson` | Maharashtra district borders (styled) |
-| State boundary | `https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson` | Maharashtra outline + inverted mask |
+| District polygons | `https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson` | Maharashtra district borders |
+| State boundary + mask | `https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson` | Maharashtra outline + inverted mask |
 
 ---
 
-## 3. APIs defined but not used by MapView
+## 3. APIs Defined but Not Used by MapView
 
 These exist in `frontend/src/api/index.js` and/or `main.go` but **are not called** from `MapView.vue`:
 
@@ -137,11 +149,11 @@ These exist in `frontend/src/api/index.js` and/or `main.go` but **are not called
 
 ---
 
-## 4. Initial Maharashtra map load
+## 4. Initial Maharashtra Map Load
 
-### 4.1 Feature summary
+### 4.1 Feature Summary
 
-| Step | Frontend function | Backend? |
+| Step | Frontend Function | Backend? |
 |------|-------------------|----------|
 | District dropdown | `loadDistrictOptionsOnce()` | Yes — `GET /districts` |
 | Map container + tiles | `onMounted` → `L.map`, `addTiles` | No (OpenStreetMap) |
@@ -151,7 +163,9 @@ These exist in `frontend/src/api/index.js` and/or `main.go` but **are not called
 | Population enrichment cache | `loadFamilyMembers()` | Yes — `GET /population/map-data` |
 | Fit viewport | `fitToMaharashtra()`, `captureInitialMaharashtraFit()` | No |
 
-**Important:** Initial load does **not** call `GET /houses`. Header shows `0 Households` until Apply or village drill-down loads houses.
+> **Important:** Initial load does **not** call `GET /houses`. Header shows `0 Households` until Apply or village drill-down loads houses.
+
+---
 
 ### 4.2 `GET /api/districts`
 
@@ -172,7 +186,7 @@ ORDER BY dm.pklDistrictId
 
 **Response fields used:**
 
-| JSON field | Frontend use |
+| JSON Field | Frontend Use |
 |------------|--------------|
 | `pklDistrictId` | `districtOptions[].value` |
 | `vsDistrictName` | `districtOptions[].label` |
@@ -192,7 +206,7 @@ Frontend prepends `{ label: 'All', value: null }`.
 
 **Query params sent:** `district_id`, `taluka_id`, `village_id` (from `getActiveLocationParams()`).
 
-**Backend behavior:** Handler **ignores all query parameters** — always returns all districts with surveys. Params are sent from frontend but have no effect.
+**Backend behavior:** Handler **ignores all query parameters** — always returns all districts with surveys.
 
 #### SQL (primary path — when `district_master` has lat/lng columns)
 
@@ -232,8 +246,8 @@ GROUP BY f.DISTRICT_ID
 
 **Response → UI:**
 
-| JSON field | UI |
-|------------|-----|
+| JSON Field | UI |
+|------------|----|
 | `district_id` | Drill selection, tooltip |
 | `district_name` | Tooltip label |
 | `count` | Orange marker badge HTML |
@@ -253,7 +267,7 @@ Called once on mount with **no filters** (global dataset for enrichment lookups)
 
 #### Dynamic WHERE (built by `buildPopulationFamilyFilters`)
 
-Base clause always starts as `1=1`, then:
+Base clause always starts as `1=1`, then optional per-field triplets:
 
 ```sql
 -- Optional (MapView sends none on mount):
@@ -271,13 +285,13 @@ WHERE f.LATITUDE IS NOT NULL AND f.LONGITUDE IS NOT NULL
   AND <buildPopulationFamilyFilters clauses>
 ```
 
-#### Core SELECT (abbreviated; member aggregates in subquery)
+#### Core SELECT (abbreviated)
 
 The handler runs one large query joining `FAMILY` to aggregated `FAMILY_MEMBER` (occupation list, BPL, divyang, aadhaar/caste coverage). See `handlers/population.go` lines 818–918.
 
-**Key CASE / aggregation logic:**
+**Key aggregation logic:**
 
-| Metric | SQL pattern |
+| Metric | SQL Pattern |
 |--------|-------------|
 | Working members | `SUM(CASE WHEN occupation not in housewife/student/unemployed/... THEN 1 END)` |
 | Aadhaar coverage | `CASE WHEN all members yes → 'complete'; partial → 'partial'; else 'missing'` |
@@ -288,7 +302,7 @@ The handler runs one large query joining `FAMILY` to aggregated `FAMILY_MEMBER` 
 
 **Frontend maps:**
 
-| Backend field | Frontend map |
+| Backend Field | Frontend Map |
 |---------------|--------------|
 | `external_family_id` | `populationStatsByFamily` key |
 | `total_members`, `male_members`, `female_members`, … | Enrichment via `buildPopulationStatsMap` |
@@ -298,9 +312,9 @@ The handler runs one large query joining `FAMILY` to aggregated `FAMILY_MEMBER` 
 
 ---
 
-## 5. District marker click → taluka drill-down
+## 5. District Marker Click → Taluka Drill-down
 
-### 5.1 Feature flow
+### 5.1 Feature Flow
 
 | Step | Function | API |
 |------|----------|-----|
@@ -310,7 +324,9 @@ The handler runs one large query joining `FAMILY` to aggregated `FAMILY_MEMBER` 
 | 4 | `refreshTalukaCentroids()` | `GET /map/taluka-centroids?district_id=` |
 | 5 | `renderTalukaCentroids(rows)` | — |
 
-`watch(selectedDistrict)` also loads taluka dropdown via `GET /location-options?district_id=`.
+`watch(selectedDistrict)` also loads the taluka dropdown via `GET /location-options?district_id=`.
+
+---
 
 ### 5.2 `GET /api/map/taluka-centroids`
 
@@ -318,6 +334,7 @@ The handler runs one large query joining `FAMILY` to aggregated `FAMILY_MEMBER` 
 |-------|-------|
 | **Route** | `GET /map/taluka-centroids` |
 | **Handler** | `TalukaCentroidsHandler.GetTalukaCentroids` |
+| **File** | `handlers/taluka_village_centroids.go` |
 | **Required param** | `district_id` (integer) |
 
 ```sql
@@ -325,13 +342,13 @@ SELECT
   f.TALUKA_ID,
   tm.vsTalukaName AS taluka_name,
   COUNT(*) AS total_count,
-  AVG(CAST(f.LATITUDE AS DECIMAL(10,6))) AS lat,
+  AVG(CAST(f.LATITUDE  AS DECIMAL(10,6))) AS lat,
   AVG(CAST(f.LONGITUDE AS DECIMAL(10,6))) AS lng
 FROM FAMILY f
 LEFT JOIN taluka_master tm
   ON tm.pklTalukaId = f.TALUKA_ID
 WHERE f.DISTRICT_ID = ?
-  AND f.LATITUDE IS NOT NULL
+  AND f.LATITUDE  IS NOT NULL
   AND f.LONGITUDE IS NOT NULL
 GROUP BY f.TALUKA_ID, tm.vsTalukaName
 ```
@@ -344,9 +361,9 @@ GROUP BY f.TALUKA_ID, tm.vsTalukaName
 
 ---
 
-## 6. Taluka marker click → village drill-down
+## 6. Taluka Marker Click → Village Drill-down
 
-### 6.1 Feature flow
+### 6.1 Feature Flow
 
 | Step | Function | API |
 |------|----------|-----|
@@ -356,12 +373,15 @@ GROUP BY f.TALUKA_ID, tm.vsTalukaName
 | 4 | `refreshVillageCentroids()` | `GET /map/village-centroids?…` |
 | 5 | `map.flyTo([lat,lng], 11)` | — |
 
+---
+
 ### 6.2 `GET /api/map/village-centroids`
 
 | Field | Value |
 |-------|-------|
 | **Route** | `GET /map/village-centroids` |
 | **Handler** | `VillageCentroidsHandler.GetVillageCentroids` |
+| **File** | `handlers/taluka_village_centroids.go` |
 | **Required params** | `district_id`, `taluka_id` |
 
 ```sql
@@ -369,14 +389,14 @@ SELECT
   f.VILLAGE_ID,
   vm.vsVillageName AS village_name,
   COUNT(*) AS total_count,
-  AVG(CAST(f.LATITUDE AS DECIMAL(10,6))) AS lat,
+  AVG(CAST(f.LATITUDE  AS DECIMAL(10,6))) AS lat,
   AVG(CAST(f.LONGITUDE AS DECIMAL(10,6))) AS lng
 FROM FAMILY f
 LEFT JOIN village_master vm
   ON vm.pklVillageId = f.VILLAGE_ID
 WHERE f.DISTRICT_ID = ?
   AND f.TALUKA_ID = ?
-  AND f.LATITUDE IS NOT NULL
+  AND f.LATITUDE  IS NOT NULL
   AND f.LONGITUDE IS NOT NULL
 GROUP BY f.VILLAGE_ID, vm.vsVillageName
 ```
@@ -387,9 +407,9 @@ GROUP BY f.VILLAGE_ID, vm.vsVillageName
 
 ---
 
-## 7. Village marker click → household markers
+## 7. Village Marker Click → Household Markers
 
-### 7.1 Feature flow
+### 7.1 Feature Flow
 
 | Step | Function | API |
 |------|----------|-----|
@@ -399,7 +419,9 @@ GROUP BY f.VILLAGE_ID, vm.vsVillageName
 | 4 | `plotMarkers(enriched)` | — |
 | 5 | `map.flyTo([lat,lng], 14)` | — |
 
-Filters applied: `district_id`, `taluka_id`, `village_id` from current dropdown selections (set by drill + watchers).
+Filters applied: `district_id`, `taluka_id`, `village_id` from current dropdown selections.
+
+---
 
 ### 7.2 `GET /api/houses`
 
@@ -409,7 +431,7 @@ Filters applied: `district_id`, `taluka_id`, `village_id` from current dropdown 
 | **Route** | `GET /houses` → `HouseHandler.GetHouses` |
 | **File** | `handlers/houses.go` |
 
-#### Query parameters
+#### Query Parameters
 
 | Param | Default | Purpose |
 |-------|---------|---------|
@@ -422,7 +444,7 @@ Filters applied: `district_id`, `taluka_id`, `village_id` from current dropdown 
 | `own_land` | — | Optional `f.OWN_AGRICULTURE_LAND = ?` |
 | `bbox` or `min_lat`/`max_lat`/`min_lng`/`max_lng` | — | Viewport filter (not used by MapView) |
 
-**MapView `getHouseFilters()`:**
+**MapView `getHouseFilters()` sends:**
 
 ```javascript
 { page: 1, limit: 500|2000, district_id, taluka_id, village_id }
@@ -430,18 +452,18 @@ Filters applied: `district_id`, `taluka_id`, `village_id` from current dropdown 
 
 #### Dynamic WHERE (coordinate + geo filters)
 
-Base (lat/lng column names from `ColumnChecker`, default `LATITUDE`/`LONGITUDE`):
+Base (column names from `ColumnChecker`, default `LATITUDE`/`LONGITUDE`):
 
 ```sql
 WHERE f.<latCol> IS NOT NULL AND f.<lngCol> IS NOT NULL
   AND f.<latCol> != 0 AND f.<lngCol> != 0
 ```
 
-**Optional filters (appended in order):**
+Optional filters appended in order:
 
 ```sql
-AND f.SOURCE_WATER_IRRIGATION = ?          -- if irrigation query param
-AND f.OWN_AGRICULTURE_LAND = ?             -- if own_land query param
+AND f.SOURCE_WATER_IRRIGATION = ?          -- if irrigation param
+AND f.OWN_AGRICULTURE_LAND = ?             -- if own_land param
 AND f.DISTRICT_ID = ?                      -- if district_id (numeric equality preferred)
 AND f.TALUKA_ID = ?                        -- if taluka_id
 AND f.VILLAGE_ID = ?                       -- if village_id
@@ -451,7 +473,7 @@ AND f.<lngCol> > ? AND f.<lngCol> < ?
 
 `appendFamilyGeoIDFilter`: numeric string → `column = int`; else `CAST(column AS CHAR) = ?`.
 
-#### Main query structure (CTE pagination)
+#### Main Query Structure (CTE Pagination)
 
 ```sql
 WITH page_families AS (
@@ -496,10 +518,10 @@ LEFT JOIN district_master, taluka_master, village_master
 ORDER BY f.FAMILY_ID
 ```
 
-#### Member aggregation CASE highlights (`fm_agg` subquery)
+#### Member Aggregation CASE Highlights (`fm_agg` subquery)
 
 | Output | Logic |
-|--------|--------|
+|--------|-------|
 | `primary_occupation` | `GROUP_CONCAT(DISTINCT CASE WHEN occupation is working… THEN TRIM(occupation) END SEPARATOR '|')` |
 | `working_members` | Count where occupation not in unemployed/housewife/student/… |
 | `divyang_members` | `SUM(CASE DIVYANG='YES' OR DISABILITY='YES')` if columns exist |
@@ -508,7 +530,7 @@ ORDER BY f.FAMILY_ID
 
 **Tables:** `FAMILY`, `FAMILY_MEMBER`, `district_master`, `taluka_master`, `village_master`
 
-**Response shape:**
+**Response Shape:**
 
 ```json
 {
@@ -519,28 +541,30 @@ ORDER BY f.FAMILY_ID
 }
 ```
 
-**Frontend pipeline:**
+> `total` in response is **page row count**, not a full filtered COUNT (by design in handler).
+
+**Frontend Pipeline:**
 
 1. `extractFamiliesFromResponse(res)` → uses `res.data` array
 2. `enrichHouseholdForPopulation(family, memberStatsLookup)`
 3. `houses.value = enriched`
 4. `plotMarkers()` → `L.circleMarker` colored by `getMarkerColor(house)`
 
-**Note:** `total` in response is **page row count**, not full filtered COUNT (by design in handler).
-
 ---
 
-## 8. Location filters (dropdowns, Apply, Reset)
+## 8. Location Filters (Dropdowns, Apply, Reset)
 
-### 8.1 Dropdown data sources
+### 8.1 Dropdown Data Sources
 
-| Dropdown | Load trigger | API | SQL section |
+| Dropdown | Load Trigger | API | SQL Section |
 |----------|--------------|-----|-------------|
 | District | `loadDistrictOptionsOnce()` | `GET /districts` | [§4.2](#42-get-apidistricts) |
 | Taluka | `watch(selectedDistrict)` | `GET /location-options?district_id=` | Taluka query below |
 | Village | `watch(selectedTaluka)` | `GET /location-options?district_id=&taluka_id=` | Village query below |
 
-Changing village dropdown alone does **not** fetch houses (`watch(selectedVillage)` is empty). Houses load only on **Apply** or **village centroid click**.
+> Changing the village dropdown alone does **not** fetch houses — `watch(selectedVillage)` is empty. Houses load only on **Apply** or **village centroid click**.
+
+---
 
 ### 8.2 `GET /api/location-options`
 
@@ -563,7 +587,8 @@ ORDER BY COALESCE(dm.vsDisplayName, dm.vsDistrictName)
 #### Talukas (dynamic)
 
 ```sql
-SELECT CAST(tm.pklTalukaId AS CHAR), COALESCE(tm.vsDisplayName, tm.vsTalukaName, ''),
+SELECT CAST(tm.pklTalukaId AS CHAR),
+       COALESCE(tm.vsDisplayName, tm.vsTalukaName, ''),
        CAST(tm.fklDistrictId AS CHAR)
 FROM taluka_master tm
 WHERE tm.bEnabled = 1
@@ -590,19 +615,19 @@ ORDER BY COALESCE(vm.vsDisplayName, vm.vsVillageName)
 
 ---
 
-### 8.3 Apply button — `applyFilters(autoZoomToResults)`
+### 8.3 Apply Button — `applyFilters(autoZoomToResults)`
 
 | Condition | Behavior |
 |-----------|----------|
 | No `district_id` selected | Clear houses/markers; `navigationLevel = 'district'`; `refreshDistrictCentroids()` only |
 | District selected | `navigationLevel = 'household'`; `loadLiveHouseData()` → `GET /houses`; clear centroid layers if any geo filter set |
-| `autoZoomToResults === true` | Sets `fitAfterLoad`; `plotMarkers` runs `flyToBounds` on results |
+| `autoZoomToResults === true` | Sets `fitAfterLoad`; `plotMarkers` runs `flyToBounds` on results after all markers render |
 
-**Does not** call location-options or centroids again except district refresh when filter cleared.
+Does **not** call location-options or centroids again except district refresh when filter cleared.
 
 ---
 
-### 8.4 Reset button — `resetFilters()`
+### 8.4 Reset Button — `resetFilters()`
 
 | Action | API |
 |--------|-----|
@@ -612,21 +637,21 @@ ORDER BY COALESCE(vm.vsDisplayName, vm.vsVillageName)
 
 ---
 
-### 8.5 Geo-nav back — `handleGeoNavBack()`
+### 8.5 Geo-Nav Back — `handleGeoNavBack()`
 
 Uses `zoomStack` (center, zoom, level). Restores prior level and re-fetches centroids:
 
-| Previous level | APIs |
-|----------------|------|
+| Previous Level | APIs Called |
+|----------------|------------|
 | `district` | `refreshDistrictCentroids()` + Maharashtra fit |
 | `taluka` | `loadTalukaOptionsByDistrict` + `refreshTalukaCentroids()` |
 | `village` | `loadVillageOptionsByTaluka` + `refreshVillageCentroids()` |
 
 ---
 
-## 9. View By dropdown (color modes)
+## 9. View By Dropdown (Color Modes)
 
-### 9.1 Configuration source
+### 9.1 Configuration Source
 
 **Not loaded from `GET /view-options`.** Options are hardcoded in `MapView.vue`:
 
@@ -635,11 +660,11 @@ Uses `zoomStack` (center, zoom, level). Restores prior level and re-fetches cent
 | Population | `population_density`, `bpl_status`, `divyang_presence`, `employment_status` |
 | Agriculture | `crops`, `irrigation`, `land` |
 | Infrastructure | `housing_quality`, `electricity`, `toilet_access`, `wastewater_management` |
-| Document gap | `aadhaar_coverage`, `caste_certificate_coverage` |
+| Document Gap | `aadhaar_coverage`, `caste_certificate_coverage` |
 
-`GET /view-options` (`handlers/view_options.go`) builds a **different** schema-driven list at server startup for other screens; 2D map does not consume it.
+`GET /view-options` (`handlers/view_options.go`) builds a schema-driven list for other screens; 2D map does not consume it.
 
-### 9.2 Data source for coloring
+### 9.2 Data Source for Coloring
 
 All modes use fields already on each house object from:
 
@@ -648,9 +673,9 @@ All modes use fields already on each house object from:
 
 **No additional API call** when user changes View By.
 
-### 9.3 Per-mode logic (client-side)
+### 9.3 Per-Mode Logic (Client-side)
 
-| View By label | `colorMode` | Color rule (`getMarkerColor`) | Source columns |
+| View By Label | `colorMode` | Color Rule (`getMarkerColor`) | Source Columns |
 |---------------|-------------|-------------------------------|----------------|
 | Population Density | `population_density` | Green shades by `getTotalMembers(house)` | `totalMembers` / population map fallback |
 | BPL Status | `bpl_status` | Red=BPL, green=non-BPL | `bplCategory`, `FAMILY_BELONG_BPL_CATEGORY`, ration card |
@@ -663,15 +688,14 @@ All modes use fields already on each house object from:
 | Electricity | `electricity` | Blue=yes | `lighting` / `ELECTRICITY_CONNECTION` |
 | Toilet Access | `toilet_access` | Green/red | `SANITATION_TOILET_FACILITY_HOME` |
 | Wastewater Management | `wastewater_management` | By `A_SOAKPIT_MANAGING_WASTEWATER` | same column |
-| Aadhaar Coverage | `aadhaar_coverage` | blue/amber/red/gray by status | `aadhaarCoverageStatus` (SQL CASE in GetHouses) |
-| Caste Certificate | `caste_certificate_coverage` | same pattern | `casteCertificateCoverageStatus` |
+| Aadhaar Coverage | `aadhaar_coverage` | Blue/amber/red/gray by status | `aadhaarCoverageStatus` (SQL CASE in `GetHouses`) |
+| Caste Certificate | `caste_certificate_coverage` | Same pattern | `casteCertificateCoverageStatus` |
 
-#### SQL CASE (backend) backing document modes
+#### SQL CASE (backend) for Document Modes
 
 Executed inside `GET /houses` aggregations:
 
 **Aadhaar:**
-
 ```sql
 CASE
   WHEN COUNT(*) = 0 THEN 'unknown'
@@ -682,7 +706,7 @@ END AS aadhaar_coverage_status
 -- members_with_aadhaar = SUM(CASE WHEN LOWER(TRIM(AADHAAR)) = 'yes' THEN 1 ELSE 0 END)
 ```
 
-**Caste certificate:** identical pattern on `CASTE_CERTIFICATE`.
+**Caste certificate:** Identical pattern on `CASTE_CERTIFICATE`.
 
 **BPL (display):** `FAMILY_BELONG_BPL_CATEGORY` via `ColOrEmpty` in SELECT.
 
@@ -690,9 +714,9 @@ END AS aadhaar_coverage_status
 
 ---
 
-## 10. View Analytics panel
+## 10. View Analytics Panel
 
-### 10.1 Feature summary
+### 10.1 Feature Summary
 
 | Item | Value |
 |------|-------|
@@ -701,19 +725,18 @@ END AS aadhaar_coverage_status
 | **Backend API** | **None** — 100% client-side aggregation on `houses.value` |
 | **Prerequisite** | `houses.length > 0` and `stats` computed non-null |
 
-Supporting stats (`stats` computed):
+Supporting stats (`stats` computed) — from `houses.value` only:
 
 ```javascript
-// From houses.value only:
-total = houses.length
-farmers = count(OWN_AGRICULTURE_LAND / ownLand === 'yes')
+total     = houses.length
+farmers   = count(OWN_AGRICULTURE_LAND / ownLand === 'yes')
 noIrrigation = count(isNoIrrigationValue(waterSource))
 kharif / rabi = count(non-empty crop fields)
 ```
 
-### 10.2 Per-mode analytics segments
+### 10.2 Per-Mode Analytics Segments
 
-| `colorMode` | Chart title (i18n) | Segments |
+| `colorMode` | Chart Title (i18n) | Segments |
 |-------------|-------------------|----------|
 | `population_density` | Gender distribution | male / female totals (`getMaleMembers`, `getFemaleMembers`) |
 | `bpl_status` | BPL distribution | BPL vs non-BPL (`getBplStatus === 'yes'`) |
@@ -729,60 +752,60 @@ kharif / rabi = count(non-empty crop fields)
 | `land` | Land holding | marginal ≤1ac, small ≤2.5ac, medium/large |
 | `housing_quality` | Housing | PUCCA / KUCHA / unknown |
 
-**Filters:** Uses whatever households are currently in `houses.value` (from last Apply or village click). Changing district dropdown without Apply does not change analytics.
+> **Filters:** Uses whatever households are currently in `houses.value` (from last Apply or village click). Changing district dropdown without Apply does not change analytics.
 
 ---
 
-## 11. GPS mismatch detection
+## 11. GPS Mismatch Detection
 
-### 11.1 Feature summary
+### 11.1 Feature Summary
 
 | Item | Value |
-|-------|-------|
-| **UI** | “GPS Mismatches” toggle + anomaly sidebar |
+|------|-------|
+| **UI** | "GPS Mismatches" toggle + anomaly sidebar |
 | **Backend API** | **None** |
 | **Algorithm** | `anomalies` computed in `MapView.vue` |
 
-### 11.2 Client algorithm
+### 11.2 Client Algorithm
 
 1. Filter `houses` with valid `villageId`, `latitude`, `longitude`.
 2. Group by `villageId`.
 3. Skip groups with `< 3` households (`MIN_GROUP_SIZE`).
 4. Per village: compute centroid (mean lat/lng), distances (Haversine), mean + std dev.
-5. Threshold = `max(mean + 2.5 * stdDev, 5 km)`.
-6. Flag houses beyond threshold; find nearest **other** village centroid for “plotted village” label.
+5. Threshold = `max(mean + 2.5 × stdDev, 5 km)`.
+6. Flag houses beyond threshold; find nearest **other** village centroid for "plotted village" label.
 
-**Tables (indirect):** Uses coordinates from `FAMILY` originally loaded via `GET /houses`.
+**Indirect data source:** Uses coordinates from `FAMILY` originally loaded via `GET /houses`.
 
-**Response fields used on flagged houses:**
+**Fields used on flagged houses:**
 
-| Internal field | UI |
+| Internal Field | UI |
 |----------------|-----|
 | `_distanceKm` | Sidebar distance |
-| `_plottedVillage` | “Likely village” mismatch hint |
+| `_plottedVillage` | "Likely village" mismatch hint |
 | `_centroidLat/Lng` | Debug / enrichment |
 
-Clicking flagged marker sets `selectedHouse` to enriched anomaly row (no `GET /house/:id`).
+Clicking a flagged marker sets `selectedHouse` to the enriched anomaly row (no `GET /house/:id` call).
 
 ---
 
-## 12. Cluster / marker counts
+## 12. Cluster / Marker Counts
 
-### 12.1 District / taluka / village centroid counts
+### 12.1 Centroid Counts by Level
 
-| Level | API | Count field | SQL aggregation |
+| Level | API | Count Field | SQL Aggregation |
 |-------|-----|-------------|-----------------|
 | District | `/map/district-centroids` | `count` | `COUNT(*)` per `DISTRICT_ID` |
 | Taluka | `/map/taluka-centroids` | `count` | `COUNT(*)` per `TALUKA_ID` in district |
 | Village | `/map/village-centroids` | `count` | `COUNT(*)` per `VILLAGE_ID` in taluka |
 
-### 12.2 Household count (header subtitle)
+### 12.2 Household Count (header subtitle)
 
-Displays `houses.length` — count of records returned by last `GET /houses` page (≤ limit), not statewide total.
+Displays `houses.length` — count of records returned by the last `GET /houses` page (≤ limit), not the statewide total.
 
-### 12.3 Village view mode clusters
+### 12.3 Village View Mode Clusters
 
-`buildVillageClusters(houses)` — client-side buckets by `villageId` or rounded lat/lng; **no SQL**.
+`buildVillageClusters(houses)` — client-side buckets by `villageId` or rounded lat/lng. **No SQL.**
 
 ### 12.4 `GET /map/district-survey-counts` (unused by MapView)
 
@@ -791,6 +814,7 @@ Documented for completeness — available in API client but **not called** from 
 | Field | Value |
 |-------|-------|
 | **Handler** | `DistrictSurveyCountHandler.GetDistrictSurveyCounts` |
+| **File** | `handlers/district_survey_counts.go` |
 
 ```sql
 SELECT
@@ -800,36 +824,35 @@ SELECT
 FROM FAMILY f
 JOIN district_master d ON d.pklDistrictId = f.DISTRICT_ID
 WHERE 1=1
-  -- optional:
-  AND CAST(f.DISTRICT_ID AS CHAR) = ?   -- district_id
-  AND CAST(f.TALUKA_ID AS CHAR) = ?     -- taluka_id
-  AND CAST(f.VILLAGE_ID AS CHAR) = ?    -- village_id
+  AND CAST(f.DISTRICT_ID AS CHAR) = ?   -- optional: district_id
+  AND CAST(f.TALUKA_ID AS CHAR) = ?     -- optional: taluka_id
+  AND CAST(f.VILLAGE_ID AS CHAR) = ?    -- optional: village_id
 GROUP BY f.DISTRICT_ID
 ORDER BY survey_count DESC
 ```
 
 ---
 
-## 13. GeoJSON & boundary loading
+## 13. GeoJSON & Boundary Loading
 
-### 13.1 No backend GeoJSON
+### 13.1 No Backend GeoJSON
 
 Maharashtra and district boundaries are **not** loaded from MySQL or Digital Twin APIs.
 
-### 13.2 External sources
+### 13.2 External Sources
 
 | Layer | Function | URL |
 |-------|----------|-----|
 | District polygons | `addDistrictBorders` | `https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson` |
 | State boundary + mask | `addMaharashtraHighlight` | `https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson` |
 
-**Filter (client):** Features where properties contain `MAHARASHTRA` in `ST_NM`, `state`, `STATE`, or `NAME_1`.
+**Client filter:** Features where properties contain `MAHARASHTRA` in `ST_NM`, `state`, `STATE`, or `NAME_1`.
 
 **Map constants (client):**
 
 ```javascript
-MAHARASHTRA_BOUNDS = L.latLngBounds([15.6, 72.6], [22.1, 80.9])
-MAHARASHTRA_CENTER = [19.7515, 75.7139]
+MAHARASHTRA_BOUNDS       = L.latLngBounds([15.6, 72.6], [22.1, 80.9])
+MAHARASHTRA_CENTER       = [19.7515, 75.7139]
 MAHARASHTRA_INITIAL_ZOOM = 7
 ```
 
@@ -839,10 +862,10 @@ OpenStreetMap raster tiles via Leaflet (standard OSM attribution) — no SQL.
 
 ---
 
-## 14. Household detail panel
+## 14. Household Detail Panel
 
 | Item | Value |
-|-------|-------|
+|------|-------|
 | **Trigger** | Click `L.circleMarker` → `selectedHouse = house` |
 | **API** | **None** on click — uses in-memory object from `GET /houses` |
 | **Template** | `v-if="selectedHouse && viewMode === 'points'"` — fields vary by `colorMode` |
@@ -851,19 +874,19 @@ OpenStreetMap raster tiles via Leaflet (standard OSM attribution) — no SQL.
 
 ---
 
-## 15. Villages view mode (client clusters)
+## 15. Villages View Mode (Client Clusters)
 
 | Item | Value |
-|-------|-------|
+|------|-------|
 | **Toggle** | `setViewMode('villages')` |
 | **Function** | `buildVillageClusters` → `drawClusters` |
 | **API** | None — uses current `houses.value` |
 
-Cluster aggregates: `count`, `noToilet`, `noElec`, `noIrrig`, `bpl` per village bucket.
+Cluster aggregates per village bucket: `count`, `noToilet`, `noElec`, `noIrrig`, `bpl`.
 
 ---
 
-## 16. Dynamic filter helpers
+## 16. Dynamic Filter Helpers
 
 ### 16.1 `appendFamilyGeoIDFilter` (`handlers/houses.go`)
 
@@ -878,30 +901,32 @@ ELSE:
 
 ### 16.2 `buildPopulationFamilyFilters` (`handlers/population.go`)
 
-Nullable triplet pattern per geo ID:
+Nullable triplet pattern per geo ID (binds each ID three times):
 
 ```sql
 (? IS NULL OR ? = '' OR CAST(f.DISTRICT_ID AS CHAR) = ?)
 ```
 
-Binds each ID three times. MapView calls `/population/map-data` with **empty** params → only `1=1` + coordinate filter.
+MapView calls `/population/map-data` with **empty** params → only `1=1` + coordinate filter.
 
 ---
 
-## 17. Database tables reference
+## 17. Database Tables Reference
 
-| Table | Map module usage |
-|-------|------------------|
+| Table | Map Module Usage |
+|-------|-----------------|
 | `FAMILY` | Coordinates, land, crops, irrigation, housing, BPL, all survey fields; join key `EXTERNAL_FAMILY_ID` |
 | `FAMILY_MEMBER` | Aggregated counts, occupation, aadhaar, caste, divyang, gender |
-| `district_master` | Dropdowns, names, optional centroid fallback coords |
-| `taluka_master` | Dropdowns, taluka centroids |
-| `village_master` | Village centroids |
+| `district_master` | Dropdowns, district names; no static centroid coordinates |
+| `taluka_master` | Dropdowns, taluka names; no static centroid coordinates |
+| `village_master` | Village names; village centroids computed from `FAMILY` GPS |
 | `grampanchayat_master` | Join path village → taluka in location-options |
+
+> **Note:** District and taluka centroids are computed dynamically from `FAMILY` household GPS data (`AVG(LATITUDE)`, `AVG(LONGITUDE)`). No static coordinate columns exist in master tables.
 
 ---
 
-## 18. Startup cache (houses)
+## 18. Startup Cache (Houses)
 
 On server start (`main.go`):
 
@@ -911,8 +936,8 @@ houseHandler.PreloadHouseCache()
 
 Loads all geo-valid families into `houseCache` (in-memory `sync.Map`) for:
 
-- `GET /house/:id` (O(1), header `X-Cache: HIT`)
-- `GET /houses/batch-members` (no DB)
+- `GET /house/:id` — O(1) lookup, header `X-Cache: HIT`
+- `GET /houses/batch-members` — no DB
 
 **MapView** uses live `GET /houses` with pagination instead of the full cache endpoint.
 
@@ -942,7 +967,7 @@ LIMIT <optional>
 
 ---
 
-## Appendix C — File index
+## Appendix C — File Index
 
 | File | Role |
 |------|------|
@@ -950,7 +975,7 @@ LIMIT <optional>
 | `frontend/src/api/index.js` | HTTP wrappers (`/api` prefix) |
 | `frontend/src/views/population/api.js` | `getPopulationMapData` |
 | `main.go` | Route registration |
-| `handlers/houses.go` | `GET /houses`, map-points, summary, batch-members, house/:id |
+| `handlers/houses.go` | `GET /houses`, map-points, summary, batch-members, `house/:id` |
 | `handlers/district_centroids.go` | District centroids |
 | `handlers/taluka_village_centroids.go` | Taluka & village centroids |
 | `handlers/district_survey_counts.go` | District survey counts (unused in MapView) |

@@ -99,7 +99,7 @@
     "title": "Dashboard",
     "overview": "Overview",
     "totalHouseholds": "Total Households",
-    "totalFarmers": "Total Farmers",
+    "totalFarmers": "Total Farmer Households",
     "totalArea": "Total Area",
     "crops": "Crops",
     "loading": "Loading dashboard…"
@@ -368,7 +368,7 @@
     "totalGender": "Total Gender",
     "totalDivyang": "Total Divyang",
     "totalFamilies": "Total Families",
-    "totalFarmers": "Total Farmers",
+    "totalFarmers": "Total Farmer Households",
     "noIrrigation": "No Irrigation",
     "kharifActive": "Kharif Active",
     "rabiActive": "Rabi Active",
